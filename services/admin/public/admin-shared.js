@@ -109,6 +109,7 @@
     'gw_set_keyword', 'gw_get_keyword',
     'gw_set_multiplier', 'gw_get_multiplier',
     'gw_set_stream_settings', 'gw_get_stream_settings',
+    'gw_get_ai_settings', 'gw_set_ai_settings', 'gw_test_ai',
     'gw_get_channels', 'gw_verify_follows',
     'gw_gen_ingest_token', 'gw_get_ingest_tokens'
   ];

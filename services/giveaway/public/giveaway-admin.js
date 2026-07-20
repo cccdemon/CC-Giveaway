@@ -119,6 +119,7 @@ function requestData() {
   send({ event: 'gw_cmd', cmd: 'gw_get_stream_settings' });
   send({ event: 'gw_cmd', cmd: 'gw_get_channels' });
   send({ event: 'gw_cmd', cmd: 'gw_get_ingest_tokens' });
+  send({ event: 'gw_cmd', cmd: 'gw_get_ai_settings' });
 }
 
 setInterval(() => { if (gwWs && gwWs.readyState === 1) requestData(); }, 10000);
@@ -185,6 +186,13 @@ function handle(msg) {
         if (msg.followMin !== undefined)    gwFollowMin  = parseInt(msg.followMin) || 0;
         if (msg.drawMinHours !== undefined) gwDrawMinSec = Math.round(parseFloat(msg.drawMinHours) * 3600) || 0;
         updateStats(); renderTable();
+        break;
+      }
+      if (msg.type === 'ai_settings') { applyAiSettings(msg); break; }
+      if (msg.type === 'ai_error')    { log('KI: ' + (msg.error || '?'), 'red'); break; }
+      if (msg.type === 'ai_test') {
+        if (!msg.ok) log('KI-Test fehlgeschlagen: ' + (msg.error || '?') + ' – Wortregel greift', 'red');
+        else log('KI-Test ok (' + msg.source + '): "' + msg.sample + '" -> ' + (msg.meaningful ? 'sinnvoll' : 'nicht sinnvoll'), 'cyan');
         break;
       }
       if (msg.type === 'keyword') { const kw = msg.keyword || ''; document.getElementById('kw-current').textContent = kw || '- (deaktiviert)'; document.getElementById('kw-input').value = kw; break; }
@@ -577,6 +585,58 @@ function clearOverlay() {
 function verifyFollows() {
   log('Prüfe Follows via Helix …', 'cyan');
   send({ event: 'gw_cmd', cmd: 'gw_verify_follows' });
+}
+
+// ── Chat-KI ───────────────────────────────────────────────
+let aiProviders = [];
+
+function applyAiSettings(msg) {
+  if (Array.isArray(msg.providers) && msg.providers.length) aiProviders = msg.providers;
+  var sel = document.getElementById('cfg-ai-provider');
+  if (sel && aiProviders.length) {
+    sel.innerHTML = aiProviders.map(function(p) {
+      return '<option value="' + esc(p.id) + '">' + esc(p.label) + '</option>';
+    }).join('');
+    if (msg.provider) sel.value = msg.provider;
+  }
+  var en = document.getElementById('cfg-ai-enabled'); if (en) en.checked = !!msg.enabled;
+  var mo = document.getElementById('cfg-ai-model');   if (mo && msg.model !== undefined) mo.value = msg.model || '';
+  var key = document.getElementById('cfg-ai-key');
+  if (key) key.placeholder = msg.hasKey ? '•••••••• (hinterlegt – leer lassen zum Behalten, "-" zum Löschen)' : 'API-Key eintragen';
+  var st = document.getElementById('ai-state');
+  if (st) {
+    if (!msg.secretConfigured) { st.textContent = 'AI_KEY_SECRET FEHLT'; st.style.color = 'var(--red)'; }
+    else if (msg.enabled && msg.hasKey) { st.textContent = 'AKTIV'; st.style.color = 'var(--green)'; }
+    else if (msg.enabled) { st.textContent = 'KEIN KEY'; st.style.color = 'var(--red)'; }
+    else { st.textContent = 'AUS'; st.style.color = ''; }
+  }
+}
+
+function onAiProviderChange() {
+  // Modell auf den Default des Anbieters setzen, damit keine fremde ID stehen bleibt.
+  var sel = document.getElementById('cfg-ai-provider');
+  var mo  = document.getElementById('cfg-ai-model');
+  var p = aiProviders.filter(function(x) { return x.id === (sel || {}).value; })[0];
+  if (p && mo) mo.value = p.defaultModel;
+  saveAiSettings();
+}
+
+function saveAiSettings(withKey) {
+  var keyEl = document.getElementById('cfg-ai-key');
+  var payload = {
+    event: 'gw_cmd', cmd: 'gw_set_ai_settings',
+    enabled:  (document.getElementById('cfg-ai-enabled') || {}).checked ? 1 : 0,
+    provider: (document.getElementById('cfg-ai-provider') || {}).value || 'anthropic',
+    model:    (document.getElementById('cfg-ai-model') || {}).value || '',
+  };
+  if (withKey && keyEl && keyEl.value.trim()) { payload.apiKey = keyEl.value.trim(); keyEl.value = ''; }
+  send(payload);
+  log('KI-Einstellungen gespeichert' + (payload.apiKey ? ' (Key ersetzt)' : ''), 'cyan');
+}
+
+function testAi() {
+  log('Teste KI …', 'cyan');
+  send({ event: 'gw_cmd', cmd: 'gw_test_ai' });
 }
 
 // ── Datensicherung: Export / Import ───────────────────────

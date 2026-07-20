@@ -111,9 +111,12 @@ function sanitizeTeamId(t) {
 }
 
 class WatchtimeEngine {
-  constructor(redis, pg) {
-    this.redis = redis;
-    this.pg    = pg;
+  // aiJudge: optionaler async (teamId, message) => {meaningful: bool|null, source}
+  // Wird von server.js injiziert. Ohne ihn zählt weiterhin die Wortregel.
+  constructor(redis, pg, aiJudge = null) {
+    this.redis   = redis;
+    this.pg      = pg;
+    this.aiJudge = aiJudge;
   }
 
   // ── Team-Kanäle (aus team_members, gecacht) ─────────────
@@ -308,7 +311,18 @@ class WatchtimeEngine {
 
     const chatCfg = await this.getChatConfig(t);
     if (!chatCfg.bonusSec) return null;                      // Bonus abgeschaltet
-    if (countWords(cleanMsg) < chatCfg.minWords) return null;
+
+    // Sinnhaftigkeit: KI wenn konfiguriert, sonst (und bei jedem KI-Fehler) Wortzählung.
+    const byWords = countWords(cleanMsg) >= chatCfg.minWords;
+    let meaningful = byWords, judgedBy = 'words';
+    if (this.aiJudge) {
+      const verdict = await this.aiJudge(t, cleanMsg);
+      if (verdict && verdict.meaningful !== null && verdict.meaningful !== undefined) {
+        meaningful = verdict.meaningful;
+        judgedBy = verdict.source === 'cache' ? 'ai_cache' : 'ai';
+      }
+    }
+    if (!meaningful) return null;
 
     const chatKey = K.chChatTs(t, ch, u);
     const now = Math.floor(Date.now() / 1000);
@@ -321,7 +335,8 @@ class WatchtimeEngine {
     const newSec = parseFloat(await this.redis.incrbyfloat(K.chWatch(t, ch, u), inc));
     await this._logEvent(t, u, 'chat_bonus', inc, sid, ch);
 
-    return { added: inc, channel: ch, watchSec: newSec, coins: coinsFromSec(newSec, await this.getCoinBaseSec(t)) };
+    return { added: inc, channel: ch, watchSec: newSec, judgedBy,
+             coins: coinsFromSec(newSec, await this.getCoinBaseSec(t)) };
   }
 
   async _tryRegister(teamId, username, displayName) {

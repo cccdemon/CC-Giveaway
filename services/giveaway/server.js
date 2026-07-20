@@ -24,6 +24,7 @@ const fmtDur = (sec) => {                              // 7200→"2 Std", 1800�
   return `${Math.round(sec / 60)} Min`;
 };
 const { Helix } = require('./helix.js');
+const { judgeMessage, encryptKey, decryptKey, PROVIDERS } = require('./chat-ai.js');
 
 function log(tag, ...args)    { console.log( `[${tag}]`, ...args); }
 function logErr(tag, ...args) { console.error(`[${tag}]`, ...args); }
@@ -74,7 +75,56 @@ async function pgReady() {
   throw new Error('PG: Could not connect');
 }
 
-const wte = new WatchtimeEngine(redis, pg);
+// ── Chat-KI (optional, pro Team) ──────────────────────────
+// Konfiguration liegt in der teams-Tabelle; der API-Key verschluesselt.
+// Kurzer Cache, damit nicht jede Chatnachricht eine DB-Runde kostet.
+const AI_SECRET = process.env.AI_KEY_SECRET || '';
+const aiCfgCache = new Map();   // teamId -> {cfg, until}
+
+async function getAiConfig(teamId) {
+  const t = sanitizeTeamId(teamId);
+  const hit = aiCfgCache.get(t);
+  if (hit && hit.until > Date.now()) return hit.cfg;
+  let cfg = { enabled: false, provider: 'anthropic', model: '', apiKey: null, hasKey: false };
+  try {
+    const r = await pg.query('SELECT ai_enabled, ai_provider, ai_model, ai_key_enc FROM teams WHERE id=$1', [t]);
+    if (r.rows[0]) {
+      const row = r.rows[0];
+      cfg = {
+        enabled:  !!row.ai_enabled,
+        provider: PROVIDERS[row.ai_provider] ? row.ai_provider : 'anthropic',
+        model:    row.ai_model || '',
+        apiKey:   decryptKey(row.ai_key_enc, AI_SECRET),
+        hasKey:   !!row.ai_key_enc,
+      };
+    }
+  } catch(e) { logErr('AI', 'config load:', e.message); }
+  aiCfgCache.set(t, { cfg, until: Date.now() + 30000 });
+  return cfg;
+}
+function invalidateAiConfig(teamId) { aiCfgCache.delete(sanitizeTeamId(teamId)); }
+
+// Wird von der Engine pro Chatnachricht gerufen. Fehler => null => Wortregel.
+let aiErrorBudget = { fails: 0, until: 0 };
+async function aiJudge(teamId, message) {
+  const cfg = await getAiConfig(teamId);
+  if (!cfg.enabled || !cfg.apiKey) return null;
+  // Circuit-Breaker: nach 5 Fehlern in Folge 2 Minuten Pause, damit ein
+  // ausgefallener Anbieter nicht jede Nachricht um das Timeout verzoegert.
+  if (aiErrorBudget.until > Date.now()) return null;
+  const v = await judgeMessage(cfg, message);
+  if (v.source === 'error' && v.reason !== 'disabled') {
+    if (++aiErrorBudget.fails >= 5) {
+      aiErrorBudget = { fails: 0, until: Date.now() + 120000 };
+      logErr('AI', `Aussetzer (${v.reason}) - pausiere 2 min, Wortregel greift`);
+    }
+  } else if (v.source !== 'error') {
+    aiErrorBudget.fails = 0;
+  }
+  return v;
+}
+
+const wte = new WatchtimeEngine(redis, pg, aiJudge);
 const helix = new Helix({
   clientId:     String(process.env.TWITCH_CLIENT_ID || '').replace(/^"|"$/g, ''),
   clientSecret: String(process.env.TWITCH_CLIENT_SECRET || '').replace(/^"|"$/g, ''),
@@ -145,7 +195,7 @@ async function memberChannel(login, teamId) {
 // Nur-Lese-Cmds sind ausgenommen, sonst ersäuft der Log in Polling-Rauschen.
 const AUDIT_SKIP = new Set([
   'gw_get_channels', 'gw_get_multiplier', 'gw_get_stream_settings',
-  'gw_get_keyword', 'gw_get_ingest_tokens',
+  'gw_get_keyword', 'gw_get_ingest_tokens', 'gw_get_ai_settings',
 ]);
 
 async function audit(entry) {
@@ -408,6 +458,52 @@ async function runAdminCmd(send, msg, meta, ctx) {
       send({ event: 'gw_ack', type: 'stream_settings', autoPause: ap, autoResume: ar, followMin: fm, drawMinHours: dm / 3600,
                 chatBonusSec: chat.bonusSec, chatMinWords: chat.minWords, chatCooldown: chat.cooldown });
       log('GW', `[${teamId}] settings: pause=${ap} resume=${ar} followMin=${fm} drawMin=${dm}s`);
+      break;
+    }
+    case 'gw_get_ai_settings': {
+      const cfg = await getAiConfig(teamId);
+      // Der Key selbst wird NIE zurueckgegeben - nur ob einer hinterlegt ist.
+      send({ event: 'gw_ack', type: 'ai_settings', enabled: cfg.enabled, provider: cfg.provider,
+             model: cfg.model, hasKey: cfg.hasKey, secretConfigured: !!AI_SECRET,
+             providers: Object.entries(PROVIDERS).map(([id, p]) => ({ id, label: p.label, defaultModel: p.defaultModel })) });
+      break;
+    }
+    case 'gw_set_ai_settings': {
+      const before = await getAiConfig(teamId);
+      const provider = PROVIDERS[msg.provider] ? msg.provider : 'anthropic';
+      const model    = sanitizeStr(msg.model || '', 60) || PROVIDERS[provider].defaultModel;
+      const enabled  = !!msg.enabled;
+      // Leerer Key = unveraendert lassen; '-' = Key loeschen.
+      let keyEnc, keyTouched = false;
+      const rawKey = typeof msg.apiKey === 'string' ? msg.apiKey.trim() : '';
+      if (rawKey === '-')      { keyEnc = null; keyTouched = true; }
+      else if (rawKey)         { keyEnc = encryptKey(rawKey, AI_SECRET); keyTouched = true; }
+      if (enabled && !keyTouched && !before.hasKey) {
+        send({ event: 'gw_ack', type: 'ai_error', error: 'Kein API-Key hinterlegt' });
+        return;
+      }
+      const sets = ['ai_enabled=$2', 'ai_provider=$3', 'ai_model=$4'];
+      const params = [teamId, enabled, provider, model];
+      if (keyTouched) { sets.push('ai_key_enc=$5'); params.push(keyEnc); }
+      await pg.query(`UPDATE teams SET ${sets.join(', ')} WHERE id=$1`, params);
+      invalidateAiConfig(teamId);
+      const after = await getAiConfig(teamId);
+      // API-Key kommt NIE ins Audit - nur die Tatsache, dass er ersetzt wurde.
+      Object.assign(outcome, { enabledBefore: before.enabled, enabledAfter: after.enabled,
+                               providerBefore: before.provider, providerAfter: after.provider,
+                               modelBefore: before.model, modelAfter: after.model, keyChanged: keyTouched });
+      send({ event: 'gw_ack', type: 'ai_settings', enabled: after.enabled, provider: after.provider,
+             model: after.model, hasKey: after.hasKey, secretConfigured: !!AI_SECRET });
+      break;
+    }
+    case 'gw_test_ai': {
+      const cfg = await getAiConfig(teamId);
+      if (!cfg.apiKey) { send({ event: 'gw_ack', type: 'ai_test', ok: false, error: 'Kein API-Key hinterlegt' }); break; }
+      const sample = sanitizeStr(msg.sample || 'gutes spiel, das war knapp!', 200);
+      const v = await judgeMessage({ ...cfg, enabled: true }, sample);
+      Object.assign(outcome, { provider: cfg.provider, model: cfg.model, verdict: v.meaningful, source: v.source });
+      send({ event: 'gw_ack', type: 'ai_test', ok: v.source !== 'error',
+             meaningful: v.meaningful, source: v.source, error: v.reason || null, sample });
       break;
     }
     case 'gw_get_stream_settings': {
@@ -846,6 +942,11 @@ async function ensureSchema() {
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_audit_team_ts ON audit_log(team_id, ts DESC)`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_audit_target ON audit_log(target)`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor)`);
+  // Chat-KI pro Team. ai_key_enc ist AES-256-GCM (Schluessel aus AI_KEY_SECRET).
+  await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS ai_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
+  await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS ai_provider TEXT`);
+  await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS ai_model TEXT`);
+  await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS ai_key_enc TEXT`);
   log('Schema', 'multi-tenant + abuse + audit schema ensured');
 }
 

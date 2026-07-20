@@ -227,6 +227,35 @@ test('chat bonus honours the viewtime multiplier', async () => {
   assert.equal(r.added, 6);
 });
 
+test('ai judge overrides the word rule in both directions, errors fall back', async () => {
+  const mk = (judge) => new WatchtimeEngine(makeRedis(), makePg(CH), judge);
+  const setup = async (e) => {
+    await e.redis.set(K.gwOpen(TEAM), 'true');
+    await e.redis.set(K.chFollows(TEAM, 'justcallmedeimos', 'bob'), '1');
+    await e.setChatConfig(TEAM, { cooldown: 0 });
+  };
+
+  // Kurze Nachricht (unter der Wortschwelle) — KI sagt sinnvoll → Bonus.
+  const yes = mk(async () => ({ meaningful: true, source: 'ai' }));
+  await setup(yes);
+  const r1 = await yes.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'gg wp', true);
+  assert.equal(r1.added, 2);
+  assert.equal(r1.judgedBy, 'ai');
+
+  // Lange Nachricht (über der Schwelle) — KI sagt Spam → kein Bonus.
+  const no = mk(async () => ({ meaningful: false, source: 'ai' }));
+  await setup(no);
+  assert.equal(await no.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'aaa bbb ccc ddd eee', true), null);
+
+  // KI kaputt → Wortregel entscheidet wie vorher.
+  const broken = mk(async () => ({ meaningful: null, source: 'error' }));
+  await setup(broken);
+  const r2 = await broken.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'eins zwei drei vier', true);
+  assert.equal(r2.added, 2);
+  assert.equal(r2.judgedBy, 'words');
+  assert.equal(await broken.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'zu kurz', true), null);
+});
+
 test('backup roundtrip: export → reset → import restores the exact state', async () => {
   const e = engine();
   await e.setCoinBaseSec(TEAM, 3600);
