@@ -28,7 +28,8 @@ Coins werden immer aus der gespeicherten Zuschauzeit berechnet, nie eingefroren.
 | **Coin-Basis** | Wie viel Zuschauzeit ein Los kostet. Gleichzeitig die Schwelle für den Lostopf: drin ist, wer ≥1 Los hat. | 2 Stunden | 1 Minute – 100 Stunden |
 | **Follow-Bedingung** | Wie vielen der teilnehmenden Kanäle jemand folgen muss. `0` schaltet die Bedingung ganz ab. | 2 Kanäle | 0 – 10 |
 | **Keyword** | Das Wort, mit dem sich Zuschauer anmelden. Leer = keine Anmeldung nötig. | frei wählbar | beliebiger Text |
-| **Chat-Bonus** | Zuschauzeit-Gutschrift für sinnvolle Nachrichten, mit Cooldown gegen Spam. | +2 s ab 4 Wörtern | Code-Konstante |
+| **Chat-Bonus** | Zuschauzeit-Gutschrift für sinnvolle Nachrichten, mit Cooldown gegen Spam. | +2 s ab 4 Wörtern, 10 s Cooldown | 0–300 s, 1–50 Wörter, 0–3600 s |
+| **KI-Bewertung** | Statt der Wortzahl entscheidet ein Modell, ob eine Nachricht sinnvoll ist. Anbieter und Modell pro Team, eigener API-Key. | aus | Anthropic / OpenAI / Gemini |
 | **Viewtime-Multiplier** | Zeitlich begrenzter Faktor auf Zuschauzeit und Chat-Bonus. | aus | Faktor 1–10, 1 s – 24 h |
 | **Automatik** | Giveaway startet/pausiert automatisch mit dem Stream-Status. | aus | an/aus |
 | **Teilnehmende Kanäle** | Von einem bis viele. | dein eigener | 1 – n |
@@ -163,9 +164,10 @@ funktioniert unverändert.
 - **Einmal anmelden reicht.** Die Anmeldung bleibt bestehen. Wenn du die
   Bedingungen später erfüllst, rutschst du automatisch in den Lostopf, ohne
   nochmal etwas schreiben zu müssen.
-- **Chatten bringt etwas.** Nachrichten mit mehr als drei Wörtern geben einen
-  kleinen Zuschauzeit-Bonus, auf denselben Topf. Ein Cooldown verhindert, dass
-  Spammen sich lohnt.
+- **Chatten bringt etwas.** Sinnvolle Nachrichten geben einen kleinen
+  Zuschauzeit-Bonus, auf denselben Topf. Was als sinnvoll gilt, legt der
+  Streamer fest — entweder über eine Mindest-Wortzahl oder, wenn aktiviert,
+  über eine KI-Bewertung. Ein Cooldown verhindert, dass Spammen sich lohnt.
 - **Kanal egal.** Läuft das Giveaway über mehrere Kanäle, macht es für deine
   Zuschauzeit keinen Unterschied, bei welchem du zuschaust — sie zählt zusammen.
 - **Wie viel wofür nötig ist, legt der Streamer fest.** Wie lange eine Stunde
@@ -193,8 +195,10 @@ funktioniert unverändert.
   kann jederzeit belegen, dass nichts nachgeholfen wurde.
 - **Anmelden heißt zustimmen.** Das Keyword zu schreiben gilt als Zustimmung zu
   den Teilnahmebedingungen, die als Seite verlinkt sind.
-- **Gewinner haben 14 Kalendertage Meldefrist.** Wer sich nicht meldet, verliert
-  den Gewinn; der Veranstalter darf einen Ersatzgewinner ziehen.
+- **Gewinner haben eine Meldefrist**, die in den Teilnahmebedingungen des
+  jeweiligen Giveaways steht (Vorschlag im Standardtext: 14 Kalendertage). Wer
+  sich nicht meldet, verliert den Gewinn; der Veranstalter darf einen
+  Ersatzgewinner ziehen.
 
 ### Datenschutz
 - Gespeichert wird, was fürs Giveaway nötig ist: dein Twitch-Name, Zuschauzeit
