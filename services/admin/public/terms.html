@@ -77,7 +77,9 @@
     meta.innerHTML = '<b style="color:#e6f4fb;font-size:15px">' + esc(d.name) + '</b><div class="chips" style="margin-top:6px">' + chips + '</div>'
       + '<div style="margin-top:8px;font-size:12px;color:#8fb6cc">' + esc(stand) + '</div>'
       + (d.isDefault ? '<div style="margin-top:4px;font-size:12px;opacity:.5">Standard-Vorlage</div>' : '');
-    doc.innerHTML = mdToHtml(d.terms) + historyHtml(d.history);
+    doc.innerHTML = mdToHtml(d.terms) + historyHtml(d.history)
+      + '<hr style="margin:28px 0;border:0;border-top:1px solid rgba(0,212,255,0.18)">'
+      + '<p style="font-size:12px;opacity:.7">Veranstalter dieses Gewinnspiels ist <b>' + esc(d.name) + '</b>, nicht der Betreiber dieser Plattform. Ansprüche aus der Teilnahme bestehen ausschließlich gegenüber dem Veranstalter. <a href="/admin/impressum.html">Impressum</a> &middot; <a href="/admin/datenschutz.html">Datenschutz</a> der Plattform.</p>';
   }).catch(function(){ doc.innerHTML = '<span class="err">Ladefehler.</span>'; });
 </script>
 </body>

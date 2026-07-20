@@ -424,7 +424,7 @@ app.get('/api/teams/:id/terms/history', async (req, res) => {
 });
 
 // ── Public (kein Login): statische Anleitungen (md) ───────
-const PUB_DOCS = { help: 'help.md', setup: 'setup.md' };
+const PUB_DOCS = { help: 'help.md', setup: 'setup.md', impressum: 'impressum.md', datenschutz: 'datenschutz.md' };
 app.get('/pub/doc/:name', (req, res) => {
   const file = PUB_DOCS[String(req.params.name || '')];
   if (!file) return res.status(404).json({ error: 'not_found' });
