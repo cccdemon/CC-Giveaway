@@ -52,9 +52,12 @@
         -Server
     }
 
+    # Keine Zugriffsprotokollierung: Requests enthalten IP-Adressen, und die
+    # Docker-Logrotation ist groessenbasiert - eine Speicherfrist liesse sich
+    # damit nicht zusagen. Nur Fehler werden geloggt.
     log {
         output stdout
         format console
-        level INFO
+        level ERROR
     }
 }

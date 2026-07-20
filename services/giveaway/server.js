@@ -1053,6 +1053,7 @@ async function main() {
   await loadMasterSecret();
   subscribeToGiveaway();
   startWatchtimeTicker();
+  startRetentionJob();
   server.listen(CFG.port, () => log('Giveaway', `Service on port ${CFG.port}`));
 }
 
@@ -1064,6 +1065,62 @@ function startWatchtimeTicker() {
     } catch(e) { logErr('Tick', e.message); }
   }, TICK_SEC * 1000);
   log('Tick', `Ticker started (${TICK_SEC}s)`);
+}
+
+// ── Aufbewahrung (DSGVO Art. 5 Abs. 1 lit. e) ─────────────
+// Ohne Frist waere die Speicherung unbegrenzt - genau das laesst sich
+// gegenueber Betroffenen nicht begruenden. Die Werte stehen so auch in der
+// Datenschutzerklaerung; wer sie hier aendert, muss sie dort mitaendern.
+const RETENTION = {
+  participationDays: 90,   // Teilnahmedaten nach Abschluss der Session
+  protocolDays:     365,   // Ziehungs- und Verwaltungsprotokolle
+};
+
+async function runRetention() {
+  const deleted = {};
+  try {
+    // Teilnahmedaten: nur aus abgeschlossenen Sessions. Laufende Giveaways
+    // bleiben unangetastet, egal wie lange sie schon offen sind.
+    const ev = await pg.query(
+      `DELETE FROM watchtime_events WHERE session_id IN (
+         SELECT id FROM sessions WHERE closed_at IS NOT NULL AND closed_at < NOW() - ($1 || ' days')::interval)`,
+      [RETENTION.participationDays]);
+    deleted.watchtime_events = ev.rowCount;
+
+    const cp = await pg.query(
+      `DELETE FROM campaign_participation WHERE session_id IN (
+         SELECT id FROM sessions WHERE closed_at IS NOT NULL AND closed_at < NOW() - ($1 || ' days')::interval)`,
+      [RETENTION.participationDays]);
+    deleted.campaign_participation = cp.rowCount;
+
+    const af = await pg.query(
+      `DELETE FROM abuse_flags WHERE last_seen < NOW() - ($1 || ' days')::interval`,
+      [RETENTION.participationDays]);
+    deleted.abuse_flags = af.rowCount;
+
+    // Protokolle laenger, aber nicht unbegrenzt.
+    const al = await pg.query(
+      `DELETE FROM audit_log WHERE ts < NOW() - ($1 || ' days')::interval`,
+      [RETENTION.protocolDays]);
+    deleted.audit_log = al.rowCount;
+
+    const dr = await pg.query(
+      `DELETE FROM giveaway_draws WHERE drawn_at < NOW() - ($1 || ' days')::interval`,
+      [RETENTION.protocolDays]);
+    deleted.giveaway_draws = dr.rowCount;
+
+    const total = Object.values(deleted).reduce((a, b) => a + b, 0);
+    if (total) log('Retention', `geloescht: ${JSON.stringify(deleted)}`);
+    return deleted;
+  } catch(e) { logErr('Retention', e.message); return deleted; }
+}
+
+function startRetentionJob() {
+  // Einmal beim Start (holt nach, was waehrend einer Auszeit faellig wurde),
+  // danach einmal taeglich.
+  setTimeout(runRetention, 60000);
+  setInterval(runRetention, 24 * 60 * 60 * 1000);
+  log('Retention', `aktiv: Teilnahmedaten ${RETENTION.participationDays} Tage nach Session-Ende, Protokolle ${RETENTION.protocolDays} Tage`);
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

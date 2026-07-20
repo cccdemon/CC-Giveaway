@@ -37,11 +37,13 @@ Anfragen an den Plattformbetreiber leiten wir nicht automatisch weiter.
 ## 3 Welche Daten verarbeitet werden
 
 ### 3.1 Beim Aufruf der Website
-Beim Abruf der Seiten werden technisch notwendige Daten verarbeitet (IP-Adresse,
-Zeitpunkt, aufgerufene Ressource, Statuscode, User-Agent). Diese Daten sind zur
-Auslieferung und zur Abwehr von Angriffen erforderlich.
-**Rechtsgrundlage:** Art. 6 Abs. 1 lit. f DSGVO (Betrieb und Sicherheit).
-**Speicherdauer:** [Dauer eintragen, z.B. 7 Tage].
+**Zugriffe auf diese Website werden nicht protokolliert.** Es werden keine
+Zugriffs-Logs mit IP-Adressen geführt. Der Webserver protokolliert ausschließlich
+technische Fehler; diese enthalten keine IP-Adressen.
+
+Für die Auslieferung selbst wird deine IP-Adresse technisch verarbeitet — ohne
+sie kann keine Antwort zugestellt werden. Sie wird dabei nicht gespeichert.
+**Rechtsgrundlage:** Art. 6 Abs. 1 lit. f DSGVO (Betrieb der Website).
 
 ### 3.2 Login mit Twitch
 Für Streamer und für die Statusseite erfolgt die Anmeldung über Twitch (OAuth).
@@ -102,7 +104,6 @@ belegen, dass die Ziehung korrekt erfolgt ist.
 Daten werden nicht verkauft und nicht zu Werbezwecken weitergegeben. Empfänger
 sind ausschließlich:
 
-* **[Hosting-Anbieter]** als Auftragsverarbeiter (Art. 28 DSGVO),
 * **Twitch Interactive, Inc.** im Rahmen des Logins und der Follow-Prüfung,
 * **der jeweilige KI-Anbieter**, sofern der Veranstalter die KI-Bewertung
   aktiviert hat (siehe 3.4),
@@ -110,11 +111,24 @@ sind ausschließlich:
 
 ## 5 Speicherdauer
 
-Daten eines Giveaways werden verarbeitet, solange das Giveaway läuft und für
-dessen Abwicklung erforderlich. Nach Abschluss werden sie gelöscht, soweit keine
-gesetzliche Aufbewahrungspflicht besteht. Ziehungs- und Verwaltungsprotokolle
-werden für die Dauer möglicher Rückfragen aufbewahrt
-[**Dauer eintragen, z.B. 12 Monate**].
+Die Löschung erfolgt automatisch; sie muss nicht beantragt werden.
+
+| Daten | Aufbewahrung |
+|---|---|
+| Zugriffe auf die Website | werden nicht gespeichert |
+| Teilnahmedaten (Zuschauzeit, Nachrichtenzahl, Follow-Status, Anmeldung) | **90 Tage** nach Abschluss des jeweiligen Giveaways |
+| Spam-Markierungen samt Nachrichtenauszug | **90 Tage** |
+| Ziehungsprotokolle (Gewinner, Losanteile, Zufallswert) | **12 Monate** |
+| Verwaltungsprotokoll (Audit-Log) | **12 Monate** |
+| Sicherungskopien der Datenbank | **30 Tage** |
+
+Solange ein Giveaway läuft, werden seine Daten nicht gelöscht — die Frist
+beginnt mit dem Abschluss. Aus Sicherungskopien verschwinden gelöschte Daten
+spätestens nach weiteren 30 Tagen.
+
+Eine gesetzliche **Mindest**aufbewahrungspflicht besteht für diese Daten nicht.
+Verarbeitet der Veranstalter im Rahmen der Gewinnabwicklung Daten außerhalb
+dieser Plattform, gelten dafür seine eigenen Fristen.
 
 ## 6 Deine Rechte
 
