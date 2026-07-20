@@ -596,6 +596,120 @@ class WatchtimeEngine {
     await pipeline.exec();
     console.log(`[WTE] [${t}] reset`);
   }
+
+  // ── Backup: Export / Import ─────────────────────────────
+  // Der Live-Stand liegt in Redis und ist damit das, was bei einem Volume-Verlust
+  // weg wäre (PG-Historie deckt der Backup-Container ab). Export liefert genau so
+  // viel, dass importTeam() den Stand vollständig wiederherstellen kann.
+  async exportTeam(teamId) {
+    const t = sanitizeTeamId(teamId);
+    if (!t) throw new Error('Invalid teamId');
+    const channels = await this.getChannels(t);
+    const users = await this.redis.smembers(K.gwUsers(t));
+
+    const participants = [];
+    for (const u of users) {
+      const perChannel = {};
+      for (const ch of channels) {
+        const watchSec = parseFloat(await this.redis.get(K.chWatch(t, ch, u)) || '0');
+        const msgs     = parseInt(await this.redis.get(K.chMsgs(t, ch, u)) || '0');
+        const follows  = await this.redis.get(K.chFollows(t, ch, u));
+        if (!watchSec && !msgs && follows === null) continue;   // nie aktiv gewesen
+        perChannel[ch] = { watchSec, msgs, follows };
+      }
+      participants.push({
+        username: u,
+        registered: await this.redis.get(K.gwRegistered(t, u)) === '1',
+        banned:     await this.redis.get(K.gwBanned(t, u)) === '1',
+        perChannel,
+      });
+    }
+
+    return {
+      format: 'cc-giveaway-backup',
+      version: 1,
+      teamId: t,
+      channels,
+      config: {
+        keyword:      await this.redis.get(K.gwKeyword(t)) || '',
+        followMin:    await this.getFollowMin(t),
+        coinBaseSec:  await this.getCoinBaseSec(t),
+        autoPause:    await this.redis.get(K.cfgAutoPause(t)) === '1',
+        autoResume:   await this.redis.get(K.cfgAutoResume(t)) === '1',
+      },
+      state: {
+        open:      await this.redis.get(K.gwOpen(t)) === 'true',
+        paused:    await this.redis.get(K.gwPaused(t)) === 'true',
+        sessionId: await this.redis.get(K.gwSessionId(t)) || null,
+      },
+      participants,
+    };
+  }
+
+  // mode 'replace' = Stand exakt wiederherstellen (vorher alles löschen).
+  // mode 'merge'   = importierte Viewtime/Msgs auf den vorhandenen Stand addieren.
+  // Multiplier wird bewusst NICHT importiert: ein zeitlich begrenzter Boost aus
+  // einem alten Backup würde beim Restore fälschlich weiterlaufen.
+  async importTeam(teamId, data, opts = {}) {
+    const t = sanitizeTeamId(teamId);
+    if (!t) throw new Error('Invalid teamId');
+    if (!data || data.format !== 'cc-giveaway-backup') throw new Error('Kein gültiges Backup (format)');
+    if (Number(data.version) !== 1) throw new Error(`Backup-Version ${data.version} wird nicht unterstützt`);
+    if (!Array.isArray(data.participants)) throw new Error('Backup enthält keine participants');
+
+    const mode = opts.mode === 'merge' ? 'merge' : 'replace';
+    if (mode === 'replace') await this.resetGiveaway(t);
+
+    const cfg = data.config || {};
+    if (typeof cfg.keyword === 'string')       await this.redis.set(K.gwKeyword(t), sanitizeStr(cfg.keyword, 100));
+    if (Number.isFinite(Number(cfg.followMin)))   await this.setFollowMin(t, cfg.followMin);
+    if (Number.isFinite(Number(cfg.coinBaseSec))) await this.setCoinBaseSec(t, cfg.coinBaseSec);
+    if (cfg.autoPause)  await this.redis.set(K.cfgAutoPause(t), '1');
+    if (cfg.autoResume) await this.redis.set(K.cfgAutoResume(t), '1');
+
+    let users = 0, channelsTouched = new Set();
+    for (const p of data.participants) {
+      const u = sanitizeUsername(p && p.username);
+      if (!u) continue;
+      users++;
+      await this._touchUser(t, u);
+      if (p.registered) await this.redis.set(K.gwRegistered(t, u), '1');
+      if (p.banned)     await this.redis.set(K.gwBanned(t, u), '1');
+      for (const [rawCh, v] of Object.entries(p.perChannel || {})) {
+        const ch = sanitizeChannel(rawCh);
+        if (!ch || !v) continue;
+        channelsTouched.add(ch);
+        await this.redis.sadd(K.chIndex(t, ch), u);
+        const watchSec = Math.max(0, parseFloat(v.watchSec) || 0);
+        const msgs     = Math.max(0, parseInt(v.msgs) || 0);
+        if (mode === 'merge') {
+          if (watchSec) await this.redis.incrbyfloat(K.chWatch(t, ch, u), watchSec);
+          if (msgs)     await this.redis.incrby(K.chMsgs(t, ch, u), msgs);
+        } else {
+          await this.redis.set(K.chWatch(t, ch, u), String(watchSec));
+          await this.redis.set(K.chMsgs(t, ch, u), String(msgs));
+        }
+        // follows: null bedeutet "nie gesehen" und bleibt null (permissiv),
+        // '0'/'1' sind bestätigte Zustände und werden übernommen.
+        if (v.follows === '1' || v.follows === true)  await this.redis.set(K.chFollows(t, ch, u), '1');
+        else if (v.follows === '0' || v.follows === false) await this.redis.set(K.chFollows(t, ch, u), '0');
+      }
+    }
+
+    // Session/Offen-Status nur bei replace übernehmen — beim Merge läuft ja eine.
+    if (mode === 'replace' && data.state) {
+      if (data.state.sessionId && /^sess_\d+$/i.test(data.state.sessionId)) {
+        await this.redis.set(K.gwSessionId(t), data.state.sessionId);
+      }
+      if (data.state.open) {
+        await this.redis.set(K.gwOpen(t), 'true');
+        await this.redis.sadd(K.openTeams(), t);
+        if (data.state.paused) await this.redis.set(K.gwPaused(t), 'true');
+      }
+    }
+    console.log(`[WTE] [${t}] import mode=${mode} users=${users}`);
+    return { mode, users, channels: [...channelsTouched] };
+  }
 }
 
 module.exports = {

@@ -145,6 +145,17 @@
           <button class="btn btn-cyan" onclick="exportCSV()">CSV</button>
           <button class="btn btn-gold" onclick="exportChances()">CHANCEN</button>
         </div>
+        <div class="card-sub mt-6">DATENSICHERUNG</div>
+        <div class="btn-group">
+          <button class="btn btn-green" onclick="backupExport()" title="Kompletten Giveaway-Stand als JSON sichern">BACKUP ↓</button>
+          <button class="btn btn-green" onclick="backupExport(true)" title="Backup inkl. Ziehungs- und Audit-Historie">BACKUP + HISTORIE</button>
+        </div>
+        <input type="file" id="restore-file" accept="application/json,.json" style="display:none" onchange="backupImport(this)">
+        <div class="btn-group mt-6">
+          <button class="btn btn-gold" onclick="pickRestore('merge')" title="Viewtime aus dem Backup auf den aktuellen Stand addieren">RESTORE +</button>
+          <button class="btn btn-red" onclick="pickRestore('replace')" title="Aktuellen Stand loeschen und exakt aus dem Backup wiederherstellen">RESTORE ERSETZEN</button>
+        </div>
+        <div class="cfg-hint">RESTORE ERSETZEN löscht den aktuellen Stand. Vorher ein Backup ziehen.</div>
         <button class="btn btn-red btn-full mt-6" onclick="resetAll()">GIVEAWAY RESET</button>
       </div>
 

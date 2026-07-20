@@ -632,7 +632,7 @@ function subscribeToGiveaway() {
 }
 
 // ── REST (behind Caddy forward_auth; X-Auth-User trusted) ─
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));   // Backup-Import kann groß werden
 app.use((req, res, next) => { res.header('Access-Control-Allow-Origin', '*'); res.header('Access-Control-Allow-Headers', 'Content-Type'); next(); });
 function reqUser(req) { return sanitizeUsername(req.headers['x-auth-user'] || ''); }
 
@@ -647,6 +647,54 @@ app.get('/api/participants', async (req, res) => {
     if (!await isMember(reqUser(req), teamId)) return res.status(403).json({ error: 'forbidden' });
     res.json({ team: teamId, open: await wte.isOpen(teamId), session: await wte.getSessionId(teamId), participants: await wte.getAllParticipants(teamId) });
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Backup: Export / Import ───────────────────────────────
+// Export ist lesend und unkritisch, Import überschreibt den Live-Stand —
+// beides nur für den Team-Owner, beides im Audit-Log.
+app.get('/api/export', async (req, res) => {
+  try {
+    const teamId = sanitizeTeamId(req.query.team);
+    if (!await ownsTeam(reqUser(req), teamId)) return res.status(403).json({ error: 'forbidden' });
+    const data = await wte.exportTeam(teamId);
+    data.exportedAt = new Date().toISOString();
+    data.exportedBy = reqUser(req);
+    if (req.query.full === '1') {
+      const draws = await pg.query('SELECT * FROM giveaway_draws WHERE session_id IN (SELECT id FROM sessions WHERE team_id=$1)', [teamId]);
+      const audit = await pg.query('SELECT * FROM audit_log WHERE team_id=$1 ORDER BY ts', [teamId]);
+      data.history = { draws: draws.rows, audit: audit.rows };
+    }
+    await audit({ teamId, actor: reqUser(req), ip: req.ip, action: 'export',
+                  detail: { participants: data.participants.length, full: req.query.full === '1' } });
+    res.setHeader('Content-Disposition', `attachment; filename="giveaway_backup_${teamId}.json"`);
+    res.json(data);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/import', async (req, res) => {
+  const teamId = sanitizeTeamId(req.query.team);
+  const actor  = reqUser(req);
+  try {
+    if (!await ownsTeam(actor, teamId)) return res.status(403).json({ error: 'forbidden' });
+    const mode = req.query.mode === 'merge' ? 'merge' : 'replace';
+    // Replace löscht den Live-Stand — nur mit ausdrücklicher Bestätigung.
+    if (mode === 'replace' && req.query.confirm !== 'replace') {
+      return res.status(400).json({ error: 'replace erfordert confirm=replace' });
+    }
+    // Stand vor dem Import festhalten, damit der Import selbst umkehrbar bleibt.
+    const before = await wte.exportTeam(teamId);
+    const r = await wte.importTeam(teamId, req.body, { mode });
+    await audit({ teamId, actor, ip: req.ip, action: 'import',
+                  sessionId: await wte.getSessionId(teamId),
+                  detail: { mode, usersImported: r.users, channels: r.channels,
+                            participantsBefore: before.participants.length,
+                            backupExportedAt: req.body && req.body.exportedAt } });
+    broadcastTeam(teamId, { event: 'gw_status', status: await wte.isOpen(teamId) ? 'open' : 'closed' });
+    res.json({ ok: true, ...r, participantsBefore: before.participants.length });
+  } catch(e) {
+    await audit({ teamId, actor, ip: req.ip, action: 'import', result: 'error', detail: { error: e.message } });
+    res.status(400).json({ error: e.message });
+  }
 });
 
 // Audit-Log: nur der Team-Owner sieht, wer was gemacht hat.

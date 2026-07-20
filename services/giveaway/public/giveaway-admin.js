@@ -574,6 +574,62 @@ function verifyFollows() {
   send({ event: 'gw_cmd', cmd: 'gw_verify_follows' });
 }
 
+// ── Datensicherung: Export / Import ───────────────────────
+let restoreMode = 'merge';
+
+function backupExport(withHistory) {
+  if (!currentTeam) { log('Kein Team gewählt', 'red'); return; }
+  const url = '/giveaway/api/export?team=' + encodeURIComponent(currentTeam) + (withHistory ? '&full=1' : '');
+  fetch(url)
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(d => {
+      const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+      dlFile('giveaway_backup_' + stamp + '.json', JSON.stringify(d, null, 2), 'application/json');
+      log('Backup erstellt: ' + d.participants.length + ' Teilnehmer' + (withHistory ? ' + Historie' : ''), 'cyan');
+    })
+    .catch(e => log('Backup fehlgeschlagen: ' + e.message, 'red'));
+}
+
+function pickRestore(mode) {
+  if (!currentTeam) { log('Kein Team gewählt', 'red'); return; }
+  restoreMode = mode;
+  const el = document.getElementById('restore-file');
+  if (el) { el.value = ''; el.click(); }
+}
+
+function backupImport(input) {
+  const file = input && input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function () {
+    let data;
+    try { data = JSON.parse(reader.result); }
+    catch (e) { log('Backup nicht lesbar: ' + e.message, 'red'); return; }
+
+    const n = Array.isArray(data.participants) ? data.participants.length : 0;
+    const when = data.exportedAt ? new Date(data.exportedAt).toLocaleString('de-DE') : 'unbekannt';
+    const warn = restoreMode === 'replace'
+      ? 'ERSETZEN: Der aktuelle Stand wird komplett gelöscht und durch das Backup ersetzt.\n\n'
+      : 'ADDIEREN: Viewtime und Nachrichten aus dem Backup werden auf den aktuellen Stand aufaddiert.\n\n';
+    if (!confirm(warn + 'Backup vom ' + when + ' mit ' + n + ' Teilnehmern einspielen?')) {
+      log('Restore abgebrochen', 'gold');
+      return;
+    }
+
+    let url = '/giveaway/api/import?team=' + encodeURIComponent(currentTeam) + '&mode=' + restoreMode;
+    if (restoreMode === 'replace') url += '&confirm=replace';
+    fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+      .then(r => r.json().then(b => ({ ok: r.ok, b })))
+      .then(({ ok, b }) => {
+        if (!ok) throw new Error(b.error || 'unbekannt');
+        log('Restore ok (' + b.mode + '): ' + b.users + ' Teilnehmer, vorher ' + b.participantsBefore, 'cyan');
+        refresh();
+      })
+      .catch(e => log('Restore fehlgeschlagen: ' + e.message, 'red'));
+  };
+  reader.readAsText(file);
+}
+
 // ── Audit-Log ─────────────────────────────────────────────
 let auditRows = [];
 

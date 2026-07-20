@@ -19,6 +19,7 @@ function makeRedis() {
     async del(...ks) { ks.flat().forEach(k => { store.delete(k); sets.delete(k); lists.delete(k); }); return 1; },
     async incr(k) { const n = (parseFloat(store.get(k)) || 0) + 1; store.set(k, String(n)); return n; },
     async incrbyfloat(k, by) { const n = (parseFloat(store.get(k)) || 0) + Number(by); store.set(k, String(n)); return String(n); },
+    async incrby(k, by) { const n = (parseInt(store.get(k)) || 0) + parseInt(by); store.set(k, String(n)); return n; },
     async sadd(k, ...m) { if (!sets.has(k)) sets.set(k, new Set()); m.flat().forEach(x => sets.get(k).add(x)); return 1; },
     async srem(k, ...m) { if (sets.has(k)) m.flat().forEach(x => sets.get(k).delete(x)); return 1; },
     async smembers(k) { return sets.has(k) ? [...sets.get(k)] : []; },
@@ -184,6 +185,55 @@ test('coin base is configurable and doubles as the draw threshold', async () => 
   a = await e.getUserAggregate(TEAM, 'erin');
   assert.equal(a.totalCoins, 1);
   assert.equal(a.eligible, true);       // genau 1 Coin reicht
+});
+
+test('backup roundtrip: export → reset → import restores the exact state', async () => {
+  const e = engine();
+  await e.setCoinBaseSec(TEAM, 3600);
+  await e.setFollowMin(TEAM, 1);
+  await e.redis.set(K.gwKeyword(TEAM), '!basher');
+  await e.redis.set(K.chWatch(TEAM, 'justcallmedeimos', 'bob'), '5400');
+  await e.redis.set(K.chMsgs(TEAM, 'justcallmedeimos', 'bob'), '12');
+  await e.redis.set(K.chFollows(TEAM, 'justcallmedeimos', 'bob'), '1');
+  await e.redis.set(K.chFollows(TEAM, 'jerichoramirez', 'bob'), '1');
+  await e.redis.set(K.gwRegistered(TEAM, 'bob'), '1');
+  await e.redis.sadd(K.gwUsers(TEAM), 'bob');
+
+  const backup = await e.exportTeam(TEAM);
+  assert.equal(backup.format, 'cc-giveaway-backup');
+  assert.equal(backup.config.coinBaseSec, 3600);
+  assert.equal(backup.config.keyword, '!basher');
+  assert.equal(backup.participants.length, 1);
+
+  await e.resetGiveaway(TEAM);
+  assert.equal((await e.getAllParticipants(TEAM)).length, 0);
+
+  const r = await e.importTeam(TEAM, backup, { mode: 'replace' });
+  assert.equal(r.users, 1);
+  const a = await e.getUserAggregate(TEAM, 'bob');
+  assert.equal(a.totalWatchSec, 5400);
+  assert.equal(a.msgs, 12);
+  assert.equal(a.registered, true);
+  assert.equal(a.channelsFollowed, 2);
+  assert.equal(a.eligible, true);
+  assert.equal(await e.getCoinBaseSec(TEAM), 3600);
+});
+
+test('backup merge adds on top instead of replacing', async () => {
+  const e = engine();
+  await e.redis.set(K.chWatch(TEAM, 'justcallmedeimos', 'bob'), '1000');
+  await e.redis.sadd(K.gwUsers(TEAM), 'bob');
+  const backup = await e.exportTeam(TEAM);
+  await e.importTeam(TEAM, backup, { mode: 'merge' });
+  const a = await e.getUserAggregate(TEAM, 'bob');
+  assert.equal(a.totalWatchSec, 2000);      // 1000 vorhanden + 1000 aus dem Backup
+});
+
+test('import rejects foreign or unversioned payloads', async () => {
+  const e = engine();
+  await assert.rejects(() => e.importTeam(TEAM, { hello: 'world' }), /format/);
+  await assert.rejects(() => e.importTeam(TEAM, { format: 'cc-giveaway-backup', version: 99, participants: [] }), /Version/);
+  await assert.rejects(() => e.importTeam(TEAM, { format: 'cc-giveaway-backup', version: 1 }), /participants/);
 });
 
 test('team isolation: users/coins do not leak across teams', async () => {

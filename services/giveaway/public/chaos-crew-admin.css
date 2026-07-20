@@ -112,6 +112,7 @@ input::placeholder { color:rgba(200,220,232,.24); }
 
 /* ── Utility ────────────────────────────────────────────── */
 .mt-6 { margin-top:6px; } .mt-8 { margin-top:8px; } .mt-10 { margin-top:10px; }
+.card-sub { font-size:9px; letter-spacing:2px; color:var(--dim); text-transform:uppercase; margin-bottom:4px; }
 .link-cyan { color:var(--dim); cursor:pointer; font-size:9px; font-family:var(--mono); letter-spacing:1px; }
 .link-cyan:hover { color:var(--cyan); }
 
