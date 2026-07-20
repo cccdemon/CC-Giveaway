@@ -1,35 +1,20 @@
 # Impressum
 
-> **Auszufüllen vor dem öffentlichen Betrieb.** Alle mit `[…]` markierten Felder
-> müssen durch die echten Angaben des Plattformbetreibers ersetzt werden. Ein
-> unvollständiges Impressum ist abmahnfähig.
-
 ## Angaben gemäß § 5 DDG
 
-**[Name / Firma des Plattformbetreibers]**
-[Straße und Hausnummer]
-[PLZ und Ort]
-[Land]
-
-**Vertreten durch:** [Name der vertretungsberechtigten Person]
+**Torsten Ennenbach** (JustCallMeDeimos)
+c/o Online-Impressum.de #4910
+Europaring 90
+53757 Sankt Augustin
+Deutschland
 
 ## Kontakt
 
-**E-Mail:** [kontakt@example.org]
-**Telefon:** [optional — nur angeben, wenn vorhanden]
-
-## Registereintrag
-
-[Falls vorhanden: Registergericht, Registernummer — sonst diesen Abschnitt entfernen.]
-
-## Umsatzsteuer-Identifikationsnummer
-
-[Falls vorhanden: USt-IdNr. gemäß § 27 a UStG — sonst diesen Abschnitt entfernen.]
+**E-Mail:** <tower@raumdock.org>
 
 ## Verantwortlich für den Inhalt nach § 18 Abs. 2 MStV
 
-[Name]
-[Anschrift wie oben]
+Torsten Ennenbach, Anschrift wie oben.
 
 ---
 

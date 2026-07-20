@@ -1,20 +1,22 @@
 # Datenschutzerklärung
 
-> **Auszufüllen vor dem öffentlichen Betrieb.** Alle mit `[…]` markierten Felder
-> müssen ersetzt werden. Diese Erklärung beschreibt die **Plattform**. Für ein
-> einzelnes Giveaway ist der jeweilige Streamer verantwortlich — siehe
-> „Zwei Verantwortliche" weiter unten.
+> Diese Erklärung beschreibt die **Plattform**. Für ein einzelnes Giveaway ist
+> der jeweilige Streamer verantwortlich — siehe „Zwei Verantwortliche" weiter
+> unten. Die noch mit `[…]` markierten Felder sind vor dem öffentlichen Betrieb
+> zu ergänzen.
 
 ## 1 Verantwortlicher
 
 Verantwortlich für die Datenverarbeitung auf dieser Plattform im Sinne von
 Art. 4 Nr. 7 DSGVO ist:
 
-**[Name / Firma des Plattformbetreibers]**
-[Anschrift]
-[E-Mail]
+**Torsten Ennenbach** (JustCallMeDeimos)
+c/o Online-Impressum.de #4910
+Europaring 90, 53757 Sankt Augustin, Deutschland
+E-Mail: <tower@raumdock.org>
 
-[Falls benannt: Datenschutzbeauftragte/r mit Kontaktdaten — sonst entfernen.]
+Ein Datenschutzbeauftragter ist nicht benannt; eine Benennungspflicht nach
+Art. 37 DSGVO besteht nach derzeitiger Einschätzung nicht.
 
 ## 2 Zwei Verantwortliche — wer wofür
 
@@ -126,8 +128,11 @@ Betrifft dein Anliegen ein bestimmtes Giveaway, wende dich an den
 unter 1 genannte Adresse.
 
 Dir steht ein **Beschwerderecht bei einer Aufsichtsbehörde** zu, insbesondere im
-Mitgliedstaat deines Aufenthaltsorts oder des mutmaßlichen Verstoßes
-[**zuständige Aufsichtsbehörde eintragen**].
+Mitgliedstaat deines Aufenthaltsorts oder des mutmaßlichen Verstoßes. Für den
+Verantwortlichen zuständig ist nach der oben genannten Anschrift die
+**Landesbeauftragte für Datenschutz und Informationsfreiheit Nordrhein-Westfalen**,
+Kavalleriestraße 2–4, 40213 Düsseldorf. **[Bitte prüfen: maßgeblich ist der
+tatsächliche Sitz, nicht die c/o-Zustellanschrift.]**
 
 ## 7 Keine automatisierte Entscheidung mit rechtlicher Wirkung
 
@@ -141,4 +146,4 @@ beeinträchtigt.
 Diese Erklärung wird angepasst, wenn sich die Verarbeitung ändert. Es gilt die
 jeweils auf dieser Seite veröffentlichte Fassung.
 
-**Stand:** [Datum eintragen]
+**Stand:** 20. Juli 2026
