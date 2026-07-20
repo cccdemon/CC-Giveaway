@@ -209,6 +209,7 @@
     { head:'Verwaltung' },
     { href:'/admin/users.html', label:'Benutzer', ic:'👥' },
     { href:'/admin/datenschutz-admin.html', label:'Betroffenenrechte', ic:'🛡' },
+    { href:'/admin/nutzungsbedingungen.html', label:'Nutzungsbedingungen', ic:'§' },
     { href:'/viewer/help',      label:'Anleitung', ic:'📖' },
     { href:'/admin/setup.html', label:'Setup-Guide', ic:'⚙' },
     { head:'Diagnose' },
@@ -529,4 +530,127 @@
   function esc(s)  { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
   window.ccDebug = { log: addEntry };
+})();
+
+/* ── Zustimmung zu den Nutzungsbedingungen ──────────────────────────────────
+   Blockierendes Overlay: ohne Zustimmung keine Nutzung. Der Server setzt die
+   Regel zusaetzlich durch (HTTP 451) - dieses Overlay ist die Benutzerfuehrung,
+   nicht die Absicherung. Bei einer neuen Fassung erscheint es erneut. */
+(function () {
+  var TOS_URL = '/admin/nutzungsbedingungen.html';
+
+  function css() {
+    if (document.getElementById('cc-tos-css')) return;
+    var s = document.createElement('style');
+    s.id = 'cc-tos-css';
+    s.textContent = [
+      '.cc-tos-bd{position:fixed;inset:0;z-index:9500;background:rgba(2,6,12,.93);',
+      'display:flex;align-items:center;justify-content:center;padding:20px;}',
+      '.cc-tos-bx{background:#0a0e16;border:1px solid rgba(0,212,255,.3);border-radius:10px;',
+      'max-width:660px;width:100%;max-height:88vh;display:flex;flex-direction:column;',
+      'font-family:system-ui,"Segoe UI",sans-serif;color:#c8dce8;line-height:1.6;}',
+      '.cc-tos-hd{padding:20px 24px 12px;border-bottom:1px solid rgba(0,212,255,.15);}',
+      '.cc-tos-hd h2{margin:0 0 6px;font-size:16px;color:#00d4ff;letter-spacing:1px;}',
+      '.cc-tos-hd p{margin:0;font-size:13px;color:rgba(200,220,232,.6);}',
+      '.cc-tos-bd2{padding:16px 24px;overflow:auto;font-size:13px;}',
+      '.cc-tos-key{border:1px solid rgba(240,165,0,.4);background:rgba(240,165,0,.07);',
+      'border-radius:8px;padding:12px 14px;margin-bottom:14px;}',
+      '.cc-tos-key b{color:#f0a500;}',
+      '.cc-tos-bd2 ul{margin:.4em 0 0 1.1em;padding:0;} .cc-tos-bd2 li{margin:.25em 0;}',
+      '.cc-tos-ft{padding:14px 24px 20px;border-top:1px solid rgba(0,212,255,.15);}',
+      '.cc-tos-ck{display:flex;gap:10px;align-items:flex-start;font-size:13px;cursor:pointer;}',
+      '.cc-tos-ck input{margin-top:3px;width:16px;height:16px;flex:none;cursor:pointer;}',
+      '.cc-tos-row{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap;}',
+      '.cc-tos-btn{background:#00d4ff;color:#02121a;border:0;padding:10px 18px;border-radius:6px;',
+      'font-weight:700;cursor:pointer;letter-spacing:.5px;}',
+      '.cc-tos-btn[disabled]{opacity:.35;cursor:not-allowed;}',
+      '.cc-tos-lnk{color:#00d4ff;font-size:12px;}',
+      '.cc-tos-out{background:transparent;border:1px solid rgba(255,84,104,.5);color:#ff5468;',
+      'padding:9px 14px;border-radius:6px;cursor:pointer;font-size:12px;}',
+      '.cc-tos-msg{font-size:12px;color:#ff5468;min-height:15px;}'
+    ].join('');
+    document.head.appendChild(s);
+  }
+
+  function show(st) {
+    css();
+    var again = st.acceptedVersion > 0;
+    var bd = document.createElement('div');
+    bd.className = 'cc-tos-bd';
+    bd.innerHTML =
+      '<div class="cc-tos-bx" role="dialog" aria-modal="true">' +
+        '<div class="cc-tos-hd">' +
+          '<h2>Nutzungsbedingungen' + (again ? ' — neue Fassung' : '') + '</h2>' +
+          '<p>' + (again
+            ? 'Die Bedingungen haben sich geändert. Für die weitere Nutzung ist eine erneute Zustimmung nötig.'
+            : 'Vor der ersten Nutzung als Veranstalter ist die Zustimmung erforderlich.') +
+          '</p>' +
+        '</div>' +
+        '<div class="cc-tos-bd2">' +
+          '<div class="cc-tos-key">' +
+            '<b>Das Wichtigste:</b> Die Teilnahme an deinem Gewinnspiel muss für deine ' +
+            'Zuschauer <b>immer kostenlos</b> sein. Verboten ist insbesondere:' +
+            '<ul>' +
+              '<li>Bits, Subs, Spenden oder Käufe als Voraussetzung der Teilnahme</li>' +
+              '<li>Bits, Subs, Spenden oder Käufe als Vorteil bei den Losen</li>' +
+              '<li>Geld, Krypto oder Wett-/Casinoguthaben als Gewinn</li>' +
+              '<li>Werbung für Glücksspiel, Sportwetten oder Lootboxen</li>' +
+            '</ul>' +
+            '<div style="margin-top:10px;color:rgba(200,220,232,.65)">Sobald eine Zahlung die ' +
+            'Gewinnchance beeinflusst, wird aus dem Gewinnspiel Glücksspiel — das ist hier ' +
+            'nicht erlaubt und kann strafbar sein.</div>' +
+          '</div>' +
+          '<div style="color:rgba(200,220,232,.7)">Außerdem gilt: Du bist Veranstalter deines ' +
+          'Gewinnspiels, nicht die Plattform. Du hinterlegst ein eigenes Impressum, stellst ' +
+          'eigene Teilnahmebedingungen bereit und wickelst Gewinne selbst ab.</div>' +
+          '<p style="margin-top:12px"><a class="cc-tos-lnk" href="' + TOS_URL + '" target="_blank" ' +
+          'rel="noopener">Vollständige Nutzungsbedingungen lesen (Fassung ' + st.current + ') ↗</a></p>' +
+        '</div>' +
+        '<div class="cc-tos-ft">' +
+          '<label class="cc-tos-ck"><input type="checkbox" id="cc-tos-ck">' +
+          '<span>Ich habe die Nutzungsbedingungen gelesen und stimme ihnen zu. Ich bestätige, ' +
+          'dass die Teilnahme an meinen Gewinnspielen kostenlos bleibt.</span></label>' +
+          '<div class="cc-tos-row">' +
+            '<button class="cc-tos-btn" id="cc-tos-ok" disabled>Zustimmen</button>' +
+            '<button class="cc-tos-out" id="cc-tos-no">Abmelden</button>' +
+            '<span class="cc-tos-msg" id="cc-tos-msg"></span>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(bd);
+
+    var ck = bd.querySelector('#cc-tos-ck'), ok = bd.querySelector('#cc-tos-ok');
+    ck.addEventListener('change', function () { ok.disabled = !ck.checked; });
+    bd.querySelector('#cc-tos-no').addEventListener('click', function () {
+      fetch('/admin/auth/logout', { method: 'POST' }).then(function () {
+        window.location.href = '/admin/login.html';
+      });
+    });
+    ok.addEventListener('click', function () {
+      ok.disabled = true;
+      fetch('/admin/api/tos/accept', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version: st.current })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d && d.ok) { window.location.reload(); return; }
+        bd.querySelector('#cc-tos-msg').textContent = (d && d.error) || 'Fehler';
+        ok.disabled = false;
+      }).catch(function (e) {
+        bd.querySelector('#cc-tos-msg').textContent = e.message;
+        ok.disabled = false;
+      });
+    });
+  }
+
+  function check() {
+    fetch('/admin/api/tos/status').then(function (r) {
+      if (r.status === 401) return null;   // nicht angemeldet - nichts zu tun
+      return r.json();
+    }).then(function (st) {
+      if (st && !st.accepted) show(st);
+    }).catch(function () { /* Netzfehler blockiert die Seite nicht */ });
+  }
+
+  if (document.body) check();
+  else document.addEventListener('DOMContentLoaded', check);
 })();

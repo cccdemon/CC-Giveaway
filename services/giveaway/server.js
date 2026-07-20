@@ -290,6 +290,21 @@ async function hasImprint(teamId) {
 const IMPRINT_HINT = 'Kein Impressum hinterlegt. Trage unter MEINE TEAMS das Impressum des '
                    + 'Veranstalters ein (Text oder Link), dann laesst sich das Giveaway oeffnen.';
 
+// Der Glueckspiel-Ausschluss der Nutzungsbedingungen bindet nur, wenn der
+// Veranstalter ihm zugestimmt hat. Ohne Zustimmung laeuft hier kein Giveaway.
+// Muss mit TOS_VERSION in services/admin/server.js uebereinstimmen.
+const TOS_VERSION = 1;
+async function ownerAcceptedTos(teamId) {
+  try {
+    const r = await pg.query(
+      `SELECT 1 FROM teams t JOIN tos_acceptances a ON a.login = t.owner_login
+       WHERE t.id=$1 AND a.version >= $2 LIMIT 1`, [teamId, TOS_VERSION]);
+    return r.rowCount > 0;
+  } catch(e) { logErr('GW', 'tos check:', e.message); return false; }
+}
+const TOS_HINT = 'Den Nutzungsbedingungen wurde noch nicht zugestimmt. Melde dich unter '
+               + 'MEINE TEAMS an und bestaetige sie, dann laesst sich das Giveaway oeffnen.';
+
 
 async function openGiveaway(teamId, keyword) {
   const sid = `sess_${Date.now()}`;
@@ -326,6 +341,12 @@ async function handleStreamOnline(teamId, channel) {
                     sessionId: await wte.getSessionId(teamId), detail: { trigger: 'stream_online' } });
     }
   } else {
+    if (!await ownerAcceptedTos(teamId)) {
+      log('Auto', `[${teamId}] stream online (${ch}) -> NICHT geoeffnet: Nutzungsbedingungen offen`);
+      await audit({ teamId, actor: 'system', action: 'auto_open', target: ch,
+                    result: 'denied', detail: { reason: 'no_tos' } });
+      return;
+    }
     if (!await hasImprint(teamId)) {
       log('Auto', `[${teamId}] stream online (${ch}) -> NICHT geoeffnet: kein Impressum`);
       await audit({ teamId, actor: 'system', action: 'auto_open', target: ch,
@@ -486,6 +507,11 @@ async function runAdminCmd(send, msg, meta, ctx) {
 
   switch (msg.cmd) {
     case 'gw_open':
+      if (!await ownerAcceptedTos(teamId)) {
+        Object.assign(outcome, { blocked: 'no_tos' });
+        send({ event: 'gw_ack', type: 'open_blocked', error: TOS_HINT });
+        break;
+      }
       if (!await hasImprint(teamId)) {
         Object.assign(outcome, { blocked: 'no_imprint' });
         send({ event: 'gw_ack', type: 'open_blocked', error: IMPRINT_HINT });

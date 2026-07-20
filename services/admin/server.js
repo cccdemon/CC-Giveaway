@@ -242,11 +242,60 @@ app.get('/auth/twitch/callback', async (req, res) => {
   }
 });
 
+// ── Nutzungsbedingungen (AGB) ─────────────────────────────
+// Jeder Streamer muss zustimmen, bevor er die Plattform nutzen kann. Der
+// Glueckspiel-Ausschluss in Paragraf 4 traegt nur, wenn belegbar ist, wer wann
+// welcher Fassung zugestimmt hat - deshalb Fassungsnummer + Zeitstempel.
+// WICHTIG: Bei jeder inhaltlichen Aenderung von nutzungsbedingungen.md muss
+// TOS_VERSION erhoeht werden, sonst gilt die alte Zustimmung weiter.
+const TOS_VERSION = 1;
+
+async function tosAcceptedVersion(login) {
+  const r = await pg.query(
+    'SELECT version, accepted_at FROM tos_acceptances WHERE login=$1 ORDER BY version DESC LIMIT 1', [login]);
+  return r.rows[0] || null;
+}
+
+app.get('/api/tos/status', async (req, res) => {
+  const s = sessionFromReq(req);
+  if (!s) return res.status(401).json({ error: 'unauthenticated' });
+  try {
+    const a = await tosAcceptedVersion(s.user);
+    res.json({ current: TOS_VERSION, accepted: !!(a && a.version >= TOS_VERSION),
+               acceptedVersion: a ? a.version : 0, acceptedAt: a ? a.accepted_at : null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/tos/accept', async (req, res) => {
+  const s = sessionFromReq(req);
+  if (!s) return res.status(401).json({ error: 'unauthenticated' });
+  const v = parseInt((req.body && req.body.version), 10);
+  // Nur der aktuellen Fassung laesst sich zustimmen - eine aeltere Nummer waere
+  // sonst ein Weg, die Zustimmung an der neuen Fassung vorbeizuschummeln.
+  if (v !== TOS_VERSION) return res.status(400).json({ error: 'version_mismatch', current: TOS_VERSION });
+  try {
+    await pg.query(
+      `INSERT INTO tos_acceptances (login, version) VALUES ($1,$2)
+       ON CONFLICT (login, version) DO NOTHING`, [s.user, TOS_VERSION]);
+    res.json({ ok: true, version: TOS_VERSION });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Teams (multi-tenant) ──────────────────────────────────
 function requireSession(req, res) {
   const s = sessionFromReq(req);
   if (!s) { res.status(401).json({ error: 'unauthenticated' }); return null; }
   return s;
+}
+
+// Gate fuer alles, was ein Giveaway anlegt oder veraendert. Lesen bleibt frei,
+// damit die Zustimmungsseite selbst und der Datenexport erreichbar bleiben.
+async function requireTos(req, res, sess) {
+  const a = await tosAcceptedVersion(sess.user);
+  if (a && a.version >= TOS_VERSION) return true;
+  res.status(451).json({ error: 'tos_required', current: TOS_VERSION,
+                         acceptedVersion: a ? a.version : 0 });
+  return false;
 }
 function genId(prefix) { return prefix + crypto.randomBytes(6).toString('hex'); }
 function genCode() { return crypto.randomBytes(5).toString('hex'); } // 10 hex chars
@@ -262,6 +311,7 @@ async function isTeamMember(teamId, login) {
 
 app.post('/api/teams', async (req, res) => {
   const s = requireSession(req, res); if (!s) return;
+  if (!await requireTos(req, res, s)) return;
   const name = String((req.body && req.body.name) || '').replace(/[^\w \-]/g, '').slice(0, 60).trim();
   if (!name) return res.status(400).json({ error: 'name_required' });
   const id = genId('team_'); const code = genCode();
@@ -302,6 +352,7 @@ app.get('/api/teams/:id', async (req, res) => {
 
 app.post('/api/teams/join', async (req, res) => {
   const s = requireSession(req, res); if (!s) return;
+  if (!await requireTos(req, res, s)) return;
   const code = String((req.body && req.body.code) || '').replace(/[^a-f0-9]/gi, '').slice(0, 32);
   if (!code) return res.status(400).json({ error: 'code_required' });
   try {
@@ -316,6 +367,7 @@ app.post('/api/teams/join', async (req, res) => {
 
 app.post('/api/teams/:id/invite', async (req, res) => {
   const s = requireSession(req, res); if (!s) return;
+  if (!await requireTos(req, res, s)) return;
   const id = req.params.id;
   if (!await isTeamOwner(id, s.user)) return res.status(403).json({ error: 'forbidden' });
   const code = genCode();
@@ -347,6 +399,7 @@ app.get('/api/teams/:id/terms', async (req, res) => {
 
 app.put('/api/teams/:id/terms', async (req, res) => {
   const s = requireSession(req, res); if (!s) return;
+  if (!await requireTos(req, res, s)) return;
   const id = req.params.id;
   if (!await isTeamOwner(id, s.user)) return res.status(403).json({ error: 'forbidden' });
   const terms = String((req.body && req.body.terms) || '').slice(0, 40000);
@@ -424,6 +477,7 @@ app.get('/api/teams/:id/imprint', async (req, res) => {
 
 app.put('/api/teams/:id/imprint', async (req, res) => {
   const s = requireSession(req, res); if (!s) return;
+  if (!await requireTos(req, res, s)) return;
   const id = req.params.id;
   if (!await isTeamOwner(id, s.user)) return res.status(403).json({ error: 'forbidden' });
   const imprint = String((req.body && req.body.imprint) || '').slice(0, 20000).trim();
@@ -554,7 +608,8 @@ app.post('/api/gdpr/subject/:username/delete', async (req, res) => {
 });
 
 // ── Public (kein Login): statische Anleitungen (md) ───────
-const PUB_DOCS = { help: 'help.md', setup: 'setup.md', impressum: 'impressum.md', datenschutz: 'datenschutz.md' };
+const PUB_DOCS = { help: 'help.md', setup: 'setup.md', impressum: 'impressum.md',
+                   datenschutz: 'datenschutz.md', nutzungsbedingungen: 'nutzungsbedingungen.md' };
 app.get('/pub/doc/:name', (req, res) => {
   const file = PUB_DOCS[String(req.params.name || '')];
   if (!file) return res.status(404).json({ error: 'not_found' });
@@ -686,6 +741,17 @@ async function ensureSchema() {
       joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (team_id, login)
     )`);
+  // Zustimmung zu den Nutzungsbedingungen: wer, welche Fassung, wann.
+  // Historie bleibt erhalten (kein UPDATE) - eine frueher erteilte Zustimmung
+  // ist Beweismittel und darf durch eine spaetere nicht ueberschrieben werden.
+  await pg.query(`
+    CREATE TABLE IF NOT EXISTS tos_acceptances (
+      login       TEXT NOT NULL,
+      version     INTEGER NOT NULL,
+      accepted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (login, version)
+    )`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_tos_login ON tos_acceptances(login, version DESC)`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_tm_login ON team_members(login)`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_teams_code ON teams(invite_code)`);
   const { rows } = await pg.query('SELECT COUNT(*)::int AS n FROM admin_users');
