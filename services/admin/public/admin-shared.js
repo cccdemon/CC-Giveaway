@@ -210,6 +210,7 @@
     { href:'/admin/users.html', label:'Benutzer', ic:'👥' },
     { href:'/admin/datenschutz-admin.html', label:'Betroffenenrechte', ic:'🛡' },
     { href:'/admin/nutzungsbedingungen.html', label:'Nutzungsbedingungen', ic:'§' },
+    { href:'/admin/meine-daten.html', label:'Meine Daten', ic:'🔎' },
     { href:'/viewer/help',      label:'Anleitung', ic:'📖' },
     { href:'/admin/setup.html', label:'Setup-Guide', ic:'⚙' },
     { head:'Diagnose' },

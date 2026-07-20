@@ -137,6 +137,18 @@ Du hast das Recht auf **Auskunft** (Art. 15), **Berichtigung** (Art. 16),
 (Art. 20) und **Widerspruch** (Art. 21 DSGVO). Erteilte Einwilligungen kannst du
 jederzeit mit Wirkung für die Zukunft widerrufen.
 
+**Auskunft und Löschung ohne Antrag:** Melde dich unter
+[Meine Daten](/admin/meine-daten.html) mit deinem Twitch-Konto an. Dort siehst du
+sofort alles, was zu dir gespeichert ist, kannst es als Datei herunterladen
+(Art. 15 und Art. 20 DSGVO) und die Löschung selbst auslösen (Art. 17 DSGVO).
+Die Anmeldung über Twitch dient dem Identitätsnachweis — sie stellt sicher, dass
+niemand fremde Daten einsehen oder löschen kann. Jeder Zugriff und jede Löschung
+wird protokolliert.
+
+Ziehungsprotokolle werden dabei nicht gelöscht, sondern pseudonymisiert: sie
+belegen gegenüber allen übrigen Teilnehmern, dass korrekt gezogen wurde. Das
+gestattet Art. 17 Abs. 3 lit. e DSGVO.
+
 Betrifft dein Anliegen ein bestimmtes Giveaway, wende dich an den
 **veranstaltenden Streamer**. Betrifft es die Plattform selbst, wende dich an die
 unter 1 genannte Adresse.

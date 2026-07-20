@@ -112,7 +112,7 @@
     doc.innerHTML = mdToHtml(d.terms) + historyHtml(d.history)
       + '<hr style="margin:28px 0;border:0;border-top:1px solid rgba(0,212,255,0.18)">'
       + organizerHtml(d)
-      + '<p style="font-size:12px;opacity:.7">Veranstalter dieses Gewinnspiels ist <b>' + esc(d.name) + '</b>, nicht der Betreiber dieser Plattform. Ansprüche aus der Teilnahme bestehen ausschließlich gegenüber dem Veranstalter. <a href="/admin/impressum.html">Impressum</a> &middot; <a href="/admin/datenschutz.html">Datenschutz</a> &middot; <a href="/admin/nutzungsbedingungen.html">Nutzungsbedingungen</a> der Plattform.</p>';
+      + '<p style="font-size:12px;opacity:.7">Veranstalter dieses Gewinnspiels ist <b>' + esc(d.name) + '</b>, nicht der Betreiber dieser Plattform. Ansprüche aus der Teilnahme bestehen ausschließlich gegenüber dem Veranstalter. <a href="/admin/impressum.html">Impressum</a> &middot; <a href="/admin/datenschutz.html">Datenschutz</a> &middot; <a href="/admin/nutzungsbedingungen.html">Nutzungsbedingungen</a> der Plattform &middot; <a href="/admin/meine-daten.html">Meine Daten</a></p>';
   }).catch(function(){ doc.innerHTML = '<span class="err">Ladefehler.</span>'; });
 </script>
 </body>

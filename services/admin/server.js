@@ -534,40 +534,53 @@ function sanitizeViewer(v) {
   return String(v || '').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 25);
 }
 
-app.get('/api/gdpr/subject/:username', async (req, res) => {
-  if (!requireSuperadmin(req, res)) return;
-  const u = sanitizeViewer(req.params.username);
-  if (!u) return res.status(400).json({ error: 'Ungültiger Benutzername' });
+// Jeder Zugriff auf personenbezogene Daten wird protokolliert - auch der
+// lesende und auch der auf eigene Daten. Ohne dieses Protokoll laesst sich
+// spaeter nicht belegen, wer wann welche Auskunft erteilt oder erhalten hat.
+// Bewusst ohne IP: die Datenschutzerklaerung sagt zu, Zugriffe nicht mit
+// IP-Adressen zu protokollieren.
+async function auditGdpr(actor, action, target, result, detail) {
   try {
-    const q = (sql, p) => pg.query(sql, p).then(r => r.rows).catch(() => []);
-    const [user, events, participation, flags, audit, draws, teams] = await Promise.all([
-      q('SELECT username, display, last_seen FROM users WHERE username=$1', [u]),
-      q(`SELECT team_id, channel, event_type, count(*)::int AS n, min(ts) AS first, max(ts) AS last,
-                sum(delta_sec)::int AS total_sec
-         FROM watchtime_events WHERE username=$1 GROUP BY 1,2,3 ORDER BY 1,2,3`, [u]),
-      q(`SELECT session_id, channel, watch_sec, msgs, coins, follows, valid
-         FROM campaign_participation WHERE username=$1 ORDER BY session_id`, [u]),
-      q('SELECT session_id, team_id, reason, occurrences, first_seen, last_seen, detail FROM abuse_flags WHERE username=$1', [u]),
-      q(`SELECT id, ts, team_id, actor, action, result, detail FROM audit_log
-         WHERE target=$1 ORDER BY ts DESC LIMIT 500`, [u]),
-      q(`SELECT id, session_id, winner, winner_coins, drawn_at, is_test FROM giveaway_draws
-         WHERE winner=$1 ORDER BY drawn_at DESC`, [u]),
-      q(`SELECT DISTINCT team_id FROM watchtime_events WHERE username=$1`, [u]),
-    ]);
-    res.json({ username: u, found: !!(user.length || events.length || participation.length || audit.length || draws.length),
-               user: user[0] || null, teams: teams.map(t => t.team_id),
-               watchtimeEvents: events, participation, abuseFlags: flags,
-               auditEntries: audit, draws });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/gdpr/subject/:username/delete', async (req, res) => {
-  const sess = requireSuperadmin(req, res); if (!sess) return;
-  const u = sanitizeViewer(req.params.username);
-  if (!u) return res.status(400).json({ error: 'Ungültiger Benutzername' });
-  if (String((req.body && req.body.confirm) || '') !== u) {
-    return res.status(400).json({ error: 'Zur Bestätigung den Benutzernamen wiederholen' });
+    await pg.query(
+      `INSERT INTO audit_log (team_id, actor, action, target, result, detail)
+       VALUES (NULL,$1,$2,$3,$4,$5)`,
+      [actor, action, target, result || 'ok', JSON.stringify(detail || {})]);
+  } catch (e) {
+    logErr('Audit', `WRITE FAILED action=${action} actor=${actor}: ${e.message}`);
   }
+}
+
+// Alles, was zu einer Person gespeichert ist - Grundlage fuer Art. 15 DSGVO.
+async function collectSubjectData(u) {
+  const q = (sql, p) => pg.query(sql, p).then(r => r.rows).catch(() => []);
+  const [user, events, participation, flags, audit, draws, teams, tos] = await Promise.all([
+    q('SELECT username, display, last_seen FROM users WHERE username=$1', [u]),
+    q(`SELECT team_id, channel, event_type, count(*)::int AS n, min(ts) AS first, max(ts) AS last,
+              sum(delta_sec)::int AS total_sec
+       FROM watchtime_events WHERE username=$1 GROUP BY 1,2,3 ORDER BY 1,2,3`, [u]),
+    q(`SELECT session_id, channel, watch_sec, msgs, coins, follows, valid
+       FROM campaign_participation WHERE username=$1 ORDER BY session_id`, [u]),
+    q('SELECT session_id, team_id, reason, occurrences, first_seen, last_seen, detail FROM abuse_flags WHERE username=$1', [u]),
+    q(`SELECT id, ts, team_id, actor, action, result, detail FROM audit_log
+       WHERE target=$1 ORDER BY ts DESC LIMIT 500`, [u]),
+    q(`SELECT id, session_id, winner, winner_coins, drawn_at, is_test FROM giveaway_draws
+       WHERE winner=$1 ORDER BY drawn_at DESC`, [u]),
+    q(`SELECT DISTINCT team_id FROM watchtime_events WHERE username=$1`, [u]),
+    q('SELECT version, accepted_at FROM tos_acceptances WHERE login=$1 ORDER BY version', [u]),
+  ]);
+  return {
+    username: u,
+    found: !!(user.length || events.length || participation.length || audit.length || draws.length || tos.length),
+    user: user[0] || null, teams: teams.map(t => t.team_id),
+    watchtimeEvents: events, participation, abuseFlags: flags,
+    auditEntries: audit, draws, tosAcceptances: tos,
+  };
+}
+
+// Loeschung nach Art. 17. Teilnahmedaten verschwinden; Ziehungsprotokolle und
+// Verwaltungsprotokoll werden pseudonymisiert - sie belegen, dass korrekt
+// gezogen wurde, und duerfen dafuer nach Art. 17 Abs. 3 lit. e DSGVO bleiben.
+async function eraseSubject(u, actor, action) {
   const client = await pg.connect();
   try {
     await client.query('BEGIN');
@@ -582,10 +595,24 @@ app.post('/api/gdpr/subject/:username/delete', async (req, res) => {
       try { done[key] = (await client.query(sql, [u])).rowCount; }
       catch (e) { done[key] = 'Fehler: ' + e.message; }
     }
-    // Ziehungsprotokolle werden NICHT geloescht, sondern pseudonymisiert:
-    // sie belegen, dass korrekt gezogen wurde (Art. 17 Abs. 3 lit. e DSGVO).
-    // Der Name verschwindet, der Nachweis bleibt.
-    const pseudo = 'geloescht_' + require('crypto').createHash('sha256').update(u).digest('hex').slice(0, 8);
+    // Konto und Zustimmung nur entfernen, wenn die Person kein Team fuehrt.
+    // Bei einem Veranstalter waere die Zustimmung zu den Nutzungsbedingungen
+    // Beweismittel fuer ein laufendes Giveaway und der Login noetig, um es zu
+    // verwalten - beides darf eine Loeschung nicht unter dem Team wegziehen.
+    const ownsTeams = await client.query('SELECT 1 FROM teams WHERE owner_login=$1 LIMIT 1', [u]);
+    if (!ownsTeams.rowCount) {
+      for (const [key, sql] of [
+        ['team_members',    'DELETE FROM team_members WHERE login=$1'],
+        ['tos_acceptances', 'DELETE FROM tos_acceptances WHERE login=$1'],
+        ['streamers',       'DELETE FROM streamers WHERE login=$1'],
+      ]) {
+        try { done[key] = (await client.query(sql, [u])).rowCount; }
+        catch (e) { done[key] = 'Fehler: ' + e.message; }
+      }
+    } else {
+      done.konto_behalten = 'Person führt ein Team — Login und Zustimmung bleiben';
+    }
+    const pseudo = 'geloescht_' + crypto.createHash('sha256').update(u).digest('hex').slice(0, 8);
     const dr = await client.query('UPDATE giveaway_draws SET winner=$2 WHERE winner=$1', [u, pseudo]);
     done.giveaway_draws_pseudonymisiert = dr.rowCount;
     const sn = await client.query(
@@ -597,14 +624,95 @@ app.post('/api/gdpr/subject/:username/delete', async (req, res) => {
 
     await client.query(
       `INSERT INTO audit_log (team_id, actor, action, target, result, detail)
-       VALUES (NULL, $1, 'gdpr_delete', $2, 'ok', $3)`,
-      [sess.user, pseudo, JSON.stringify(done)]);
+       VALUES (NULL, $1, $2, $3, 'ok', $4)`,
+      [actor === u ? pseudo : actor, action, pseudo, JSON.stringify(done)]);
     await client.query('COMMIT');
-    res.json({ ok: true, pseudonym: pseudo, deleted: done });
+    return { pseudonym: pseudo, deleted: done };
   } catch (e) {
     await client.query('ROLLBACK');
-    res.status(500).json({ error: e.message });
+    throw e;
   } finally { client.release(); }
+}
+
+// ── Selbstauskunft: eigene Daten einsehen und loeschen ────
+// Teilnehmer melden sich mit ihrem Twitch-Konto an und sehen ausschliesslich
+// ihren eigenen Datensatz. Die Identitaet ist damit durch Twitch belegt - was
+// eine Namensangabe allein nie waere.
+app.get('/api/me/data', async (req, res) => {
+  const s = requireSession(req, res); if (!s) return;
+  const u = sanitizeViewer(s.user);
+  if (!u) return res.status(400).json({ error: 'Ungültiger Benutzername' });
+  try {
+    const data = await collectSubjectData(u);
+    await auditGdpr(u, 'gdpr_self_access', u, 'ok',
+      { rows: { watchtime: data.watchtimeEvents.length, participation: data.participation.length,
+                draws: data.draws.length, flags: data.abuseFlags.length } });
+    res.json(data);
+  } catch (e) {
+    await auditGdpr(u, 'gdpr_self_access', u, 'error', { message: e.message });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/me/delete', async (req, res) => {
+  const s = requireSession(req, res); if (!s) return;
+  const u = sanitizeViewer(s.user);
+  if (String((req.body && req.body.confirm) || '').toLowerCase() !== u) {
+    await auditGdpr(u, 'gdpr_self_delete', u, 'denied', { reason: 'confirm_mismatch' });
+    return res.status(400).json({ error: 'Zur Bestätigung den eigenen Benutzernamen wiederholen' });
+  }
+  try {
+    // Ein Team-Owner darf sich nicht wegloeschen, solange sein Team laeuft -
+    // sonst bleibt ein Giveaway ohne Veranstalter und ohne Impressum zurueck.
+    const owned = await pg.query(
+      `SELECT t.id, t.name FROM teams t WHERE t.owner_login=$1`, [u]);
+    if (owned.rowCount) {
+      await auditGdpr(u, 'gdpr_self_delete', u, 'denied',
+        { reason: 'owns_teams', teams: owned.rows.map(r => r.id) });
+      return res.status(409).json({
+        error: 'owns_teams',
+        message: 'Du bist Veranstalter von ' + owned.rows.map(r => r.name).join(', ')
+               + '. Übergib oder lösche das Team zuerst — sonst bliebe ein Giveaway '
+               + 'ohne Verantwortlichen zurück.',
+        teams: owned.rows });
+    }
+    const r = await eraseSubject(u, u, 'gdpr_self_delete');
+    res.json({ ok: true, ...r });
+  } catch (e) {
+    await auditGdpr(u, 'gdpr_self_delete', u, 'error', { message: e.message });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/gdpr/subject/:username', async (req, res) => {
+  const sess = requireSuperadmin(req, res); if (!sess) return;
+  const u = sanitizeViewer(req.params.username);
+  if (!u) return res.status(400).json({ error: 'Ungültiger Benutzername' });
+  try {
+    const data = await collectSubjectData(u);
+    await auditGdpr(sess.user, 'gdpr_access', u, 'ok', { found: data.found });
+    res.json(data);
+  } catch (e) {
+    await auditGdpr(sess.user, 'gdpr_access', u, 'error', { message: e.message });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/gdpr/subject/:username/delete', async (req, res) => {
+  const sess = requireSuperadmin(req, res); if (!sess) return;
+  const u = sanitizeViewer(req.params.username);
+  if (!u) return res.status(400).json({ error: 'Ungültiger Benutzername' });
+  if (String((req.body && req.body.confirm) || '') !== u) {
+    await auditGdpr(sess.user, 'gdpr_delete', u, 'denied', { reason: 'confirm_mismatch' });
+    return res.status(400).json({ error: 'Zur Bestätigung den Benutzernamen wiederholen' });
+  }
+  try {
+    const r = await eraseSubject(u, sess.user, 'gdpr_delete');
+    res.json({ ok: true, ...r });
+  } catch (e) {
+    await auditGdpr(sess.user, 'gdpr_delete', u, 'error', { message: e.message });
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── Public (kein Login): statische Anleitungen (md) ───────
