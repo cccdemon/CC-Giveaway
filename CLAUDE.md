@@ -13,6 +13,7 @@ keine Abhängigkeit zu Spacefight, Alerts, HUD-Chat, Gamescenes, Stats oder Haul
 ## Mechanik (Spec)
 - **Viewtime pro Zuschauer.** **Coin-Basis ist per-Team konfigurierbar** (Admin: „1 Coin = X Std Viewtime", Redis `cfgDrawMinSec`, Default 7200s = 2h, `SECS_PER_COIN` nur noch Fallback). Derselbe Wert ist auch die Lostopf-Schwelle: **im Lostopf ab ≥1 Coin**. `coinsFromSec(sec, baseSec)`, `getCoinBaseSec(teamId)`.
 - **Chat = selber Pott wie Viewtime.** Jede sinnvolle Nachricht mit **>3 Wörtern** = **+2s** Viewtime (`CHAT_BONUS_SEC=2`, `CHAT_MIN_WORDS=4`), Cooldown gegen Spam. Viewtime-Multiplier gilt auch hier (×2 → +4s).
+- **KI-Bewertung (optional, per Team):** `services/giveaway/chat-ai.js` ersetzt NUR die Wortzählung — Provider `anthropic|openai|gemini`, Modell + eigener API-Key pro Team (verschlüsselt in `app_secrets`, `encryptKey`/`decryptKey`). **fail-open**: Timeout (`TIMEOUT_MS=4000`) oder Fehler → zurück auf Wortregel, Chat blockiert nie. Antwort ist ein Wort (JA/NEIN), Cache pro (Provider, Modell, Nachricht). Keys nie loggen, nie exportieren, nie ins Audit.
 - **Viewtime-Multiplier:** Admin kann zeitlich begrenzt beschleunigen („nächste 15 min doppelte Viewtime", gilt auch für Chat) — time-boxed Faktor auf Tick + Chat-Bonus.
 - **Teilnahme:** Folge ≥2 der teilnehmenden Kanäle (konfigurierbar) + Viewtime + sinnvoller Chat. Lurken allein = keine Lose. Ab ≥1 Ticket per Keyword im Chat opt-in (= Zustimmung Teilnahmebedingungen).
 - **Ziehung:** Zufall gewichtet nach Ticketzahl. Gewinner 14 Tage Meldefrist, sonst Ersatz.
@@ -44,6 +45,7 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 - `services/bridge/server.js` — Streamerbot-Ingest + Redis-Router
 - `services/giveaway/server.js` — Giveaway REST + WS + Ticker
 - `services/giveaway/watchtime.js` — Coin/Ticket-Engine (testbar, ohne WS/HTTP)
+- `services/giveaway/chat-ai.js` — optionale KI-Chatbewertung + Key-Krypto
 - `services/giveaway/public/giveaway-shared.js` — Shared-Lib (`CC.validate`, Nav)
 - `services/giveaway/public/giveaway-admin.js` — Admin-Panel-Logik
 - `services/admin/server.js` — Login/OAuth, Teams, TOS-Gate, DSGVO, `PUB_DOCS`, Health
@@ -106,7 +108,16 @@ Caddy Login. Secrets (KI-API-Keys) verschlüsselt in `app_secrets`, nie in ENV/R
 - Details: `docs/RECHT-UND-DATENSCHUTZ.md`. Betrieb/DB-Eingriffe: `docs/BETRIEB.md`.
   Repo-Herkunft, Altbestände, Neuaufsetzen: `docs/PROJEKTHISTORIE.md`.
 
+## Docs
+`README.md` (Überblick/Stack) · `FEATURES.md` (was einstellbar ist, mit Defaults +
+Wertebereichen — Referenz bei Config-Fragen) · `docs/BETRIEB.md` ·
+`docs/RECHT-UND-DATENSCHUTZ.md` · `docs/PROJEKTHISTORIE.md` ·
+`docs/ANLEITUNG-TEILNEHMER.md` · `docs/TEILNAHMEBEDINGUNGEN.md` ·
+`streamerbot/CAMPAIGN_SETUP.md`.
+
 ## Konventionen
+- **Streamermodus** (`giveaway-admin.js`): maskiert Zuschauernamen + Ingest-Tokens im
+  Admin-Panel für Screenshare. Neue UI, die Namen oder Tokens zeigt, muss ihn beachten.
 - Deutsche UI. Admin-Pages laden `admin-shared.js` zuerst. OBS-Overlays laden es NICHT.
 - WS-Events `{event:'name',...}`; Admin-Cmds `{event:'gw_cmd',cmd}`. Neue Events/Cmds in `ALLOWED_EVENTS`/`ALLOWED_CMDS` (admin-shared.js + giveaway-shared.js).
 - `CC.validate` für alle Input-Sanitization. `sanitizeUsername(s)` konsistent C# ↔ JS (lowercase, [a-z0-9_], max 25).
@@ -115,10 +126,16 @@ Caddy Login. Secrets (KI-API-Keys) verschlüsselt in `app_secrets`, nie in ENV/R
 
 ## Dev
 ```bash
+cp .env.example .env                      # Twitch-Credentials
+docker compose up -d [--build]            # lokal HTTP (caddy/Caddyfile)
+
 # services/<name>/
-npm start · npm run dev (--watch) · npm test   # node --test, Redis DB 1
-docker compose up -d [--build]
+npm start · npm run dev (--watch)
+npm test                                  # node --test tests/*.test.js, Redis DB 1
+node --test tests/watchtime.test.js       # einzelne Datei
+node --test --test-name-pattern="coins"   # einzelner Test
 ```
+Tests nur in `giveaway` (`watchtime`, `chat-ai`) und `admin` (`auth`) — `bridge` hat kein `test`-Script.
 
 ## Response Rules
 - Terse. Kein Filler, keine „was ich geändert habe"-Zusammenfassung (Diff ist sichtbar).
