@@ -23,7 +23,9 @@
         # Everything except the login page, auth endpoints and health
         # requires a valid session cookie. On failure admin returns
         # 302 → /admin/login.html.
-        @needsauth not path / /admin/home.html /admin/login.html /admin/join.html /admin/setup.html /admin/auth/* /admin/pub/* /viewer/* /health /ingest* /giveaway/overlay-ws /giveaway/giveaway-overlay* /giveaway/giveaway-join*
+        # /admin/og-preview.png muss offen bleiben: Link-Vorschau-Crawler
+        # (Discord, WhatsApp, X) haben keine Session und wuerden sonst 302 bekommen.
+        @needsauth not path / /admin/home.html /admin/login.html /admin/join.html /admin/setup.html /admin/og-preview.png /admin/auth/* /admin/pub/* /viewer/* /health /ingest* /giveaway/overlay-ws /giveaway/giveaway-overlay* /giveaway/giveaway-join*
         forward_auth @needsauth admin:3005 {
             uri /auth/verify
             copy_headers X-Auth-User X-Auth-Role
