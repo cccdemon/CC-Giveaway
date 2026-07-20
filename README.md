@@ -37,6 +37,7 @@ cd services/<name> && npm test      # node --test, Redis DB 1
 ```
 
 ## Dokumentation
+- Funktionsüberblick: [FEATURES.md](FEATURES.md)
 - Konventionen, Architektur, Deploy: [CLAUDE.md](CLAUDE.md)
 - Streamerbot-Setup: [streamerbot/CAMPAIGN_SETUP.md](streamerbot/CAMPAIGN_SETUP.md)
 - Für Teilnehmer: [docs/ANLEITUNG-TEILNEHMER.md](docs/ANLEITUNG-TEILNEHMER.md) ·
