@@ -472,6 +472,87 @@ app.get('/api/teams/:id/terms/history', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Betroffenenrechte (DSGVO Art. 15 / 17) ────────────────
+// Der Plattformbetreiber muss Auskunfts- und Loeschverlangen beantworten
+// koennen, ohne in der Datenbank zu graben. Nur superadmin - hier laesst sich
+// jede zu einer Person gespeicherte Zeile einsehen.
+function sanitizeViewer(v) {
+  return String(v || '').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 25);
+}
+
+app.get('/api/gdpr/subject/:username', async (req, res) => {
+  if (!requireSuperadmin(req, res)) return;
+  const u = sanitizeViewer(req.params.username);
+  if (!u) return res.status(400).json({ error: 'Ungültiger Benutzername' });
+  try {
+    const q = (sql, p) => pg.query(sql, p).then(r => r.rows).catch(() => []);
+    const [user, events, participation, flags, audit, draws, teams] = await Promise.all([
+      q('SELECT username, display, last_seen FROM users WHERE username=$1', [u]),
+      q(`SELECT team_id, channel, event_type, count(*)::int AS n, min(ts) AS first, max(ts) AS last,
+                sum(delta_sec)::int AS total_sec
+         FROM watchtime_events WHERE username=$1 GROUP BY 1,2,3 ORDER BY 1,2,3`, [u]),
+      q(`SELECT session_id, channel, watch_sec, msgs, coins, follows, valid
+         FROM campaign_participation WHERE username=$1 ORDER BY session_id`, [u]),
+      q('SELECT session_id, team_id, reason, occurrences, first_seen, last_seen, detail FROM abuse_flags WHERE username=$1', [u]),
+      q(`SELECT id, ts, team_id, actor, action, result, detail FROM audit_log
+         WHERE target=$1 ORDER BY ts DESC LIMIT 500`, [u]),
+      q(`SELECT id, session_id, winner, winner_coins, drawn_at, is_test FROM giveaway_draws
+         WHERE winner=$1 ORDER BY drawn_at DESC`, [u]),
+      q(`SELECT DISTINCT team_id FROM watchtime_events WHERE username=$1`, [u]),
+    ]);
+    res.json({ username: u, found: !!(user.length || events.length || participation.length || audit.length || draws.length),
+               user: user[0] || null, teams: teams.map(t => t.team_id),
+               watchtimeEvents: events, participation, abuseFlags: flags,
+               auditEntries: audit, draws });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/gdpr/subject/:username/delete', async (req, res) => {
+  const sess = requireSuperadmin(req, res); if (!sess) return;
+  const u = sanitizeViewer(req.params.username);
+  if (!u) return res.status(400).json({ error: 'Ungültiger Benutzername' });
+  if (String((req.body && req.body.confirm) || '') !== u) {
+    return res.status(400).json({ error: 'Zur Bestätigung den Benutzernamen wiederholen' });
+  }
+  const client = await pg.connect();
+  try {
+    await client.query('BEGIN');
+    const done = {};
+    for (const [key, sql] of [
+      ['watchtime_events',       'DELETE FROM watchtime_events WHERE username=$1'],
+      ['campaign_participation', 'DELETE FROM campaign_participation WHERE username=$1'],
+      ['abuse_flags',            'DELETE FROM abuse_flags WHERE username=$1'],
+      ['session_participants',   'DELETE FROM session_participants WHERE username=$1'],
+      ['users',                  'DELETE FROM users WHERE username=$1'],
+    ]) {
+      try { done[key] = (await client.query(sql, [u])).rowCount; }
+      catch (e) { done[key] = 'Fehler: ' + e.message; }
+    }
+    // Ziehungsprotokolle werden NICHT geloescht, sondern pseudonymisiert:
+    // sie belegen, dass korrekt gezogen wurde (Art. 17 Abs. 3 lit. e DSGVO).
+    // Der Name verschwindet, der Nachweis bleibt.
+    const pseudo = 'geloescht_' + require('crypto').createHash('sha256').update(u).digest('hex').slice(0, 8);
+    const dr = await client.query('UPDATE giveaway_draws SET winner=$2 WHERE winner=$1', [u, pseudo]);
+    done.giveaway_draws_pseudonymisiert = dr.rowCount;
+    const sn = await client.query(
+      `UPDATE giveaway_draws SET eligible_snapshot = REPLACE(eligible_snapshot::text, $1, $2)::jsonb
+       WHERE eligible_snapshot::text LIKE '%' || $1 || '%'`, [u, pseudo]);
+    done.snapshots_pseudonymisiert = sn.rowCount;
+    const al = await client.query('UPDATE audit_log SET target=$2 WHERE target=$1', [u, pseudo]);
+    done.audit_log_pseudonymisiert = al.rowCount;
+
+    await client.query(
+      `INSERT INTO audit_log (team_id, actor, action, target, result, detail)
+       VALUES (NULL, $1, 'gdpr_delete', $2, 'ok', $3)`,
+      [sess.user, pseudo, JSON.stringify(done)]);
+    await client.query('COMMIT');
+    res.json({ ok: true, pseudonym: pseudo, deleted: done });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+});
+
 // ── Public (kein Login): statische Anleitungen (md) ───────
 const PUB_DOCS = { help: 'help.md', setup: 'setup.md', impressum: 'impressum.md', datenschutz: 'datenschutz.md' };
 app.get('/pub/doc/:name', (req, res) => {

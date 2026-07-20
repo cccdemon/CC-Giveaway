@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Team Giveaway – Betroffenenrechte</title>
+<link rel="stylesheet" href="chaos-crew-admin.css">
+<style>
+  .gwrap { max-width:960px; margin:24px auto; padding:0 16px; }
+  .panel { background:#0a0e16; border:1px solid rgba(0,212,255,0.2); border-radius:8px; padding:20px; margin-bottom:20px; }
+  .panel h2 { font-size:13px; letter-spacing:2px; color:#00d4ff; margin-bottom:6px; text-transform:uppercase; }
+  .panel .hint { font-size:12px; color:rgba(200,220,232,0.55); margin-bottom:14px; line-height:1.5; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .sec { margin-top:18px; }
+  .sec h3 { font-size:12px; letter-spacing:1px; color:#00d4ff; text-transform:uppercase; margin-bottom:6px; }
+  .sec .empty { font-size:12px; color:rgba(200,220,232,0.4); }
+  table.data { width:100%; border-collapse:collapse; font-size:12px; }
+  table.data th, table.data td { text-align:left; padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.06); vertical-align:top; }
+  table.data th { color:rgba(200,220,232,0.5); font-size:10px; letter-spacing:1px; text-transform:uppercase; }
+  .danger-box { border:1px solid rgba(255,77,106,0.45); background:rgba(255,77,106,0.06); border-radius:8px; padding:14px; margin-top:18px; }
+  .danger-box h3 { color:#ff4d6a; }
+  .msg { font-size:12px; margin-left:8px; } .msg.ok { color:#22e07a; } .msg.err { color:#ff4d6a; }
+  pre.out { background:#060a11; border:1px solid rgba(0,212,255,0.15); border-radius:6px; padding:10px; font-size:11px; max-height:260px; overflow:auto; }
+</style>
+</head>
+<body>
+<script src="admin-shared.js"></script>
+
+<div class="gwrap">
+  <div class="panel">
+    <h2>Betroffenenrechte — Auskunft &amp; Löschung</h2>
+    <div class="hint">
+      Hier beantwortest du Anfragen nach <b>Art. 15 DSGVO (Auskunft)</b> und
+      <b>Art. 17 DSGVO (Löschung)</b>. Gesucht wird der Twitch-Benutzername über alle
+      Teams hinweg. Prüfe vorher, ob die anfragende Person tatsächlich Inhaber des
+      Kontos ist — der Name allein ist kein Nachweis.
+    </div>
+    <div class="row">
+      <input type="text" id="q" placeholder="Twitch-Benutzername" style="flex:1;min-width:220px">
+      <button class="btn btn-cyan" onclick="lookup()">Suchen</button>
+      <span class="msg" id="msg"></span>
+    </div>
+  </div>
+
+  <div id="result"></div>
+</div>
+
+<script>
+var current = null;
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+  return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]; }); }
+function setMsg(t, ok) { var m = document.getElementById('msg'); m.textContent = t || ''; m.className = 'msg ' + (ok ? 'ok' : 'err'); }
+function fmt(v) {
+  if (v == null) return '—';
+  if (typeof v === 'object') return esc(JSON.stringify(v));
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v)) return esc(new Date(v).toLocaleString('de-DE'));
+  return esc(String(v));
+}
+
+function tableOf(rows) {
+  if (!rows || !rows.length) return '<div class="empty">Keine Einträge.</div>';
+  var cols = Object.keys(rows[0]);
+  return '<table class="data"><tr>' + cols.map(function(c){ return '<th>' + esc(c) + '</th>'; }).join('') + '</tr>'
+    + rows.map(function(r) {
+        return '<tr>' + cols.map(function(c){ return '<td>' + fmt(r[c]) + '</td>'; }).join('') + '</tr>';
+      }).join('') + '</table>';
+}
+
+async function lookup() {
+  var u = document.getElementById('q').value.trim().toLowerCase();
+  if (!u) { setMsg('Benutzername fehlt', false); return; }
+  setMsg('sucht …', true);
+  try {
+    var r = await fetch('/admin/api/gdpr/subject/' + encodeURIComponent(u));
+    if (r.status === 403) { setMsg('Nur für Superadmins', false); return; }
+    var d = await r.json();
+    if (d.error) { setMsg(d.error, false); return; }
+    current = d;
+    render(d);
+    setMsg(d.found ? 'Daten gefunden' : 'Zu diesem Namen sind keine Daten gespeichert', true);
+  } catch(e) { setMsg(e.message, false); }
+}
+
+function render(d) {
+  var host = document.getElementById('result');
+  if (!d.found) {
+    host.innerHTML = '<div class="panel"><h2>' + esc(d.username) + '</h2>'
+      + '<div class="hint">Zu diesem Benutzernamen sind keine Daten gespeichert. '
+      + 'Das ist die vollständige Auskunft nach Art. 15 DSGVO — sie kann so beantwortet werden.</div></div>';
+    return;
+  }
+  host.innerHTML = '<div class="panel">'
+    + '<h2>' + esc(d.username) + '</h2>'
+    + '<div class="hint">Teams: ' + (d.teams.length ? esc(d.teams.join(', ')) : '—') + '</div>'
+    + '<div class="row"><button class="btn btn-cyan" onclick="downloadJson()">Auskunft als JSON herunterladen</button></div>'
+    + sec('Stammdaten', d.user ? [d.user] : [])
+    + sec('Zuschauzeit-Ereignisse (aggregiert)', d.watchtimeEvents)
+    + sec('Teilnahme je Session', d.participation)
+    + sec('Auffälligkeiten', d.abuseFlags)
+    + sec('Gewinne', d.draws)
+    + sec('Verwaltungsprotokoll (als Ziel)', d.auditEntries)
+    + '<div class="danger-box">'
+    + '<h3>Löschung nach Art. 17 DSGVO</h3>'
+    + '<div class="hint">Teilnahmedaten, Auffälligkeiten und Stammdaten werden <b>gelöscht</b>. '
+    + 'Ziehungsprotokolle und das Verwaltungsprotokoll werden <b>pseudonymisiert</b>, nicht gelöscht: '
+    + 'sie belegen, dass korrekt gezogen wurde, und dürfen dafür nach Art. 17 Abs. 3 lit. e DSGVO '
+    + 'aufbewahrt werden. Der Name verschwindet, der Nachweis bleibt. Das lässt sich nicht rückgängig machen.</div>'
+    + '<div class="row"><input type="text" id="confirm" placeholder="Benutzername zur Bestätigung wiederholen" style="flex:1;min-width:240px">'
+    + '<button class="btn btn-red" onclick="doDelete()">Endgültig löschen</button>'
+    + '<span class="msg" id="dmsg"></span></div>'
+    + '<pre class="out" id="dout" style="display:none"></pre>'
+    + '</div></div>';
+}
+
+function sec(title, rows) {
+  return '<div class="sec"><h3>' + esc(title) + '</h3>' + tableOf(rows) + '</div>';
+}
+
+function downloadJson() {
+  if (!current) return;
+  var payload = JSON.parse(JSON.stringify(current));
+  payload.auskunftErstelltAm = new Date().toISOString();
+  var blob = new Blob([JSON.stringify(payload, null, 2)], { type:'application/json' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'auskunft_' + current.username + '.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+async function doDelete() {
+  var m = document.getElementById('dmsg');
+  var confirmVal = document.getElementById('confirm').value.trim().toLowerCase();
+  if (confirmVal !== current.username) { m.textContent = 'Bestätigung stimmt nicht'; m.className = 'msg err'; return; }
+  if (!confirm('Daten von „' + current.username + '" endgültig löschen bzw. pseudonymisieren?')) return;
+  m.textContent = 'läuft …'; m.className = 'msg ok';
+  try {
+    var r = await fetch('/admin/api/gdpr/subject/' + encodeURIComponent(current.username) + '/delete', {
+      method: 'POST', headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({ confirm: current.username }) });
+    var d = await r.json();
+    if (d.error) { m.textContent = d.error; m.className = 'msg err'; return; }
+    m.textContent = 'Erledigt — Pseudonym: ' + d.pseudonym; m.className = 'msg ok';
+    var out = document.getElementById('dout');
+    out.style.display = ''; out.textContent = JSON.stringify(d.deleted, null, 2);
+  } catch(e) { m.textContent = e.message; m.className = 'msg err'; }
+}
+
+document.getElementById('q').addEventListener('keydown', function(e) { if (e.key === 'Enter') lookup(); });
+</script>
+</body>
+</html>

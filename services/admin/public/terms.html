@@ -18,6 +18,9 @@
   .doc code { background:#060a11; padding:1px 5px; border-radius:4px; font-size:.9em; }
   .meta { color:var(--dim); font-size:13px; margin-bottom:16px; }
   .chips span { display:inline-block; background:rgba(0,212,255,0.1); color:var(--cyan); padding:2px 9px; border-radius:5px; font-size:12px; margin:2px 4px 2px 0; }
+  .doc table { border-collapse:collapse; width:100%; margin:.8em 0; font-size:13px; }
+  .doc th, .doc td { border:1px solid var(--line); padding:7px 10px; text-align:left; vertical-align:top; }
+  .doc th { color:var(--cyan); font-weight:600; background:rgba(0,212,255,0.05); }
   .err { color:#ff5468; }
 </style>
 </head>
@@ -37,6 +40,25 @@
       if(inCode){ out.push(esc(l)); continue; }
       var h=l.match(/^(#{1,4})\s+(.*)/);
       if(h){ cl(); var n=h[1].length; out.push('<h'+n+'>'+inline(h[2])+'</h'+n+'>'); continue; }
+      // Markdown-Tabellen: | a | b | mit Trennzeile |---|---|
+      if(/^\s*\|.*\|\s*$/.test(l)){
+        cl();
+        var rows=[];
+        while(i<lines.length && /^\s*\|.*\|\s*$/.test(lines[i])){
+          var cells=lines[i].trim().replace(/^\||\|$/g,'').split('|').map(function(c){return c.trim();});
+          if(!/^[\s:|-]+$/.test(lines[i])) rows.push(cells);   // Trennzeile ueberspringen
+          i++;
+        }
+        i--;
+        if(rows.length){
+          var head='<tr>'+rows[0].map(function(c){return '<th>'+inline(c)+'</th>';}).join('')+'</tr>';
+          var body=rows.slice(1).map(function(r){
+            return '<tr>'+r.map(function(c){return '<td>'+inline(c)+'</td>';}).join('')+'</tr>';
+          }).join('');
+          out.push('<table>'+head+body+'</table>');
+        }
+        continue;
+      }
       if(/^\s*[-*]\s+/.test(l)){ if(!inList){out.push('<ul>');inList=true;} out.push('<li>'+inline(l.replace(/^\s*[-*]\s+/,''))+'</li>'); continue; }
       if(/^\s*>\s?/.test(l)){ cl(); out.push('<blockquote>'+inline(l.replace(/^\s*>\s?/,''))+'</blockquote>'); continue; }
       if(/^\s*$/.test(l)){ cl(); continue; }

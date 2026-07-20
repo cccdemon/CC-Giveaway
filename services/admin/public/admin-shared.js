@@ -208,6 +208,7 @@
   var TOOLS = [
     { head:'Verwaltung' },
     { href:'/admin/users.html', label:'Benutzer', ic:'👥' },
+    { href:'/admin/datenschutz-admin.html', label:'Betroffenenrechte', ic:'🛡' },
     { href:'/viewer/help',      label:'Anleitung', ic:'📖' },
     { href:'/admin/setup.html', label:'Setup-Guide', ic:'⚙' },
     { head:'Diagnose' },
