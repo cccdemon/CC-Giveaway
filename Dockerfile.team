@@ -1,0 +1,12 @@
+# Caddy image with Cloudflare DNS plugin for team.raumdock.org (DNS-01 ACME).
+# The raumdock edge (LXC 101 nginx) does L4 SNI-passthrough on :443, so HTTP-01
+# is not reachable (port 80 is not routed to this stack). DNS-01 via Cloudflare
+# is the proven path on this infra (mirrors deploy/caddy-rdoc in RDOC-Suite).
+FROM caddy:2-builder-alpine AS builder
+RUN xcaddy build --with github.com/caddy-dns/cloudflare
+
+FROM caddy:2-alpine
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy
+# Caddyfile comes in via the compose volume mount (CADDY_CONFIG=Caddyfile.team),
+# this COPY is just a sane default if run without the mount.
+COPY caddy/Caddyfile.team /etc/caddy/Caddyfile

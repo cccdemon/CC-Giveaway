@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Streamerbot-Setup — Anleitung</title>
+<style>
+  :root{
+    --cyan:#00d4ff; --cyan-dim:rgba(0,212,255,.55); --gold:#f0a500; --green:#22e07a; --violet:#9146ff;
+    --bg:#04060a; --panel:#0a0e16; --sunk:#05080e; --txt:#cfe0ec; --dim:rgba(200,220,232,.55);
+    --line:rgba(0,212,255,.16); --line2:rgba(0,212,255,.3);
+    --mono:ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:
+      radial-gradient(1100px 460px at 82% -8%,rgba(0,212,255,.06),transparent 60%),
+      var(--bg);color:var(--txt);font-family:system-ui,'Segoe UI',sans-serif;line-height:1.6}
+  .wrap{max-width:800px;margin:0 auto;padding:34px 20px 20px}
+
+  .hero{text-align:center;margin-bottom:8px}
+  .hero .k{font-size:11px;letter-spacing:4px;color:var(--cyan-dim);text-transform:uppercase}
+  .hero h1{font-size:27px;color:#eaf6fc;margin:6px 0 3px;letter-spacing:-.3px}
+  .hero p{font-size:14px;color:var(--dim)}
+
+  .dlbar{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:18px 0 6px}
+  .bigbtn{display:inline-flex;align-items:center;gap:9px;background:var(--cyan);color:#04121a;
+    border:none;padding:13px 22px;border-radius:9px;font-weight:700;font-size:14px;cursor:pointer;
+    box-shadow:0 12px 30px -14px rgba(0,212,255,.7);transition:.14s;font-family:inherit}
+  .bigbtn:hover{background:#38dfff}
+  .bigbtn.ghost{background:transparent;color:var(--cyan);border:1px solid var(--line2);box-shadow:none}
+  .bigbtn.ghost:hover{background:rgba(0,212,255,.08)}
+
+  h2.sec{font-size:14px;color:var(--gold);letter-spacing:1.5px;text-transform:uppercase;margin:30px 4px 12px;
+    display:flex;align-items:center;gap:10px}
+  h2.sec .n{width:22px;height:22px;border-radius:50%;background:var(--gold);color:#1a1400;display:grid;
+    place-items:center;font-size:12px;font-weight:700;font-family:var(--mono)}
+
+  .card{background:linear-gradient(180deg,rgba(255,255,255,.012),transparent),var(--panel);
+    border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:12px}
+  .card .lbl{font-family:var(--mono);font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim);margin:10px 0 5px}
+  .card .lbl:first-child{margin-top:0}
+  .cf{display:flex;gap:7px;align-items:stretch}
+  .cf input{flex:1;min-width:0;background:var(--sunk);border:1px solid var(--line2);border-radius:6px;
+    color:var(--txt);font-family:var(--mono);font-size:12px;padding:8px 10px;outline:none}
+  .cf button,.copy{font-family:var(--mono);font-size:10px;letter-spacing:1px;cursor:pointer;color:var(--cyan);
+    background:transparent;border:1px solid var(--line2);border-radius:6px;padding:0 13px;transition:.12s}
+  .cf button:hover,.copy:hover{background:rgba(0,212,255,.1)}
+  .copy.ok,.cf button.ok{color:var(--green);border-color:var(--green)}
+  .hint{font-size:12px;color:var(--dim);margin-top:10px;padding-left:11px;border-left:2px solid var(--line2);line-height:1.55}
+  .hint b{color:#e6f4fb} .hint code{background:var(--sunk);border:1px solid var(--line);border-radius:3px;padding:1px 5px;color:var(--cyan);font-family:var(--mono);font-size:11px}
+  .toggles{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--dim);margin-top:10px}
+  .toggles b{color:var(--green)}
+
+  /* actions */
+  .act{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:12px;overflow:hidden}
+  .act-head{display:flex;align-items:center;gap:10px;padding:11px 15px;background:linear-gradient(180deg,#0b1119,#080c13);border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .act-name{font-family:var(--mono);font-size:13px;color:var(--cyan);letter-spacing:.5px}
+  .act-trig{font-family:var(--mono);font-size:10px;color:var(--gold);border:1px solid rgba(240,165,0,.3);border-radius:20px;padding:2px 10px}
+  .act-btns{margin-left:auto;display:flex;gap:6px}
+  .act pre{margin:0;padding:14px 16px;overflow:auto;font-family:var(--mono);font-size:12px;color:var(--txt);max-height:320px}
+  .err{color:#ff5468}
+  .proc{margin:8px 0 4px 20px;padding:0;display:flex;flex-direction:column;gap:11px;font-size:13.5px;color:var(--txt)}
+  .proc li{line-height:1.5}
+  .proc code{background:var(--sunk);border:1px solid var(--line);border-radius:3px;padding:1px 5px;color:var(--cyan);font-family:var(--mono);font-size:11.5px}
+  .proc a{color:var(--cyan)}
+  .pf{display:flex;align-items:center;gap:9px;margin-top:5px;font-family:var(--mono);font-size:12px}
+  .pf span{min-width:72px;color:var(--dim)} .pf b{color:var(--txt)}
+  .copy.mini{padding:2px 8px;font-size:9px}
+
+  /* markdown guide */
+  .doc{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:24px 28px;margin-top:8px}
+  .doc h1{font-size:20px;color:var(--cyan);margin:.2em 0 .5em} .doc h2{font-size:15px;color:var(--cyan);margin:1.3em 0 .4em}
+  .doc h3{font-size:14px;margin:1em 0 .3em} .doc p{margin:.5em 0} .doc ul{margin:.4em 0 .8em 1.2em} .doc li{margin:.2em 0}
+  .doc a{color:var(--cyan)} .doc b{color:#e6f4fb}
+  .doc blockquote{border-left:3px solid var(--cyan);margin:.8em 0;padding:.3em 0 .3em 14px;color:var(--dim);background:rgba(0,212,255,.04)}
+  .doc code{background:var(--sunk);padding:1px 5px;border-radius:4px;font-size:.9em;font-family:var(--mono)}
+  .doc pre{background:var(--sunk);padding:12px;border-radius:6px;overflow:auto;font-size:12px;font-family:var(--mono)}
+  .doc table{width:100%;border-collapse:collapse;margin:.6em 0} .doc td,.doc th{border:1px solid var(--line);padding:6px 9px;text-align:left;font-size:13px}
+  details{margin-top:20px}
+  summary{cursor:pointer;font-size:14px;color:var(--cyan-dim);letter-spacing:1px;padding:8px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hero">
+    <div class="k">Team Giveaway</div>
+    <h1>Streamerbot einrichten</h1>
+    <p>Verbinde deinen Kanal in 4 Schritten. Alles zum Kopieren oder als Download-Paket.</p>
+  </div>
+
+  <div class="dlbar">
+    <button class="bigbtn" id="dl-zip">⬇ Komplettpaket herunterladen (.zip)</button>
+  </div>
+  <div class="hint" style="max-width:560px;margin:0 auto 8px;text-align:left">Das .zip enthält alle C#-Actions, die WebSocket-Client-Werte und diese Anleitung als Textdatei. <b>Hinweis:</b> Streamerbot importiert kein natives Ein-Klick-Paket von uns (das interne Format ist undokumentiert) — die Actions fügst du als <code>Execute C# Code</code> ein (Copy-Buttons unten).</div>
+
+  <!-- 1. WebSocket Client -->
+  <h2 class="sec"><span class="n">1</span> WebSocket-Client</h2>
+  <div class="card">
+    <div class="lbl">Streamerbot → Tab <b>Servers/Clients</b> → <b>WebSocket Clients</b> → Add → Endpoint</div>
+    <div class="cf">
+      <input readonly value="wss://team.raumdock.org/ingest" onclick="this.select()">
+      <button onclick="cp('wss://team.raumdock.org/ingest',this)">COPY</button>
+    </div>
+    <div class="toggles"><span>Auto Connect <b>✅</b></span><span>Auto Reconnect <b>✅</b></span><span>TLS 1.2 <b>✅</b></span></div>
+    <div class="hint"><b>Kein</b> ws:// selbst tippen — volle URL einfügen (Schema kommt über TLS). Merk dir den Client-<b>Index</b> (erster = <code>0</code>, die Actions senden an 0).</div>
+  </div>
+
+  <!-- 2. Token als persistente Variable -->
+  <h2 class="sec"><span class="n">2</span> Kanal-Token als persistente Variable</h2>
+  <div class="card">
+    <div class="hint" style="margin-top:0;border:none;padding:0 0 2px">Der Token darf <b>nicht</b> im Klartext in einer Action stehen — er wird <b>einmalig</b> als persistente globale Variable hinterlegt. So in Streamerbot:</div>
+    <ol class="proc">
+      <li><b>Token holen:</b> <a href="/giveaway/giveaway-admin.html">GW ADMIN → STREAM-VERBINDUNGEN</a> → bei deinem Kanal <b>GENERIEREN</b> → den langen Token kopieren.</li>
+      <li><b>Neue Action</b> anlegen (Name egal, z.B. „CC – Set Token") — sie braucht <b>keinen</b> Trigger.</li>
+      <li><b>Sub-Action hinzufügen:</b> <code>Core → Global Variable → Set Global Variable</code>. Felder:
+        <div class="pf"><span>Variable</span><b>cc_ingest_token</b><button class="copy mini" onclick="cp('cc_ingest_token',this)">COPY</button></div>
+        <div class="pf"><span>Value</span><b>dein Token aus Schritt 1</b></div>
+        <div class="pf"><span>Persisted</span><b>✅ AN (Pflicht!)</b></div>
+      </li>
+      <li><b>Action einmal ausführen</b> — in Streamerbot Rechtsklick auf die Action → <b>Test Trigger</b> (oder ▶). Der Wert ist jetzt dauerhaft gespeichert; die Action kannst du danach löschen.</li>
+    </ol>
+    <div class="hint"><b>Persisted</b> ist zwingend: sonst ist die Variable nach Streamerbot-Neustart weg und <code>CC_IngestConnect</code> findet sie nicht → Kanal bleibt <b>Closed</b>.</div>
+  </div>
+
+  <!-- 3. Actions -->
+  <h2 class="sec"><span class="n">3</span> Actions + Trigger</h2>
+  <div class="hint" style="margin:0 0 12px">Pro Action: neue Action anlegen → Sub-Action <code>Core → C# → Execute C# Code</code> → Code einfügen → <b>Compile</b> → Reiter <b>Triggers</b> → den angegebenen Trigger zuordnen.</div>
+  <div id="actions"><div style="color:var(--dim);font-size:13px">lädt…</div></div>
+
+  <!-- 4. Test -->
+  <h2 class="sec"><span class="n">4</span> Test</h2>
+  <div class="card"><div class="hint" style="border:none;padding:0">
+    Servers/Clients → WebSocket Clients zeigt Status <b>Open</b> (grün) · Log zeigt <code>[CC] Ingest-Auth gesendet</code> · dein Kanal wird im GW ADMIN aktiv · <code>!los</code> im Chat → Bot antwortet.
+  </div></div>
+
+  <details>
+    <summary>▸ Ausführliche Anleitung anzeigen</summary>
+    <div class="doc" id="doc">lädt…</div>
+  </details>
+
+</div>
+
+<script>
+  var TRIGGERS = {
+    'CC_IngestConnect.cs': 'Core → WebSocket → Client → Opened',
+    'CC_ChatReply.cs':     'Core → WebSocket → Client → Message',
+    'GW_ViewerTick.cs':    'Twitch → General → Present Viewers',
+    'GW_ChatMessage.cs':   'Twitch → Chat → Message',
+    'GW_StatusCmd.cs':     'Command: !los (Aliase !status !zeit !chance !time)',
+    'GW_GiveawayCmd.cs':   'Command: !giveaway (Alias !gw)',
+    'GW_StreamOnline.cs':  'Twitch → Channel → Stream Online',
+    'GW_StreamOffline.cs': 'Twitch → Channel → Stream Offline'
+  };
+  var ACTIONS = [];   // filled from /pub/actions
+
+  function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  function cp(v,b){var d=function(){var o=b.textContent;b.textContent='✓';b.classList.add('ok');setTimeout(function(){b.textContent=o;b.classList.remove('ok');},1200);};
+    (navigator.clipboard?navigator.clipboard.writeText(v):Promise.reject()).then(d).catch(d);}
+  function dl(name,content,mime){var b=new Blob([content],{type:mime||'text/plain'});var a=document.createElement('a');
+    a.href=URL.createObjectURL(b);a.download=name;a.click();setTimeout(function(){URL.revokeObjectURL(a.href);},2000);}
+
+  // ── minimal stored (uncompressed) ZIP writer ──
+  var CRC=(function(){var t=[];for(var n=0;n<256;n++){var c=n;for(var k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
+  function crc32(u8){var c=0xFFFFFFFF;for(var i=0;i<u8.length;i++)c=CRC[(c^u8[i])&0xFF]^(c>>>8);return (c^0xFFFFFFFF)>>>0;}
+  function zip(files){ // files:[{name,data(Uint8Array)}]
+    var enc=new TextEncoder(),chunks=[],central=[],off=0;
+    function u16(v){return [v&255,(v>>>8)&255];} function u32(v){return [v&255,(v>>>8)&255,(v>>>16)&255,(v>>>24)&255];}
+    files.forEach(function(f){
+      var nm=enc.encode(f.name),cr=crc32(f.data),sz=f.data.length;
+      var lh=[].concat(u32(0x04034b50),u16(20),u16(0),u16(0),u16(0),u16(0),u32(cr),u32(sz),u32(sz),u16(nm.length),u16(0));
+      chunks.push(new Uint8Array(lh)); chunks.push(nm); chunks.push(f.data);
+      var ch=[].concat(u32(0x02014b50),u16(20),u16(20),u16(0),u16(0),u16(0),u16(0),u32(cr),u32(sz),u32(sz),u16(nm.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(off));
+      central.push({head:new Uint8Array(ch),name:nm}); off+=lh.length+nm.length+sz;
+    });
+    var cstart=off,csize=0,cchunks=[];
+    central.forEach(function(c){cchunks.push(c.head);cchunks.push(c.name);csize+=c.head.length+c.name.length;});
+    var eocd=[].concat(u32(0x06054b50),u16(0),u16(0),u16(files.length),u16(files.length),u32(csize),u32(cstart),u16(0));
+    var all=chunks.concat(cchunks,[new Uint8Array(eocd)]);
+    var total=all.reduce(function(s,a){return s+a.length;},0),out=new Uint8Array(total),p=0;
+    all.forEach(function(a){out.set(a,p);p+=a.length;});
+    return out;
+  }
+
+  document.getElementById('dl-zip').addEventListener('click',function(){
+    if(!ACTIONS.length){alert('Actions noch nicht geladen.');return;}
+    var enc=new TextEncoder();
+    var readme='TEAM GIVEAWAY - STREAMERBOT SETUP\n'+
+      '==================================\n\n'+
+      '1) WebSocket Client (Tab Servers/Clients > WebSocket Clients > Add)\n'+
+      '   URL: wss://team.raumdock.org/ingest\n'+
+      '   Auto Connect: an  |  Auto Reconnect: an  |  TLS 1.2: an\n'+
+      '   Client-Index = 0 (Actions senden an 0)\n\n'+
+      '2) Globale Variable (Set Global Variable, Persisted!)\n'+
+      '   Name:  cc_ingest_token\n'+
+      '   Value: <dein Token aus GW ADMIN > STREAM-VERBINDUNGEN>\n\n'+
+      '3) Actions als "Execute C# Code" einfuegen, dann Trigger zuordnen:\n'+
+      ACTIONS.map(function(a){return '   - '+a.name+'  ->  '+(TRIGGERS[a.name]||'(siehe Anleitung)');}).join('\n')+'\n\n'+
+      '4) Test: WebSocket Client = Connected, Log zeigt "[CC] Ingest-Auth gesendet".\n';
+    var files=[{name:'SETUP.txt',data:enc.encode(readme)}];
+    ACTIONS.forEach(function(a){files.push({name:'actions/'+a.name,data:enc.encode(a.code)});});
+    dl('team-giveaway-streamerbot.zip', zip(files), 'application/zip');
+  });
+
+  // markdown guide (details)
+  function inline(s){return esc(s).replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');}
+  function mdToHtml(md){
+    var lines=String(md).split(/\r?\n/),out=[],inList=false,inCode=false,inTable=false;
+    function cl(){if(inList){out.push('</ul>');inList=false;}} function ct(){if(inTable){out.push('</table>');inTable=false;}}
+    for(var i=0;i<lines.length;i++){var l=lines[i];
+      if(/^```/.test(l)){cl();ct();if(inCode){out.push('</pre>');inCode=false;}else{out.push('<pre>');inCode=true;}continue;}
+      if(inCode){out.push(esc(l));continue;}
+      if(/^\s*\|/.test(l)){ if(/^\s*\|[\s:|-]+\|?\s*$/.test(l))continue; cl(); if(!inTable){out.push('<table>');inTable=true;}
+        var cells=l.replace(/^\s*\||\|\s*$/g,'').split('|'); out.push('<tr>'+cells.map(function(c){return '<td>'+inline(c.trim())+'</td>';}).join('')+'</tr>'); continue; }
+      ct();
+      var h=l.match(/^(#{1,4})\s+(.*)/); if(h){cl();var n=h[1].length;out.push('<h'+n+'>'+inline(h[2])+'</h'+n+'>');continue;}
+      if(/^\s*[-*]\s+/.test(l)){if(!inList){out.push('<ul>');inList=true;}out.push('<li>'+inline(l.replace(/^\s*[-*]\s+/,''))+'</li>');continue;}
+      if(/^\s*\d+\.\s+/.test(l)){if(!inList){out.push('<ul>');inList=true;}out.push('<li>'+inline(l.replace(/^\s*\d+\.\s+/,''))+'</li>');continue;}
+      if(/^\s*>\s?/.test(l)){cl();out.push('<blockquote>'+inline(l.replace(/^\s*>\s?/,''))+'</blockquote>');continue;}
+      if(/^\s*$/.test(l)){cl();continue;} cl();out.push('<p>'+inline(l)+'</p>');
+    }
+    cl();ct();if(inCode)out.push('</pre>');return out.join('\n');
+  }
+  fetch('/admin/pub/doc/setup').then(function(r){return r.json();}).then(function(d){
+    document.getElementById('doc').innerHTML=d.content?mdToHtml(d.content):'<span class="err">Nicht verfügbar.</span>';
+  }).catch(function(){document.getElementById('doc').innerHTML='<span class="err">Ladefehler.</span>';});
+
+  // actions with trigger + copy + download
+  fetch('/admin/pub/actions').then(function(r){return r.json();}).then(function(list){
+    ACTIONS = Array.isArray(list)?list:[];
+    var host=document.getElementById('actions');
+    if(!ACTIONS.length){host.innerHTML='<div class="err">Actions nicht verfügbar.</div>';return;}
+    host.innerHTML=ACTIONS.map(function(a,i){
+      var trig=TRIGGERS[a.name]||'';
+      return '<div class="act"><div class="act-head"><span class="act-name">'+esc(a.name)+'</span>'
+        +(trig?'<span class="act-trig">'+esc(trig)+'</span>':'')
+        +'<span class="act-btns"><button class="copy" data-i="'+i+'">Code kopieren</button>'
+        +'<button class="copy" data-dl="'+i+'">.cs</button></span></div>'
+        +'<pre id="code'+i+'">'+esc(a.code)+'</pre></div>';
+    }).join('');
+    Array.prototype.forEach.call(host.querySelectorAll('button[data-i]'),function(b){
+      b.addEventListener('click',function(){cp(ACTIONS[b.getAttribute('data-i')].code,b);});
+    });
+    Array.prototype.forEach.call(host.querySelectorAll('button[data-dl]'),function(b){
+      b.addEventListener('click',function(){var a=ACTIONS[b.getAttribute('data-dl')];dl(a.name,a.code,'text/plain');});
+    });
+  }).catch(function(){document.getElementById('actions').innerHTML='<div class="err">Actions-Ladefehler.</div>';});
+</script>
+</body>
+</html>

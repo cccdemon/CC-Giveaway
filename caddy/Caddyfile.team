@@ -1,0 +1,93 @@
+{
+    admin off
+    # Edge (LXC 101 nginx) does L4 SNI-passthrough; TLS terminates HERE.
+    # No inbound :80 → Cloudflare DNS-01 (needs CF_API_TOKEN + the
+    # caddy-dns/cloudflare plugin baked into Dockerfile.team).
+    auto_https disable_redirects
+    acme_dns cloudflare {env.CF_API_TOKEN}
+}
+
+{$DOMAIN} {
+
+    header {
+        Access-Control-Allow-Origin *
+        Access-Control-Allow-Methods "GET, POST, OPTIONS"
+        X-Frame-Options SAMEORIGIN
+        Strict-Transport-Security "max-age=31536000"
+        Cache-Control "no-cache, must-revalidate"
+        -Server
+    }
+
+    route {
+        # ── Auth gate (central forward_auth → admin) ──────────
+        # Everything except the login page, auth endpoints and health
+        # requires a valid session cookie. On failure admin returns
+        # 302 → /admin/login.html.
+        @needsauth not path / /admin/home.html /admin/login.html /admin/join.html /admin/setup.html /admin/auth/* /admin/pub/* /viewer/* /health /ingest* /giveaway/overlay-ws /giveaway/giveaway-overlay* /giveaway/giveaway-join*
+        forward_auth @needsauth admin:3005 {
+            uri /auth/verify
+            copy_headers X-Auth-User X-Auth-Role
+        }
+
+        # ── Giveaway Service (REST + WS /giveaway/ws) ─────────
+        handle /giveaway/* {
+            uri strip_prefix /giveaway
+            reverse_proxy giveaway:3001
+        }
+
+        # ── Viewer (public: status, terms, help) ─────────────
+        handle /viewer/status {
+            rewrite * /status.html
+            reverse_proxy admin:3005
+        }
+        handle /viewer/terms {
+            rewrite * /terms.html
+            reverse_proxy admin:3005
+        }
+        handle /viewer/help {
+            rewrite * /help.html
+            reverse_proxy admin:3005
+        }
+
+        # ── Admin (login, user management, health, pages) ─────
+        handle /admin/* {
+            uri strip_prefix /admin
+            reverse_proxy admin:3005
+        }
+
+        # ── Bridge health (internal use only) ─────────────────
+        handle /bridge/* {
+            uri strip_prefix /bridge
+            reverse_proxy bridge:3000
+        }
+
+        # ── Ingest WS (Phase 3: Streamerbots connect IN) ──────
+        handle /ingest* {
+            uri strip_prefix /ingest
+            reverse_proxy bridge:3000
+        }
+
+        # ── Aggregated health (public) ────────────────────────
+        handle /health {
+            reverse_proxy admin:3005
+        }
+
+        # ── Redis UI ──────────────────────────────────────────
+        handle /redis-ui/* {
+            uri strip_prefix /redis-ui
+            reverse_proxy redis-ui:8081
+        }
+
+        # ── Root → public landing page (served in place at /) ─
+        handle / {
+            rewrite * /home.html
+            reverse_proxy admin:3005
+        }
+    }
+
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+}

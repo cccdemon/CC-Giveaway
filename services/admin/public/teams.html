@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Team Giveaway – Meine Teams</title>
+<link rel="stylesheet" href="chaos-crew-admin.css">
+<style>
+  .tw { max-width: 860px; margin: 24px auto; padding: 0 16px; }
+  .panel { background:#0a0e16; border:1px solid rgba(0,212,255,0.2); border-radius:8px; padding:20px; margin-bottom:18px; }
+  .panel h2 { font-size:13px; letter-spacing:2px; color:#00d4ff; margin-bottom:14px; text-transform:uppercase; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  input { background:#060a11; border:1px solid rgba(0,212,255,0.25); color:#c8dce8; padding:9px 10px; border-radius:6px; font-size:13px; outline:none; }
+  button { background:#00d4ff; color:#02121a; border:none; padding:9px 15px; border-radius:6px; font-weight:700; cursor:pointer; letter-spacing:.5px; }
+  button.ghost { background:transparent; border:1px solid rgba(0,212,255,0.4); color:#00d4ff; }
+  button.danger { background:transparent; border:1px solid #ff5468; color:#ff5468; padding:4px 10px; font-size:12px; }
+  .team { border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:14px; margin:12px 0; }
+  .team-head { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .team-name { font-size:15px; font-weight:700; }
+  .badge { font-size:10px; padding:2px 7px; border-radius:4px; background:rgba(240,165,0,0.15); color:#f0a500; letter-spacing:1px; }
+  .members { margin-top:10px; }
+  .member { display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px solid rgba(255,255,255,0.05); font-size:13px; }
+  .invite { display:flex; gap:8px; margin-top:10px; align-items:center; }
+  .invite input { flex:1; min-width:0; font-size:11px; }
+  .msg { font-size:12px; min-height:15px; margin-top:8px; }
+  .msg.ok { color:#4ee39a; } .msg.err { color:#ff5468; }
+  .muted { opacity:.55; }
+</style>
+</head>
+<body>
+<script src="admin-shared.js"></script>
+<div class="tw">
+
+  <div class="panel">
+    <h2>Team gründen</h2>
+    <div class="row">
+      <input id="new-name" placeholder="Teamname" style="flex:1;min-width:180px;">
+      <button onclick="createTeam()">Team + Giveaway anlegen</button>
+    </div>
+    <div class="msg" id="create-msg"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Einem Team beitreten</h2>
+    <div class="row">
+      <input id="join-code" placeholder="Einladungscode" style="flex:1;min-width:180px;">
+      <button class="ghost" onclick="joinByCode()">Beitreten</button>
+    </div>
+    <div class="msg" id="join-msg"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Meine Teams</h2>
+    <div id="teams"><div class="muted">lädt…</div></div>
+  </div>
+
+</div>
+<script src="teams.js"></script>
+</body>
+</html>

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mein Giveaway-Status</title>
+<style>
+  :root{
+    --void:#04060a; --panel:#0a0e16; --sunk:#05080e;
+    --edge:rgba(0,212,255,.14); --edge2:rgba(0,212,255,.28);
+    --cyan:#00d4ff; --cyan-dim:rgba(0,212,255,.55);
+    --gold:#f0a500; --green:#22e07a; --violet:#9146ff;
+    --ink:#cfe0ec; --mute:rgba(200,220,232,.5); --faint:rgba(200,220,232,.28);
+    --disp:"Segoe UI Semibold","Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:
+      radial-gradient(120% 60% at 50% -5%,rgba(0,212,255,.07),transparent 60%),
+      radial-gradient(90% 50% at 100% 108%,rgba(145,70,255,.05),transparent 55%),
+      var(--void);
+    color:var(--ink);font-family:var(--mono);min-height:100vh;line-height:1.45}
+  .wrap{max-width:600px;margin:0 auto;padding:40px 20px 80px}
+  .head{text-align:center;margin-bottom:22px}
+  .kicker{font-size:10px;letter-spacing:4px;color:var(--cyan-dim);text-transform:uppercase}
+  h1{font-family:var(--disp);font-weight:700;font-size:clamp(24px,5vw,32px);margin:7px 0 4px;
+    color:#eaf6fc;letter-spacing:-.5px;text-wrap:balance}
+  .sub{font-size:13px;color:var(--mute)}
+  .who{text-align:center;font-size:13px;color:var(--mute);margin-bottom:18px}
+  .who b{color:#eaf6fc}
+  .who a{color:var(--cyan-dim);text-decoration:none;margin-left:6px}
+  .who a:hover{color:var(--cyan)}
+
+  .twwrap{text-align:center;padding:14px 0}
+  .twbtn{display:inline-flex;align-items:center;gap:9px;background:var(--violet);color:#fff;
+    padding:14px 26px;border-radius:9px;font-family:var(--disp);font-weight:700;font-size:15px;
+    letter-spacing:.3px;text-decoration:none;box-shadow:0 12px 30px -12px rgba(145,70,255,.7);transition:.14s}
+  .twbtn:hover{background:#a05cff}
+
+  .card{background:linear-gradient(180deg,rgba(255,255,255,.014),transparent),var(--panel);
+    border:1px solid var(--edge);border-radius:11px;padding:18px 20px;margin-bottom:14px}
+  .chead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:15px}
+  .tname{font-family:var(--disp);font-weight:700;font-size:19px;color:#eaf6fc}
+  .badge{font-size:10px;letter-spacing:1px;padding:5px 12px;border-radius:20px;border:1px solid}
+  .badge.in{color:var(--green);border-color:rgba(34,224,122,.4);background:rgba(34,224,122,.08)}
+  .badge.near{color:var(--gold);border-color:rgba(240,165,0,.4);background:rgba(240,165,0,.08)}
+  .badge.out{color:var(--mute);border-color:var(--edge)}
+  .badge.paused{color:var(--gold);border-color:rgba(240,165,0,.4);background:rgba(240,165,0,.08)}
+
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .stat{background:var(--sunk);border:1px solid var(--edge);border-radius:9px;padding:13px 12px;text-align:center}
+  .stat .v{font-family:var(--disp);font-weight:700;font-size:23px;color:#eaf6fc;
+    font-variant-numeric:tabular-nums;line-height:1.1}
+  .stat.chance .v{color:var(--gold)}
+  .stat .l{font-size:9px;letter-spacing:1.5px;color:var(--mute);text-transform:uppercase;margin-top:5px}
+
+  .prog{height:6px;border-radius:5px;background:var(--sunk);overflow:hidden;margin-top:15px;
+    border:1px solid var(--edge)}
+  .prog i{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green));
+    border-radius:5px;transition:width .5s ease}
+  .prog.near i{background:linear-gradient(90deg,var(--gold),var(--cyan))}
+
+  .hint{font-size:12px;color:var(--mute);margin-top:14px;line-height:1.55;
+    padding-left:11px;border-left:2px solid var(--edge2)}
+  .hint b{color:var(--ink)}
+  .empty,.err{color:var(--mute);font-size:14px;line-height:1.6;text-align:center;padding:20px 0}
+  .err{color:#ff5468}
+  @media(max-width:520px){.grid{grid-template-columns:1fr 1fr}.stat.chance{grid-column:span 2}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="kicker">Team Giveaway</div>
+    <h1>Mein Status</h1>
+    <div class="sub">Deine Zuschauzeit und Gewinnchance für alle Giveaways, an denen du teilnimmst.</div>
+  </div>
+  <div id="body"><div class="empty">lädt…</div></div>
+</div>
+<script>
+  var body = document.getElementById('body');
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  function fmtTime(sec){ sec=Math.round(sec||0); var h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60);
+    return h>0 ? h+'h '+m+'m' : m>0 ? m+'m' : (sec+'s'); }
+  function twitch(){ location.href='/admin/auth/twitch?next=/viewer/status'; }
+
+  function loginView(){
+    body.innerHTML = '<div class="empty">Melde dich mit Twitch an, um deinen Status zu sehen.</div>'
+      + '<div class="twwrap"><a class="twbtn" href="#" onclick="twitch();return false;">▶ Mit Twitch anmelden</a></div>';
+  }
+
+  function render(data){
+    var who = '<div class="who">Angemeldet als <b>'+esc(data.login)+'</b>'
+      + '<a href="#" onclick="logout();return false;">abmelden</a></div>';
+    if(!data.teams || !data.teams.length){
+      body.innerHTML = who + '<div class="empty">Du nimmst gerade an keinem Giveaway teil.<br>'
+        + 'Folge den Kanälen eines Teams, schau zu (zählt überall aufs gleiche Konto), schreib sinnvoll im Chat und aktiviere per Keyword.</div>';
+      return;
+    }
+    body.innerHTML = who + data.teams.map(card).join('');
+  }
+
+  function card(t){
+    var badge, cls;
+    if(t.paused){ badge='pausiert'; cls='paused'; }
+    else if(t.eligible){ badge='Im Lostopf ✅'; cls='in'; }
+    else if(t.registered){ badge='fast dabei'; cls='near'; }
+    else { badge='noch nicht dabei'; cls='out'; }
+    var chanceVal = t.eligible ? t.chance.toFixed(1)+'%' : '—';
+    var need = t.followMin!=null ? t.followMin : 2;
+    var kw  = need===1 ? 'Kanal' : 'Kanälen';
+    var qual = Math.max(0, Math.min(need, t.channelsQualified||0));
+    var pct = need>0 ? Math.round(qual/need*100) : 100;
+    var progCls = t.eligible ? '' : 'near';
+    var hint;
+    if(t.eligible) hint='Du bist im Lostopf. Mehr Zuschauzeit + sinnvoller Chat erhöhen deine Chance.';
+    else if(t.registered && (t.channelsQualified||0)<need) hint='Du folgst erst '+(t.channelsQualified||0)+' von '+need+' Kanälen — folge mind. '+need+' '+kw+'. (Gucken zählt überall aufs gleiche Konto.)';
+    else if(t.registered && t.drawMinSec>0 && (t.watchSec||0)<t.drawMinSec) hint='Fast! Noch '+fmtTime(t.drawMinSec-(t.watchSec||0))+' Zuschauzeit sammeln (zuschauen + sinnvoll chatten), dann bist du im Lostopf.';
+    else if(!t.registered) hint='Schreib das Keyword im Chat, um deine Teilnahme abzugeben.';
+    else hint='';
+    return '<div class="card"><div class="chead"><span class="tname">'+esc(t.name)+'</span>'
+      + '<span class="badge '+cls+'">'+badge+'</span></div>'
+      + '<div class="grid">'
+      + '<div class="stat"><div class="v">'+fmtTime(t.watchSec)+'</div><div class="l">Zuschauzeit</div></div>'
+      + '<div class="stat"><div class="v">'+qual+'/'+need+'</div><div class="l">gefolgt</div></div>'
+      + '<div class="stat chance"><div class="v">'+chanceVal+'</div><div class="l">Gewinnchance</div></div>'
+      + '</div>'
+      + '<div class="prog '+progCls+'"><i style="width:'+pct+'%"></i></div>'
+      + (hint?'<div class="hint">'+esc(hint)+'</div>':'') + '</div>';
+  }
+
+  function logout(){ fetch('/admin/auth/logout',{method:'POST'}).catch(function(){}).then(function(){ loginView(); }); }
+
+  (async function(){
+    try{
+      var me = await fetch('/admin/auth/me');
+      if(me.status===401){ loginView(); return; }
+      var st = await fetch('/giveaway/api/my-status');
+      if(st.status===401){ loginView(); return; }
+      var data = await st.json();
+      render(data);
+    }catch(e){ body.innerHTML='<div class="err">Ladefehler. Bitte später erneut.</div>'; }
+  })();
+</script>
+</body>
+</html>

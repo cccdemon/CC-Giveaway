@@ -1,0 +1,26 @@
+# Team-Giveaway deploy overlay for raumdock LXC 103 (10.10.10.99).
+#
+# Usage on the server:
+#   docker compose -f docker-compose.yml -f docker-compose.team.yml -p team up -d --build
+#
+# Edge chain: team.raumdock.org:443
+#   → LXC 101 nginx (L4 SNI-passthrough)
+#   → 10.10.10.99:9444  (this stack's Caddy, host-published)
+#   → cc-web (Caddy) terminates TLS via Cloudflare DNS-01, path-routes internally.
+#
+# Ports 80/443 on LXC 103 are already taken by rdoc-webrtc-caddy, hence :9444.
+services:
+  web:
+    build:
+      dockerfile: Dockerfile.team          # Caddy + cloudflare DNS plugin
+    ports: !override
+      - "9444:443"                          # host 9444 → container 443 (nginx SNI target)
+    environment:
+      CF_API_TOKEN: ${CF_API_TOKEN:?set CF_API_TOKEN in .env}
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      TZ: Europe/Berlin
+
+  # Keep the Redis UI off the public path (not routed by nginx; loopback only).
+  redis-ui:
+    ports: !override
+      - "127.0.0.1:8081:8081"

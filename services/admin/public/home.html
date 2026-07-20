@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Team Giveaway — Multi-Channel Community-Giveaway für Twitch-Teams</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap');
+  :root{
+    --void:#04060a; --panel:#0a0e16; --sunk:#05080e;
+    --edge:rgba(0,212,255,.14); --edge2:rgba(0,212,255,.32);
+    --cyan:#00d4ff; --gold:#f0a500; --green:#22e07a; --violet:#9146ff;
+    --ink:#dceaf3; --mute:rgba(200,220,232,.56); --faint:rgba(200,220,232,.3);
+    --mono:'Share Tech Mono',ui-monospace,Consolas,monospace;
+    --disp:'Rajdhani','Segoe UI Semibold',system-ui,sans-serif;
+    --body:'Segoe UI',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--void);color:var(--ink);font-family:var(--body);line-height:1.6;overflow-x:hidden}
+  a{color:inherit;text-decoration:none}
+  :focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+
+  .top{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:14px;padding:12px 22px;
+    background:rgba(4,6,10,.78);backdrop-filter:blur(10px);border-bottom:1px solid var(--edge)}
+  .logo{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:13px;letter-spacing:2px;color:var(--cyan)}
+  .logo b{color:var(--ink);font-weight:400}
+  .top .sp{flex:1}
+  .top a.ghost{font-family:var(--mono);font-size:11px;letter-spacing:1px;color:var(--mute);padding:8px 12px}
+  .top a.ghost:hover{color:var(--ink)}
+  .tw{display:inline-flex;align-items:center;gap:8px;background:var(--violet);color:#fff;font-weight:700;font-size:13px;padding:9px 16px;border-radius:8px;font-family:var(--body)}
+  .tw:hover{background:#a05cff}
+
+  .wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+
+  .hero{display:grid;grid-template-columns:1.05fr .95fr;gap:40px;align-items:center;padding:64px 0 40px}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:3px;text-transform:uppercase;display:inline-flex;align-items:center;gap:9px;color:var(--cyan);opacity:.85}
+  .eyebrow::before{content:'';width:22px;height:1px;background:var(--cyan)}
+  h1{font-family:var(--disp);font-weight:700;font-size:clamp(38px,6vw,62px);line-height:.98;letter-spacing:-.5px;margin:16px 0 14px;text-wrap:balance}
+  h1 .g{color:var(--gold)} h1 .c{color:var(--cyan)}
+  .lede{font-size:17px;color:var(--mute);max-width:30em;margin-bottom:26px}
+  .cta{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  .btn{display:inline-flex;align-items:center;gap:9px;font-weight:700;font-size:14px;padding:13px 20px;border-radius:9px;cursor:pointer;font-family:var(--body)}
+  .btn.tw{background:var(--violet);color:#fff;box-shadow:0 14px 34px -16px rgba(145,70,255,.75)}
+  .btn.tw:hover{background:#a05cff}
+  .btn.ghost{background:transparent;color:var(--cyan);border:1px solid var(--edge2)}
+  .btn.ghost:hover{background:rgba(0,212,255,.08)}
+  .micro{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:14px;letter-spacing:.5px}
+
+  .viz{background:linear-gradient(180deg,rgba(255,255,255,.015),transparent),var(--panel);border:1px solid var(--edge);border-radius:16px;padding:20px;position:relative;overflow:hidden}
+  .viz::before{content:'';position:absolute;inset:0;background:radial-gradient(400px 200px at 70% 0,rgba(0,212,255,.08),transparent 60%);pointer-events:none}
+  .viz-h{display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:9px;letter-spacing:2px;color:var(--faint);text-transform:uppercase;margin-bottom:16px}
+  .chan{margin:11px 0}
+  .chan-top{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;margin-bottom:5px}
+  .chan-top .nm{color:var(--ink)} .chan-top .vt{color:var(--cyan);font-variant-numeric:tabular-nums}
+  .bar{height:7px;border-radius:5px;background:var(--sunk);overflow:hidden;border:1px solid var(--edge)}
+  .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--cyan),#7fe9ff);border-radius:5px}
+  .pool{margin-top:20px;border-top:1px dashed var(--edge);padding-top:16px;display:flex;align-items:center;gap:16px}
+  .pool .lose{font-family:var(--disp);font-weight:700;font-size:46px;color:var(--gold);line-height:1;font-variant-numeric:tabular-nums;text-shadow:0 0 24px rgba(240,165,0,.35)}
+  .pool .lbl{font-family:var(--mono);font-size:10px;letter-spacing:1.5px;color:var(--mute);text-transform:uppercase}
+  .pool .conv{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--faint);text-align:right;line-height:1.5}
+  .spark{position:absolute;width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 10px var(--gold);opacity:0;pointer-events:none}
+
+  section{padding:46px 0}
+  .sec-label{font-family:var(--mono);font-size:10px;letter-spacing:3px;color:var(--cyan);text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:9px}
+  .sec-label::before{content:'';width:18px;height:1px;background:var(--cyan);opacity:.6}
+  h2{font-family:var(--disp);font-weight:700;font-size:clamp(26px,3.4vw,36px);letter-spacing:-.3px;margin-bottom:6px;text-wrap:balance}
+  .sec-sub{color:var(--mute);max-width:44em;margin-bottom:26px}
+
+  .forwho{background:linear-gradient(180deg,var(--panel),transparent);border-top:1px solid var(--edge);border-bottom:1px solid var(--edge)}
+  .forwho p{font-family:var(--disp);font-weight:600;font-size:clamp(20px,2.6vw,27px);color:var(--ink);max-width:24em;line-height:1.3}
+  .forwho p b{color:var(--cyan)} .forwho p em{color:var(--gold);font-style:normal}
+
+  .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .step{background:var(--panel);border:1px solid var(--edge);border-radius:12px;padding:18px 16px;position:relative}
+  .step .no{font-family:var(--mono);font-size:11px;color:var(--gold);letter-spacing:1px}
+  .step h3{font-family:var(--disp);font-weight:600;font-size:19px;margin:8px 0 6px}
+  .step p{font-size:13.5px;color:var(--mute)}
+  .step::after{content:'→';position:absolute;right:-11px;top:50%;transform:translateY(-50%);color:var(--faint);font-size:15px;z-index:2}
+  .step:last-child::after{display:none}
+
+  .feat{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .f{background:var(--panel);border:1px solid var(--edge);border-radius:12px;padding:18px 17px;transition:border-color .15s,transform .15s}
+  .f:hover{border-color:var(--edge2);transform:translateY(-2px)}
+  .f .ic{font-size:19px;margin-bottom:9px;display:block}
+  .f h3{font-family:var(--disp);font-weight:600;font-size:18px;margin-bottom:5px}
+  .f p{font-size:13px;color:var(--mute)}
+  .f .tag{font-family:var(--mono);font-size:9px;letter-spacing:1px;color:var(--gold);border:1px solid rgba(240,165,0,.3);border-radius:20px;padding:1px 8px;float:right}
+
+  .req{display:grid;grid-template-columns:1.2fr 1fr;gap:30px;align-items:start;background:linear-gradient(180deg,rgba(0,212,255,.03),transparent);border:1px solid var(--edge);border-radius:16px;padding:28px}
+  .req ul{list-style:none;display:flex;flex-direction:column;gap:14px}
+  .req li{display:flex;gap:12px;align-items:flex-start}
+  .req .rc{flex:0 0 28px;height:28px;border-radius:8px;display:grid;place-items:center;font-size:14px;background:var(--sunk);border:1px solid var(--edge2)}
+  .req .rt b{display:block;font-family:var(--disp);font-weight:600;font-size:16px;color:var(--ink)}
+  .req .rt span{font-size:13px;color:var(--mute)}
+  .req .aside{background:var(--sunk);border:1px solid var(--edge);border-radius:12px;padding:18px;font-size:13px;color:var(--mute)}
+  .req .aside b{color:var(--cyan);font-family:var(--mono);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;display:block;margin-bottom:8px}
+  .req .aside code{background:var(--void);border:1px solid var(--edge);border-radius:3px;padding:1px 5px;color:var(--cyan);font-family:var(--mono);font-size:11px}
+  .req .aside a{color:var(--cyan)}
+
+  .final{text-align:center;background:radial-gradient(600px 260px at 50% 0,rgba(145,70,255,.12),transparent 60%);border-top:1px solid var(--edge)}
+  .final h2{margin-bottom:10px}
+  .final p{color:var(--mute);margin-bottom:22px}
+
+  footer{border-top:1px solid var(--edge);padding:22px;text-align:center;font-family:var(--mono);font-size:10px;letter-spacing:1px;color:var(--faint)}
+  footer a{color:var(--mute)} footer a:hover{color:var(--cyan)}
+
+  @media(max-width:820px){
+    .hero{grid-template-columns:1fr;gap:26px}
+    .steps{grid-template-columns:1fr 1fr}.step::after{display:none}
+    .feat{grid-template-columns:1fr}
+    .req{grid-template-columns:1fr}
+    .top a.ghost{display:none}
+  }
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <a class="logo" href="/"><svg width="15" height="15" viewBox="0 0 12 12" fill="none"><path d="M6 1L11 5.5V11H8V8H4V11H1V5.5L6 1Z" stroke="#00d4ff" stroke-width="1.2"/></svg>CHAOS<b>CREW</b></a>
+  <div class="sp"></div>
+  <a class="ghost" href="#how">So funktioniert's</a>
+  <a class="ghost" href="#req">Voraussetzungen</a>
+  <a class="tw" id="nav-cta" href="/admin/auth/twitch?next=/admin/">▶ Mit Twitch anmelden</a>
+</div>
+
+<div class="wrap">
+  <div class="hero">
+    <div>
+      <span class="eyebrow">Multi-Channel Community-Giveaway</span>
+      <h1>Ein Giveaway.<br>Das <span class="c">ganze Team</span>.<br>Faire <span class="g">Lose</span>.</h1>
+      <p class="lede">Mehrere Twitch-Kanäle, ein gemeinsames Giveaway. Deine Community sammelt Zuschauzeit über alle Streams des Teams — verwandelt in gewichtete Lose. Keine Bots, keine Zufalls-Discords. Nachvollziehbar bis zur Ziehung.</p>
+      <div class="cta">
+        <a class="btn tw" id="hero-cta" href="/admin/auth/twitch?next=/admin/">▶ Mit Twitch anmelden</a>
+        <a class="btn ghost" href="#how">So funktioniert's</a>
+      </div>
+      <div class="micro">Kostenlos für Streamer-Teams · Login mit Twitch · kein Passwort</div>
+    </div>
+
+    <div class="viz" id="viz">
+      <div class="viz-h"><span>Live · Zuschauzeit sammeln</span><span>2 h = 1 Los</span></div>
+      <div class="chan"><div class="chan-top"><span class="nm">justcallmedeimos</span><span class="vt" data-vt>0:00</span></div><div class="bar"><i data-bar></i></div></div>
+      <div class="chan"><div class="chan-top"><span class="nm">jerichoramirez</span><span class="vt" data-vt>0:00</span></div><div class="bar"><i data-bar></i></div></div>
+      <div class="chan"><div class="chan-top"><span class="nm">x_jazzz_x</span><span class="vt" data-vt>0:00</span></div><div class="bar"><i data-bar></i></div></div>
+      <div class="pool">
+        <div class="lose" id="lose">47</div>
+        <div><div class="lbl">Lose im Topf</div></div>
+        <div class="conv">gewichtete<br>Ziehung</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<section class="forwho">
+  <div class="wrap">
+    <div class="sec-label">Für wen</div>
+    <p>Für <b>Twitch-Streamer die als Team</b> auftreten und nacheinander streamen — und ihre <em>treuen Zuschauer</em> über alle Kanäle hinweg belohnen wollen.</p>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <div class="sec-label">Ablauf</div>
+    <h2>Von der Zuschauzeit zur Ziehung</h2>
+    <p class="sec-sub">Vier Schritte — genau in dieser Reihenfolge. Jeder baut auf dem vorigen auf.</p>
+    <div class="steps">
+      <div class="step"><div class="no">01</div><h3>Sammeln</h3><p>Zuschauer bekommen Zuschauzeit auf jedem Kanal. 2 h = 1 Los. Sinnvoller Chat gibt Bonus.</p></div>
+      <div class="step"><div class="no">02</div><h3>Beitreten</h3><p>Ab dem ersten Los per Keyword im Chat teilnehmen — das ist zugleich die Zustimmung zu den Bedingungen.</p></div>
+      <div class="step"><div class="no">03</div><h3>Qualifizieren</h3><p>Mindestens 2 Team-Kanälen folgen. Vor der Ziehung per Twitch-Helix echt geprüft.</p></div>
+      <div class="step"><div class="no">04</div><h3>Ziehen</h3><p>Zufall gewichtet nach Losen. Voller Audit-Snapshot. 14 Tage Meldefrist, sonst Ersatz.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="sec-label">Was drin ist</div>
+    <h2>Alles für ein sauberes Giveaway</h2>
+    <p class="sec-sub">Ein Admin-Panel pro Team. Live-Steuerung, Overlays, volle Nachvollziehbarkeit.</p>
+    <div class="feat">
+      <div class="f"><span class="ic">📊</span><h3>Multi-Channel Viewtime</h3><p>Punkte pro Kanal, kanalübergreifend zusammengeführt. Wer überall dabei ist, hat mehr Chancen.</p></div>
+      <div class="f"><span class="ic">💬</span><h3>Chat zählt</h3><p>Jede sinnvolle Nachricht (&gt;3 Wörter) gibt Viewtime-Bonus. Spam-Cooldown inklusive.</p></div>
+      <div class="f"><span class="ic">⚡</span><h3>Viewtime-Boost <span class="tag">LIVE</span></h3><p>„Nächste 15 min doppelte Viewtime" — zeitlich begrenzter Multiplier auf Knopfdruck.</p></div>
+      <div class="f"><span class="ic">✅</span><h3>Follow-Verifizierung</h3><p>Echte Follows über Twitch-Helix vor der Ziehung. Divergenz zum Live-Gate wird geflaggt.</p></div>
+      <div class="f"><span class="ic">🛡️</span><h3>Anti-Abuse</h3><p>Duplikate, Highspeed-Spam, Ein-Wort, frische Fake-Accounts — erkannt und markiert.</p></div>
+      <div class="f"><span class="ic">🧾</span><h3>Nachvollziehbar</h3><p>Jede Los-Bewegung protokolliert, jede Ziehung mit reproduzierbarem Snapshot.</p></div>
+      <div class="f"><span class="ic">🎬</span><h3>OBS-Overlays</h3><p>Gewinner-Reveal und Join-Animation als Browser-Source — fertig zum Einbinden.</p></div>
+      <div class="f"><span class="ic">📝</span><h3>Eigene Bedingungen</h3><p>Teilnahmebedingungen pro Team editierbar, öffentlich einsehbar.</p></div>
+      <div class="f"><span class="ic">👥</span><h3>Teams per Invite</h3><p>Team gründen, Link teilen, Mit-Streamer treten per Twitch-Login bei.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="req">
+  <div class="wrap">
+    <div class="sec-label">Voraussetzungen</div>
+    <h2>Was du zum Start brauchst</h2>
+    <p class="sec-sub">Einmal pro Kanal einrichten. Danach läuft's von allein.</p>
+    <div class="req">
+      <ul>
+        <li><span class="rc">🟣</span><div class="rt"><b>Twitch-Account</b><span>Login für alle — Owner, Mit-Streamer und Zuschauer. Kein Passwort, kein Extra-Konto.</span></div></li>
+        <li><span class="rc">🤖</span><div class="rt"><b>Streamerbot pro Kanal</b><span>Ein WebSocket-Client + fertige C#-Actions (zum Download). Sendet Zuschauzeit &amp; Chat sicher ans Backend.</span></div></li>
+        <li><span class="rc">🎬</span><div class="rt"><b>OBS (optional)</b><span>Nur wenn du Gewinner-Overlay oder Join-Animation im Stream zeigen willst.</span></div></li>
+        <li><span class="rc">🔑</span><div class="rt"><b>Einmal-Login je Kanal-Owner</b><span>Erteilt den Follow-Lese-Scope, damit die Ziehung Follows verifizieren kann.</span></div></li>
+      </ul>
+      <div class="aside">
+        <b>Einrichtung</b>
+        Alles Nötige liegt fertig bereit: WebSocket-Endpoint <code>wss://…/ingest</code>, Kanal-Token per Klick, Actions als Copy oder <code>.zip</code>. <a href="/admin/setup.html">Geführte Anleitung →</a> — kein Coden nötig.
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="final">
+  <div class="wrap">
+    <div class="sec-label" style="justify-content:center">Loslegen</div>
+    <h2>Team gründen in 2 Minuten</h2>
+    <p>Mit Twitch anmelden, Team anlegen, Invite-Link teilen. Fertig.</p>
+    <a class="btn tw" id="final-cta" href="/admin/auth/twitch?next=/admin/" style="margin:0 auto">▶ Mit Twitch anmelden</a>
+  </div>
+</section>
+
+<footer>CHAOS CREW · TEAM GIVEAWAY · <a href="/admin/setup.html">Setup</a> · <a href="/viewer/help">Anleitung</a> · <a href="/viewer/status">Mein Status</a></footer>
+
+<script>
+  // Progressive: if already logged in, point CTAs at the dashboard.
+  fetch('/admin/auth/me').then(function(r){ return r.ok ? r.json() : null; }).then(function(u){
+    if(!u) return;
+    ['nav-cta','hero-cta','final-cta'].forEach(function(id){
+      var a=document.getElementById(id); if(!a) return;
+      a.href='/admin/'; a.textContent='Zum Dashboard →';
+    });
+  }).catch(function(){});
+
+  // Signature animation: channels accumulate viewtime -> tickets pool.
+  var bars=[].slice.call(document.querySelectorAll('[data-bar]'));
+  var vts=[].slice.call(document.querySelectorAll('[data-vt]'));
+  var prog=[0.15,0.62,0.38], speed=[0.9,1.5,1.2];
+  var lose=47, loseEl=document.getElementById('lose'), viz=document.getElementById('viz');
+  function fmt(p){var s=Math.floor(p*7200),h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h+':'+String(m).padStart(2,'0');}
+  function spark(bar){
+    var r=viz.getBoundingClientRect(),br=bar.getBoundingClientRect(),lr=loseEl.getBoundingClientRect();
+    var s=document.createElement('div');s.className='spark';viz.appendChild(s);
+    var x0=br.right-r.left,y0=br.top-r.top,x1=lr.left-r.left+18,y1=lr.top-r.top+20,t0=null;
+    function step(ts){if(!t0)t0=ts;var k=Math.min(1,(ts-t0)/620);
+      s.style.left=(x0+(x1-x0)*k)+'px';s.style.top=(y0+(y1-y0)*k)+'px';s.style.opacity=k<.1?k*10:(1-k);
+      if(k<1)requestAnimationFrame(step);else{s.remove();lose++;loseEl.textContent=lose;
+        loseEl.animate&&loseEl.animate([{transform:'scale(1.22)'},{transform:'scale(1)'}],{duration:280});}}
+    requestAnimationFrame(step);
+  }
+  var last=null;
+  function tick(now){if(last===null)last=now;var dt=(now-last)/1000;last=now;
+    for(var i=0;i<bars.length;i++){prog[i]+=dt*speed[i]*0.06;
+      if(prog[i]>=1){prog[i]-=1;spark(bars[i]);}
+      bars[i].style.width=(prog[i]*100)+'%';vts[i].textContent=fmt(prog[i]);}
+    requestAnimationFrame(tick);
+  }
+  if(!matchMedia('(prefers-reduced-motion:reduce)').matches){requestAnimationFrame(tick);}
+  else{bars.forEach(function(b,i){b.style.width=(prog[i]*100)+'%';vts[i].textContent=fmt(prog[i]);});}
+</script>
+</body>
+</html>

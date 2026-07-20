@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Team Giveaway – Login</title>
+<style>
+  :root { --cyan:#00d4ff; --bg:#04060a; --panel:#0a0e16; --line:rgba(0,212,255,0.25); --txt:#c8dce8; --dim:rgba(200,220,232,0.4); --red:#ff5468; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--txt); font-family:'Segoe UI',system-ui,sans-serif;
+         min-height:100vh; display:flex; align-items:center; justify-content:center;
+         background-image:radial-gradient(circle at 50% 0%, rgba(0,212,255,0.06), transparent 60%); }
+  .card { width:min(92vw,380px); background:var(--panel); border:1px solid var(--line);
+          border-radius:10px; padding:34px 30px; box-shadow:0 0 40px rgba(0,212,255,0.08); }
+  .logo { font-family:'Share Tech Mono',monospace; font-size:22px; letter-spacing:2px; text-align:center; margin-bottom:4px; }
+  .logo b { color:var(--cyan); }
+  .sub { text-align:center; font-size:11px; letter-spacing:2px; color:var(--dim); margin-bottom:26px; text-transform:uppercase; }
+  label { display:block; font-size:11px; letter-spacing:1px; color:var(--dim); margin:14px 0 6px; text-transform:uppercase; }
+  input { width:100%; background:#060a11; border:1px solid var(--line); color:var(--txt);
+          padding:11px 12px; border-radius:6px; font-size:14px; outline:none; }
+  input:focus { border-color:var(--cyan); box-shadow:0 0 0 2px rgba(0,212,255,0.15); }
+  button { width:100%; margin-top:22px; background:var(--cyan); color:#02121a; border:none;
+           padding:12px; border-radius:6px; font-weight:700; letter-spacing:1px; cursor:pointer; font-size:14px; }
+  button:disabled { opacity:.5; cursor:default; }
+  .err { margin-top:14px; color:var(--red); font-size:12px; text-align:center; min-height:16px; }
+</style>
+</head>
+<body>
+  <form class="card" id="loginForm" autocomplete="on">
+    <div class="logo">TEAM <b>//</b> GIVEAWAY</div>
+    <div class="sub">Control Center · Login</div>
+
+    <a href="/admin/auth/twitch" style="display:block;text-align:center;background:#9146FF;color:#fff;padding:12px;border-radius:6px;font-weight:700;letter-spacing:.5px;text-decoration:none;margin-bottom:6px;">Mit Twitch anmelden</a>
+    <div style="text-align:center;font-size:11px;color:var(--dim);margin:10px 0;">— oder —</div>
+
+    <label for="u">Benutzername</label>
+    <input id="u" name="username" autocomplete="username" autofocus required>
+    <label for="p">Passwort</label>
+    <input id="p" name="password" type="password" autocomplete="current-password" required>
+    <button id="btn" type="submit">ANMELDEN</button>
+    <div class="err" id="err"></div>
+  </form>
+  <a href="/" style="display:block;text-align:center;margin-top:14px;font-size:12px;color:var(--dim);text-decoration:none;letter-spacing:1px;">← Startseite</a>
+<script>
+  var f = document.getElementById('loginForm');
+  var err = document.getElementById('err');
+  var btn = document.getElementById('btn');
+  var ERRMAP = { state:'Sitzung abgelaufen, bitte erneut.', token:'Twitch-Login fehlgeschlagen.', profile:'Twitch-Profil nicht lesbar.', notadmin:'Kein Zugang für diesen Account.', server:'Serverfehler beim Login.' };
+  var qe = new URLSearchParams(location.search).get('err');
+  if (qe) err.textContent = ERRMAP[qe] || ('Fehler: ' + qe);
+  f.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    err.textContent = '';
+    btn.disabled = true;
+    try {
+      var r = await fetch('/admin/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: document.getElementById('u').value, password: document.getElementById('p').value })
+      });
+      if (r.ok) { window.location.href = '/admin/'; return; }
+      var d = await r.json().catch(function(){ return {}; });
+      err.textContent = d.error === 'invalid_credentials' ? 'Falscher Benutzername oder Passwort.' : ('Fehler: ' + (d.error || r.status));
+    } catch (ex) {
+      err.textContent = 'Verbindungsfehler.';
+    }
+    btn.disabled = false;
+  });
+</script>
+</body>
+</html>

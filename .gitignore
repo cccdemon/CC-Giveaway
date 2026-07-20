@@ -1,0 +1,4 @@
+.env
+node_modules/
+services/alerts/public/avatars/
+package-lock.json

@@ -1,0 +1,71 @@
+{
+    admin off
+}
+
+:80 {
+
+    # ── Giveaway Service ──────────────────────────────────
+    # REST + WebSocket (/giveaway/ws)
+    handle /giveaway/* {
+        uri strip_prefix /giveaway
+        reverse_proxy giveaway:3001
+    }
+
+    # ── Viewer (public: status, terms, help) ─────────────
+    handle /viewer/status {
+        rewrite * /status.html
+        reverse_proxy admin:3005
+    }
+    handle /viewer/terms {
+        rewrite * /terms.html
+        reverse_proxy admin:3005
+    }
+    handle /viewer/help {
+        rewrite * /help.html
+        reverse_proxy admin:3005
+    }
+
+    # ── Admin Dashboard ───────────────────────────────────
+    # Login + user management + aggregated health
+    handle /admin/* {
+        uri strip_prefix /admin
+        reverse_proxy admin:3005
+    }
+
+    # ── Bridge health (internal use only) ─────────────────
+    handle /bridge/* {
+        uri strip_prefix /bridge
+        reverse_proxy bridge:3000
+    }
+
+    # ── Aggregated health ─────────────────────────────────
+    handle /health {
+        reverse_proxy admin:3005
+    }
+
+    # ── Redis UI ──────────────────────────────────────────
+    handle /redis-ui/* {
+        uri strip_prefix /redis-ui
+        reverse_proxy redis-ui:8081
+    }
+
+    # ── Root → public landing page (served in place at /) ─
+    handle / {
+        rewrite * /home.html
+        reverse_proxy admin:3005
+    }
+
+    header {
+        Access-Control-Allow-Origin *
+        Access-Control-Allow-Methods "GET, POST, OPTIONS"
+        X-Frame-Options SAMEORIGIN
+        Cache-Control "no-cache, must-revalidate"
+        -Server
+    }
+
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+}

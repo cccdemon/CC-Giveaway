@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Chaos Crew – Giveaway Test Console</title>
+<link rel="stylesheet" href="chaos-crew-admin.css">
+</head>
+<body>
+<script src="admin-shared.js"></script>
+
+<div class="page-header">
+  <div class="page-title">CHAOS<span> //</span> <em>TEST</em> CONSOLE</div>
+  <div class="header-right">
+    <span id="status" class="badge off">OFFLINE</span>
+    <span style="font-family:'Share Tech Mono',monospace;font-size:9px;color:rgba(200,220,232,0.25);letter-spacing:1px;">/giveaway/ws</span>
+    <button class="btn btn-cyan btn-sm" onclick="reconnect()">VERBINDEN</button>
+    <button class="btn btn-red  btn-sm" onclick="disconnect()">TRENNEN</button>
+  </div>
+</div>
+
+<div class="test-layout">
+
+  <!-- ── Controls ─────────────────────────────────────── -->
+  <div class="test-controls">
+
+    <!-- Giveaway Control -->
+    <div class="test-section">
+      <div class="test-section-title">GIVEAWAY STEUERUNG</div>
+      <div class="test-section-body">
+        <div class="test-row">
+          <button class="btn btn-green btn-sm" onclick="send({event:'gw_cmd',cmd:'gw_open'})">ÖFFNEN</button>
+          <button class="btn btn-gold  btn-sm" onclick="send({event:'gw_cmd',cmd:'gw_close'})">SCHLIESSEN</button>
+          <button class="btn btn-cyan  btn-sm" onclick="send({event:'gw_get_all'})">DATEN LADEN</button>
+          <button class="btn btn-red   btn-sm" onclick="gwReset()">RESET</button>
+        </div>
+        <div class="test-row">
+          <span class="row-label">KEYWORD</span>
+          <input type="text" class="wide" id="kw-input" value="!mitmachen">
+          <button class="btn btn-cyan btn-sm" onclick="sendKeyword()">SETZEN</button>
+          <button class="btn btn-gold btn-sm" onclick="send({event:'gw_cmd',cmd:'gw_set_keyword',keyword:''})">LEEREN</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Viewer Tick -->
+    <div class="test-section">
+      <div class="test-section-title">VIEWER TICK SIMULIEREN</div>
+      <div class="test-section-body">
+        <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:rgba(200,220,232,0.3);letter-spacing:1px;">
+          Simuliert viewer_tick Events &rarr; +60s pro Tick
+        </div>
+        <div class="test-row">
+          <span class="row-label">USERNAME</span>
+          <input type="text" class="wide" id="tick-user" value="TestViewer">
+          <input type="text" class="small" id="tick-count" value="1" placeholder="Anzahl">
+        </div>
+        <div class="test-row">
+          <button class="btn btn-cyan btn-sm" onclick="simTicks()">TICKS SENDEN</button>
+          <button class="btn btn-gold btn-sm" onclick="simTicks120()">120 TICKS (2h)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chat Message -->
+    <div class="test-section">
+      <div class="test-section-title">CHAT-NACHRICHT SIMULIEREN</div>
+      <div class="test-section-body">
+        <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:rgba(200,220,232,0.3);letter-spacing:1px;">
+          Simuliert chat_msg &middot; min. 5 Wörter für Bonus &middot; Cooldown 10s
+        </div>
+        <div class="test-row">
+          <span class="row-label">USERNAME</span>
+          <input type="text" id="chat-user" value="TestViewer">
+        </div>
+        <div class="test-row">
+          <span class="row-label">NACHRICHT</span>
+          <input type="text" id="chat-msg" value="hallo wie geht es dir heute">
+        </div>
+        <div class="test-row">
+          <button class="btn btn-cyan btn-sm" onclick="simChatMsg()">SENDEN</button>
+          <button class="btn btn-gold btn-sm" onclick="simChatKeyword()">KEYWORD SENDEN</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tickets -->
+    <div class="test-section">
+      <div class="test-section-title">TICKETS MANUELL</div>
+      <div class="test-section-body">
+        <div class="test-row">
+          <span class="row-label">USERNAME</span>
+          <input type="text" class="wide" id="ticket-user" value="TestViewer">
+        </div>
+        <div class="test-row">
+          <button class="btn btn-cyan btn-sm" onclick="sendCmd('gw_add_ticket','ticket-user')">+1 TICKET</button>
+          <button class="btn btn-gold btn-sm" onclick="sendCmd('gw_sub_ticket','ticket-user')">-1 TICKET</button>
+          <button class="btn btn-red  btn-sm" onclick="sendCmd('gw_ban','ticket-user')">BAN</button>
+          <button class="btn btn-green btn-sm" onclick="sendCmd('gw_unban','ticket-user')">UNBAN</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Coin Calc -->
+    <div class="test-section">
+      <div class="test-section-title">COIN-RECHNER</div>
+      <div class="test-section-body">
+        <div class="test-row">
+          <span class="row-label">WATCHTIME</span>
+          <input type="text" class="small" id="calc-sec" value="3600" placeholder="Sekunden">
+          <span style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim);">s</span>
+          <button class="btn btn-gold btn-sm" onclick="calcCoins()">BERECHNEN</button>
+          <span id="calc-result"></span>
+        </div>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:rgba(200,220,232,0.28);letter-spacing:1px;">
+          7200s = 1 Coin &nbsp;|&nbsp; Chat-Bonus: +5s/Msg (min. 5 Wörter, 10s CD)
+        </div>
+      </div>
+    </div>
+
+    <!-- Overlays -->
+    <div class="test-section">
+      <div class="test-section-title">OVERLAYS TESTEN</div>
+      <div class="test-section-body">
+        <div class="test-row">
+          <span class="row-label">GEWINNER</span>
+          <input type="text" class="wide" id="ov-winner" value="TestViewer">
+          <button class="btn btn-green btn-sm" onclick="testWinner()">ANZEIGEN</button>
+          <button class="btn btn-red   btn-sm" onclick="send({event:'gw_overlay',winner:null})">LÖSCHEN</button>
+        </div>
+        <div class="test-row">
+          <span class="row-label">JOIN</span>
+          <input type="text" class="wide" id="join-user" value="TestViewer">
+          <button class="btn btn-cyan btn-sm" onclick="send({event:'gw_join',user:document.getElementById('join-user').value.trim()})">ANIMATION</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stream Sim -->
+    <div class="test-section">
+      <div class="test-section-title">STREAM SIMULATION</div>
+      <div class="test-section-body">
+        <div class="test-row">
+          <span class="row-label">USERS</span>
+          <input type="text" id="sim-users" value="JerichoRamirez,HEADWiG,jazZz,HolderDiePolder">
+        </div>
+        <div class="test-row">
+          <span class="row-label">TICKS/USER</span>
+          <input type="text" class="small" id="sim-ticks" value="5">
+          <button class="btn btn-green btn-sm" onclick="simStream()">NUR TICKS</button>
+          <button class="btn btn-cyan  btn-sm" onclick="simStreamWithChat()">TICKS + CHAT</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Manual JSON -->
+    <div class="test-section">
+      <div class="test-section-title">MANUELLES JSON</div>
+      <div class="test-section-body">
+        <textarea id="manual-json" rows="3">{"event":"gw_get_all"}</textarea>
+        <div class="test-row">
+          <button class="btn btn-cyan btn-sm" onclick="sendManual()">SENDEN</button>
+          <button class="btn btn-gold btn-sm" onclick="formatJson()">FORMAT</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Log ──────────────────────────────────────────── -->
+  <div class="test-log-panel">
+    <div class="test-log-head">
+      <span>EVENT LOG</span>
+      <span class="link-dim" onclick="clearLog()">CLEAR</span>
+    </div>
+    <div id="log"></div>
+  </div>
+
+</div>
+
+<script src="giveaway-test.js"></script>
+</body>
+</html>

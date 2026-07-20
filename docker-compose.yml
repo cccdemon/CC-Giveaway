@@ -1,0 +1,268 @@
+version: '2.4'
+
+# Giveaway-only fork (team.raumdock.org). Non-giveaway services
+# (spacefight, alerts, gamescenes, stats) were removed on this branch.
+services:
+
+  # ── PostgreSQL ────────────────────────────────────────────
+  postgres:
+    build:
+      context: ./postgres
+      dockerfile: Dockerfile
+    container_name: cc-postgres
+    privileged: true
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${PG_DB:-chaoscrew}
+      POSTGRES_USER:     ${PG_USER:-chaoscrew}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-changeme}
+      TZ: Europe/Berlin
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - chaos-crew
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-chaoscrew} -d ${PG_DB:-chaoscrew} -h 127.0.0.1 -p 5432"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # ── Redis ─────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: cc-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    volumes:
+      - redis_data:/data
+    networks:
+      - chaos-crew
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # ── Bridge ────────────────────────────────────────────────
+  # Streamerbot ingest → Redis Pub/Sub fan-out
+  bridge:
+    build:
+      context: ./services/bridge
+    container_name: cc-bridge
+    restart: unless-stopped
+    environment:
+      SB_HOST:    ${SB_HOST:-192.168.178.39}
+      SB_PORT:    ${SB_PORT:-9090}
+      PORT:       "3000"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB:   "0"
+      TZ: Europe/Berlin
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - chaos-crew
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # ── Giveaway ──────────────────────────────────────────────
+  # Watchtime engine, coin calculation, winner draw
+  giveaway:
+    build:
+      context: ./services/giveaway
+    container_name: cc-giveaway
+    restart: unless-stopped
+    environment:
+      PORT:       "3001"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB:   "0"
+      PG_HOST:    postgres
+      PG_PORT:    "5432"
+      PG_DB:      ${PG_DB:-chaoscrew}
+      PG_USER:    ${PG_USER:-chaoscrew}
+      PG_PASSWORD: ${PG_PASSWORD:-changeme}
+      TWITCH_CLIENT_ID:     ${TWITCH_CLIENT_ID:-}
+      TWITCH_CLIENT_SECRET: ${TWITCH_CLIENT_SECRET:-}
+      TZ: Europe/Berlin
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      bridge:
+        condition: service_started
+    networks:
+      - chaos-crew
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # ── Admin Dashboard ───────────────────────────────────────
+  # Login + user management + campaign admin + aggregated health
+  admin:
+    build:
+      context: ./services/admin
+    container_name: cc-admin
+    restart: unless-stopped
+    environment:
+      PORT:            "3005"
+      BRIDGE_URL:      "http://bridge:3000"
+      GIVEAWAY_URL:    "http://giveaway:3001"
+      PG_HOST:    postgres
+      PG_PORT:    "5432"
+      PG_DB:      ${PG_DB:-chaoscrew}
+      PG_USER:    ${PG_USER:-chaoscrew}
+      PG_PASSWORD: ${PG_PASSWORD:-changeme}
+      SESSION_SECRET:       ${SESSION_SECRET:-}
+      ADMIN_BOOTSTRAP_USER: ${ADMIN_BOOTSTRAP_USER:-admin}
+      ADMIN_BOOTSTRAP_PASS: ${ADMIN_BOOTSTRAP_PASS:-}
+      COOKIE_SECURE:        ${COOKIE_SECURE:-true}
+      TWITCH_CLIENT_ID:     ${TWITCH_CLIENT_ID:-}
+      TWITCH_CLIENT_SECRET: ${TWITCH_CLIENT_SECRET:-}
+      ADMIN_PUBLIC_URL:     ${ADMIN_PUBLIC_URL:-https://team.raumdock.org}
+      TZ: Europe/Berlin
+    depends_on:
+      giveaway:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    networks:
+      - chaos-crew
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3005/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # ── Caddy (reverse proxy) ─────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cc-web
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN-}
+      TZ: Europe/Berlin
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+      - ./caddy/${CADDY_CONFIG:-Caddyfile}:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - giveaway
+      - admin
+    networks:
+      - chaos-crew
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # ── Backup ────────────────────────────────────────────────
+  backup:
+    image: postgres:16-alpine
+    container_name: cc-backup
+    restart: unless-stopped
+    environment:
+      PG_HOST:    postgres
+      PG_PORT:    "5432"
+      PG_DB:      ${PG_DB:-chaoscrew}
+      PG_USER:    ${PG_USER:-chaoscrew}
+      PG_PASSWORD: ${PG_PASSWORD:-changeme}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      KEEP_DAYS:  "30"
+      TZ: Europe/Berlin
+    volumes:
+      - backup_data:/backups
+      - redis_data:/redis-data:ro
+      - ./backup/backup.sh:/backup.sh:ro
+    command: >
+      sh -c "
+        apk add --no-cache redis &&
+        echo '0 3 * * * sh /backup.sh >> /backups/backup.log 2>&1' | crontab - &&
+        crond -f
+      "
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - chaos-crew
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "2" }
+
+  # ── Redis Commander ───────────────────────────────────────
+  redis-ui:
+    image: rediscommander/redis-commander:latest
+    container_name: cc-redis-ui
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS:   "local:redis:6379"
+      HTTP_USER:     ${REDIS_UI_USER:-chaos}
+      HTTP_PASSWORD: ${REDIS_UI_PASSWORD:-crewpassword}
+      TZ: Europe/Berlin
+    ports:
+      - "8081:8081"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - chaos-crew
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "2" }
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  backup_data:
+    driver: local
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
+
+networks:
+  chaos-crew:
+    driver: bridge

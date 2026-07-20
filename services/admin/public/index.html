@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Team Giveaway – Control Center</title>
+<link rel="stylesheet" href="chaos-crew-admin.css">
+</head>
+<body>
+<script src="admin-shared.js"></script>
+<div class="scanlines"></div>
+
+<div class="index-header">
+  <div class="index-logo">
+    <span class="logo-cc">TEAM</span>
+    <span class="logo-sep">//</span>
+    <span class="logo-crew">GIVEAWAY</span>
+  </div>
+  <span class="logo-sub">CONTROL CENTER</span>
+  <div class="header-time" id="clock"></div>
+</div>
+
+<div class="health-bar">
+  <div id="h-bridge"   class="health-svc loading"><div class="health-dot"></div>BRIDGE</div>
+  <div id="h-giveaway" class="health-svc loading"><div class="health-dot"></div>GIVEAWAY</div>
+</div>
+
+<div class="index-main">
+
+  <section class="module-group">
+    <div class="group-title">GIVEAWAY SYSTEM</div>
+    <div class="module-grid">
+
+      <a href="/giveaway/giveaway-admin.html" class="module-card cyan">
+        <div class="module-icon">&#x25A3;</div>
+        <div class="module-info">
+          <div class="module-name">ADMIN PANEL</div>
+          <div class="module-desc">Giveaway steuern, Gewinner ziehen, Teilnehmer verwalten</div>
+        </div>
+        <div class="module-arrow">&#x2192;</div>
+      </a>
+
+      <a href="/admin/giveaway-test.html" class="module-card dim">
+        <div class="module-icon">&#x25C6;</div>
+        <div class="module-info">
+          <div class="module-name">TEST CONSOLE</div>
+          <div class="module-desc">WebSocket Events manuell senden und debuggen</div>
+        </div>
+        <div class="module-arrow">&#x2192;</div>
+      </a>
+
+    </div>
+  </section>
+
+  <section class="module-group">
+    <div class="group-title">OBS OVERLAYS</div>
+    <div class="module-grid">
+
+      <a href="/giveaway/giveaway-overlay.html" class="module-card cyan" target="_blank">
+        <div class="module-icon">&#x25A0;</div>
+        <div class="module-info">
+          <div class="module-name">GIVEAWAY OVERLAY</div>
+          <div class="module-desc">Gewinner-Einblendung bei der Ziehung</div>
+          <div class="module-tag">OBS Browser Source</div>
+        </div>
+        <div class="module-arrow">&#x2197;</div>
+      </a>
+
+      <a href="/giveaway/giveaway-join.html?test=1" class="module-card cyan" target="_blank">
+        <div class="module-icon">&#x25B6;</div>
+        <div class="module-info">
+          <div class="module-name">JOIN ANIMATION</div>
+          <div class="module-desc">Teilnahme-Animation mit Warteschlange</div>
+          <div class="module-tag">OBS Browser Source &mdash; ?test=1 aktiv</div>
+        </div>
+        <div class="module-arrow">&#x2197;</div>
+      </a>
+
+    </div>
+  </section>
+
+  <section class="module-group">
+    <div class="group-title">INFRASTRUKTUR</div>
+    <div class="module-grid">
+
+      <a href="/redis-ui/" class="module-card dim" target="_blank">
+        <div class="module-icon">&#x25CF;</div>
+        <div class="module-info">
+          <div class="module-name">REDIS COMMANDER</div>
+          <div class="module-desc">Redis Datenbank inspizieren und verwalten</div>
+          <div class="module-tag">/redis-ui/</div>
+        </div>
+        <div class="module-arrow">&#x2197;</div>
+      </a>
+
+      <a href="/health" class="module-card dim" target="_blank">
+        <div class="module-icon">&#x25CE;</div>
+        <div class="module-info">
+          <div class="module-name">SYSTEM HEALTH</div>
+          <div class="module-desc">Alle Services Status und aktive Session</div>
+          <div class="module-tag">/health</div>
+        </div>
+        <div class="module-arrow">&#x2197;</div>
+      </a>
+
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  <span class="footer-text">TEAM GIVEAWAY &nbsp;//&nbsp; o7</span>
+  <span class="footer-ver">MICROSERVICES // POSTGRESQL + REDIS</span>
+</footer>
+
+<script src="index.js"></script>
+</body>
+</html>

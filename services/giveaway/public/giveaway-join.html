@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Giveaway Join Animation</title>
+<style>
+  :root{
+    --cyan:#00d4ff; --cyan-dim:rgba(0,212,255,.55); --gold:#f0a500; --gold-soft:rgba(240,165,0,.55);
+    --mute:rgba(200,220,232,.45);
+    --disp:"Segoe UI Semibold","Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;background:transparent;overflow:hidden;font-family:var(--mono)}
+  #lane{position:fixed;left:26px;bottom:26px;width:min(60vw,560px);display:flex;flex-direction:column-reverse;gap:8px}
+
+  .card{position:relative;display:flex;align-items:center;gap:16px;padding:13px 18px;
+    background:rgba(8,11,17,.82);border:1px solid rgba(0,212,255,.16);border-left:2px solid var(--cyan);
+    border-radius:3px;overflow:hidden;box-shadow:0 0 26px rgba(0,0,0,.5),0 0 0 1px rgba(0,212,255,.05);
+    transform:translateX(-115%);opacity:0;animation:slideIn .42s cubic-bezier(.16,1,.3,1) forwards}
+  .card.out{animation:slideOut .34s ease forwards}
+  @keyframes slideIn{to{transform:translateX(0);opacity:1}}
+  @keyframes slideOut{to{transform:translateX(115%);opacity:0}}
+  .qnr{font-size:15px;color:var(--gold);letter-spacing:1px;font-variant-numeric:tabular-nums}
+  .dv{width:1px;align-self:stretch;background:linear-gradient(180deg,transparent,var(--cyan-dim),transparent)}
+  .txt{flex:1;min-width:0}
+  .uname{font-family:var(--disp);font-weight:700;font-size:21px;color:var(--cyan);
+    text-shadow:0 0 10px rgba(0,212,255,.35);letter-spacing:1.2px;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .status{font-size:11px;letter-spacing:2px;color:var(--mute);text-transform:uppercase;margin-top:3px;min-height:1.1em}
+  .cur{display:inline-block;width:5px;height:.9em;background:var(--cyan);margin-left:2px;vertical-align:-1px;animation:blink .55s step-end infinite}
+  @keyframes blink{50%{opacity:0}}
+  .qbar{font-size:13px;color:var(--cyan);letter-spacing:1px;white-space:nowrap}
+  .qbar .c{color:var(--cyan-dim);margin-left:4px}
+  .badge{font-size:10px;color:var(--gold);border:1px solid var(--gold-soft);padding:3px 8px;
+    letter-spacing:1px;background:rgba(240,165,0,.04);white-space:nowrap;flex-shrink:0;border-radius:2px}
+  .drain{position:absolute;left:0;bottom:0;height:2px;width:100%;transform-origin:left;
+    background:linear-gradient(90deg,var(--cyan),rgba(0,212,255,.15));animation:drain 4.2s linear forwards}
+  @keyframes drain{to{transform:scaleX(0)}}
+  @media (prefers-reduced-motion:reduce){.card,.card.out{animation-duration:.01s}.drain{animation:none}.cur{animation:none}}
+</style>
+</head>
+<body>
+<div id="lane"></div>
+<script src="giveaway-join.js"></script>
+</body>
+</html>

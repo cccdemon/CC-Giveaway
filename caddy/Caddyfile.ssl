@@ -1,0 +1,60 @@
+{
+    admin off
+    email admin@{$DOMAIN}
+}
+
+{$DOMAIN} {
+
+    # ── Giveaway Service ──────────────────────────────────
+    # REST + WebSocket (/giveaway/ws)
+    handle /giveaway/* {
+        uri strip_prefix /giveaway
+        reverse_proxy giveaway:3001
+    }
+
+    # ── Admin Dashboard ───────────────────────────────────
+    # Login + user management + aggregated health
+    handle /admin/* {
+        uri strip_prefix /admin
+        reverse_proxy admin:3005
+    }
+
+    # ── Bridge health (internal use only) ─────────────────
+    handle /bridge/* {
+        uri strip_prefix /bridge
+        reverse_proxy bridge:3000
+    }
+
+    # ── Aggregated health ─────────────────────────────────
+    handle /health {
+        reverse_proxy admin:3005
+    }
+
+    # ── Redis UI ──────────────────────────────────────────
+    handle /redis-ui/* {
+        uri strip_prefix /redis-ui
+        reverse_proxy redis-ui:8081
+    }
+
+    # ── Root redirect → admin dashboard ──────────────────
+    # 302 so the browser actually navigates to /admin/ — otherwise
+    # relative asset paths (chaos-crew-admin.css etc.) resolve to /
+    # which has no handler and the page renders unstyled.
+    @root path /
+    redir @root /admin/ 302
+
+    header {
+        Access-Control-Allow-Origin *
+        Access-Control-Allow-Methods "GET, POST, OPTIONS"
+        X-Frame-Options SAMEORIGIN
+        Strict-Transport-Security "max-age=31536000"
+        Cache-Control "no-cache, must-revalidate"
+        -Server
+    }
+
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+}

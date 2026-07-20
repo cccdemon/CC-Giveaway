@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Giveaway Overlay</title>
+<style>
+  :root{
+    --gold:#f0a500; --gold-soft:rgba(240,165,0,.6); --cyan:#00d4ff;
+    --disp:"Segoe UI Semibold","Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;background:transparent;overflow:hidden}
+  #fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none}
+
+  #winner{position:fixed;inset:0;display:grid;place-items:center;opacity:0;transition:opacity .4s ease}
+  #winner.show{opacity:1}
+  .card{position:relative;text-align:center;padding:34px 66px;
+    background:rgba(8,11,17,.62);backdrop-filter:blur(3px);
+    border:1px solid var(--gold-soft);border-radius:4px;
+    box-shadow:0 0 0 1px rgba(240,165,0,.12),0 0 60px rgba(240,165,0,.16),inset 0 0 40px rgba(240,165,0,.05);
+    transform:scale(.82);opacity:0}
+  #winner.show .card{animation:pop .7s cubic-bezier(.16,1,.3,1) forwards}
+  @keyframes pop{to{transform:scale(1);opacity:1}}
+  .br{position:absolute;width:16px;height:16px;border:2px solid var(--gold);opacity:.8}
+  .br.tl{top:-1px;left:-1px;border-right:none;border-bottom:none}
+  .br.tr{top:-1px;right:-1px;border-left:none;border-bottom:none}
+  .br.bl{bottom:-1px;left:-1px;border-right:none;border-top:none}
+  .br.rb{bottom:-1px;right:-1px;border-left:none;border-top:none}
+  .scan{position:absolute;left:0;right:0;height:2px;top:0;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0}
+  #winner.show .scan{animation:scan 1.05s ease-out .15s}
+  @keyframes scan{0%{opacity:.9;top:0}100%{opacity:0;top:100%}}
+  .win-label{font-family:var(--mono);font-size:13px;letter-spacing:.55em;color:var(--gold);
+    text-transform:uppercase;padding-left:.55em;display:flex;align-items:center;justify-content:center;gap:12px}
+  .win-label i{height:1px;width:52px;background:linear-gradient(90deg,transparent,var(--gold-soft));font-style:normal}
+  .win-label i.r{background:linear-gradient(90deg,var(--gold-soft),transparent)}
+  .win-name{font-family:var(--disp);font-weight:700;text-transform:uppercase;font-size:72px;line-height:1;
+    letter-spacing:.06em;color:#ffe6a8;margin-top:16px;
+    text-shadow:0 0 34px rgba(240,165,0,.65),0 0 4px rgba(255,220,150,.5);text-wrap:balance}
+  .win-tickets{margin-top:14px;font-family:var(--mono);font-size:14px;letter-spacing:.22em;color:var(--gold-soft)}
+  .win-tickets b{color:var(--gold);font-variant-numeric:tabular-nums}
+  @media (prefers-reduced-motion:reduce){#winner.show .card{animation:none;transform:scale(1);opacity:1}#winner.show .scan{animation:none}}
+</style>
+</head>
+<body>
+<canvas id="fx"></canvas>
+<div id="winner">
+  <div class="card">
+    <span class="br tl"></span><span class="br tr"></span><span class="br bl"></span><span class="br rb"></span>
+    <div class="scan"></div>
+    <div class="win-label"><i></i>Gewinner<i class="r"></i></div>
+    <div class="win-name" id="ov-winner-name">-</div>
+    <div class="win-tickets"><b id="ov-winner-tickets">0</b></div>
+  </div>
+</div>
+<script src="giveaway-overlay.js"></script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Team beitreten</title>
+<style>
+  body { background:#04060a; color:#c8dce8; font-family:system-ui,sans-serif; min-height:100vh; display:flex; align-items:center; justify-content:center; text-align:center; }
+  .box { max-width:420px; padding:30px; }
+  a.btn { display:inline-block; background:#9146FF; color:#fff; padding:12px 20px; border-radius:6px; font-weight:700; text-decoration:none; margin-top:14px; }
+  .err { color:#ff5468; }
+</style>
+</head>
+<body>
+  <div class="box" id="box"><div>Trete Team bei…</div></div>
+<script>
+  var code = new URLSearchParams(location.search).get('code') || '';
+  var box = document.getElementById('box');
+  function twitchLogin() {
+    var next = '/admin/join.html?code=' + encodeURIComponent(code);
+    location.href = '/admin/auth/twitch?next=' + encodeURIComponent(next);
+  }
+  (async function() {
+    if (!code) { box.innerHTML = '<div class="err">Kein Einladungscode.</div>'; return; }
+    try {
+      var r = await fetch('/admin/api/teams/join', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ code:code }) });
+      if (r.status === 401) {
+        box.innerHTML = '<div>Zum Beitreten mit Twitch anmelden:</div><a class="btn" href="#" onclick="twitchLogin();return false;">Mit Twitch anmelden</a>';
+        return;
+      }
+      var d = await r.json().catch(function(){return {};});
+      if (r.ok) { location.href = '/admin/teams.html'; return; }
+      box.innerHTML = '<div class="err">' + (d.error === 'invalid_code' ? 'Ungültiger Einladungscode.' : ('Fehler: ' + (d.error || r.status))) + '</div>';
+    } catch (e) { box.innerHTML = '<div class="err">Verbindungsfehler.</div>'; }
+  })();
+</script>
+</body>
+</html>
