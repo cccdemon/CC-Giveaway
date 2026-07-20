@@ -143,10 +143,11 @@ unter 1 genannte Adresse.
 
 Dir steht ein **Beschwerderecht bei einer Aufsichtsbehörde** zu, insbesondere im
 Mitgliedstaat deines Aufenthaltsorts oder des mutmaßlichen Verstoßes. Für den
-Verantwortlichen zuständig ist nach der oben genannten Anschrift die
-**Landesbeauftragte für Datenschutz und Informationsfreiheit Nordrhein-Westfalen**,
-Kavalleriestraße 2–4, 40213 Düsseldorf. **[Bitte prüfen: maßgeblich ist der
-tatsächliche Sitz, nicht die c/o-Zustellanschrift.]**
+Verantwortlichen zuständig ist die
+
+**Landesbeauftragte für Datenschutz und Informationsfreiheit Nordrhein-Westfalen**
+Kavalleriestraße 2–4, 40213 Düsseldorf
+<https://www.ldi.nrw.de>
 
 ## 7 Keine automatisierte Entscheidung mit rechtlicher Wirkung
 
