@@ -59,20 +59,56 @@ async function editTerms(id) {
       (d.isDefault ? '<div style="font-size:12px;opacity:.55;margin-bottom:6px">Noch keine eigenen Bedingungen — Standard-Vorlage als Entwurf geladen.</div>' : '') +
       '<textarea id="ta-'+id+'" style="width:100%;height:280px;background:#060a11;border:1px solid rgba(0,212,255,0.25);color:#c8dce8;border-radius:6px;padding:10px;font-family:ui-monospace,monospace;font-size:12px;">'+
       esc(d.terms)+'</textarea>' +
+      '<input id="tnote-'+id+'" placeholder="Was hast du geändert? (erscheint öffentlich im Änderungsverlauf)" ' +
+      'style="width:100%;margin-top:8px;background:#060a11;border:1px solid rgba(0,212,255,0.25);color:#c8dce8;border-radius:6px;padding:8px;font-size:12px;">' +
       '<div style="display:flex;gap:8px;margin-top:8px;align-items:center">' +
       '<button onclick="saveTerms(\''+id+'\')">Speichern</button>' +
       '<button class="ghost" onclick="editTerms(\''+id+'\')">Schließen</button>' +
       '<span class="muted" style="font-size:12px">Markdown erlaubt (# Überschrift, **fett**, - Liste)</span>' +
-      '<span class="msg" id="tmsg-'+id+'"></span></div></div>';
+      '<span class="msg" id="tmsg-'+id+'"></span></div>' +
+      '<div id="thist-'+id+'" style="margin-top:12px"></div></div>';
+    loadTermsHistory(id);
   } catch(e){ if(e.message!=='unauth') box.innerHTML = '<div class="msg err">'+esc(e.message)+'</div>'; }
+}
+
+// Jede Fassung wird mit Zeitpunkt und betroffenen Abschnitten festgehalten -
+// hier zur Kontrolle, oeffentlich unter /viewer/terms sichtbar.
+async function loadTermsHistory(id) {
+  var box = document.getElementById('thist-' + id);
+  if (!box) return;
+  try {
+    var d = await (await jfetch(API + '/' + id + '/terms/history')).json();
+    if (!d.history || !d.history.length) {
+      box.innerHTML = '<div class="muted" style="font-size:12px">Noch keine Aenderungen erfasst.</div>';
+      return;
+    }
+    box.innerHTML = '<div class="muted" style="font-size:12px;margin-bottom:4px">Aenderungsverlauf (oeffentlich sichtbar)</div>'
+      + d.history.map(function(h) {
+          var secs = (h.sections || []).map(function(x) { return esc(x.section) + ' (' + esc(x.kind) + ')'; }).join(', ');
+          return '<div style="font-size:12px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.06)">'
+               + '<b>Fassung ' + esc(String(h.version)) + '</b> - ' + esc(new Date(h.created_at).toLocaleString('de-DE'))
+               + ' - <span class="muted">' + esc(h.changed_by) + '</span>'
+               + (h.note ? '<br>' + esc(h.note) : '')
+               + (secs ? '<br><span class="muted">Betroffen: ' + secs + '</span>' : '')
+               + '</div>';
+        }).join('');
+  } catch(e) { if (e.message !== 'unauth') box.innerHTML = '<div class="msg err">' + esc(e.message) + '</div>'; }
 }
 
 async function saveTerms(id) {
   var val = document.getElementById('ta-' + id).value;
+  var noteEl = document.getElementById('tnote-' + id);
+  var note = noteEl ? noteEl.value.trim() : '';
   try {
-    var r = await jfetch(API + '/' + id + '/terms', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ terms: val }) });
+    var r = await jfetch(API + '/' + id + '/terms', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ terms: val, note: note }) });
     var m = document.getElementById('tmsg-' + id);
-    if (r.ok) { m.textContent = 'Gespeichert ✓'; m.className = 'msg ok'; }
+    if (r.ok) {
+      var body = await r.json();
+      m.textContent = body.unchanged ? 'Unverändert — keine neue Fassung' : ('Gespeichert ✓ Fassung ' + body.version);
+      m.className = 'msg ok';
+      if (noteEl) noteEl.value = '';
+      loadTermsHistory(id);
+    }
     else { m.textContent = 'Fehler'; m.className = 'msg err'; }
   } catch(e){ if(e.message!=='unauth'){ var m=document.getElementById('tmsg-'+id); if(m){m.textContent=e.message;m.className='msg err';} } }
 }

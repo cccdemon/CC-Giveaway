@@ -350,8 +350,77 @@ app.put('/api/teams/:id/terms', async (req, res) => {
   const id = req.params.id;
   if (!await isTeamOwner(id, s.user)) return res.status(403).json({ error: 'forbidden' });
   const terms = String((req.body && req.body.terms) || '').slice(0, 40000);
-  try { await pg.query('UPDATE teams SET terms=$1 WHERE id=$2', [terms || null, id]); res.json({ ok: true }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+  const note  = String((req.body && req.body.note) || '').slice(0, 300).trim();
+  try {
+    const prev = await pg.query('SELECT terms FROM teams WHERE id=$1', [id]);
+    if (!prev.rowCount) return res.status(404).json({ error: 'not_found' });
+    const oldTerms = prev.rows[0].terms || TERMS_TEMPLATE;
+    const newTerms = terms || TERMS_TEMPLATE;
+    if (oldTerms === newTerms) return res.json({ ok: true, unchanged: true });
+    const sections = changedSections(oldTerms, newTerms);
+    const version  = (await currentTermsVersion(id)) + 1;
+    // Fassung und Aenderung gehoeren zusammen - entweder beides oder nichts,
+    // sonst zeigt die Historie einen Stand, der nie oeffentlich galt.
+    const client = await pg.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('UPDATE teams SET terms=$1 WHERE id=$2', [terms || null, id]);
+      await client.query(
+        `INSERT INTO terms_versions (team_id, version, terms, changed_by, note, sections)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [id, version, newTerms, s.user, note || null, JSON.stringify(sections)]);
+      await client.query('COMMIT');
+    } catch (e) { await client.query('ROLLBACK'); throw e; }
+    finally { client.release(); }
+    res.json({ ok: true, version, sections });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Teilnahmebedingungen: Versionierung ───────────────────
+// Teilnehmer muessen nachvollziehen koennen, wann sich die Bedingungen
+// geaendert haben und was. Wir speichern jede Fassung und leiten die
+// betroffenen Abschnitte aus den Markdown-Ueberschriften ab.
+const NL = String.fromCharCode(10);
+const NEWLINE_RE = /\r?\n/;
+const HEADING_RE = /^#{1,3}\s+(.*)$/;
+function splitSections(md) {
+  const out = new Map();
+  let current = '(Einleitung)', buf = [];
+  for (const line of String(md || '').split(NEWLINE_RE)) {
+    const h = line.match(HEADING_RE);
+    if (h) { out.set(current, buf.join(NL).trim()); current = h[1].trim(); buf = []; }
+    else buf.push(line);
+  }
+  out.set(current, buf.join(NL).trim());
+  return out;
+}
+
+function changedSections(oldMd, newMd) {
+  const a = splitSections(oldMd), b = splitSections(newMd);
+  const changed = [];
+  for (const [title, body] of b) {
+    if (!a.has(title)) changed.push({ section: title, kind: 'neu' });
+    else if (a.get(title) !== body) changed.push({ section: title, kind: 'geändert' });
+  }
+  for (const title of a.keys()) if (!b.has(title)) changed.push({ section: title, kind: 'entfernt' });
+  return changed;
+}
+
+async function currentTermsVersion(teamId) {
+  const r = await pg.query('SELECT MAX(version) AS v FROM terms_versions WHERE team_id=$1', [teamId]);
+  return (r.rows[0] && r.rows[0].v) || 0;
+}
+
+app.get('/api/teams/:id/terms/history', async (req, res) => {
+  const s = requireSession(req, res); if (!s) return;
+  const id = req.params.id;
+  if (!await isTeamMember(id, s.user)) return res.status(403).json({ error: 'forbidden' });
+  try {
+    const r = await pg.query(
+      `SELECT version, changed_by, note, sections, created_at FROM terms_versions
+       WHERE team_id=$1 ORDER BY version DESC LIMIT 50`, [id]);
+    res.json({ history: r.rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── Public (kein Login): statische Anleitungen (md) ───────
@@ -379,8 +448,16 @@ app.get('/pub/team/:id', async (req, res) => {
     const t = await pg.query('SELECT name, terms FROM teams WHERE id=$1', [id]);
     if (!t.rowCount) return res.status(404).json({ error: 'not_found' });
     const mem = await pg.query('SELECT channel FROM team_members WHERE team_id=$1 ORDER BY joined_at', [id]);
+    // Aenderungshistorie ist bewusst oeffentlich - sie ist der Beleg dafuer,
+    // welche Fassung wann galt. Wer geaendert hat, bleibt intern.
+    const hist = await pg.query(
+      `SELECT version, note, sections, created_at FROM terms_versions
+       WHERE team_id=$1 ORDER BY version DESC LIMIT 20`, [id]);
     res.json({ id, name: t.rows[0].name, terms: t.rows[0].terms || TERMS_TEMPLATE,
-               isDefault: !t.rows[0].terms, channels: mem.rows.map(r => r.channel) });
+               isDefault: !t.rows[0].terms, channels: mem.rows.map(r => r.channel),
+               version: hist.rows[0] ? hist.rows[0].version : 0,
+               updatedAt: hist.rows[0] ? hist.rows[0].created_at : null,
+               history: hist.rows });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -452,6 +529,19 @@ async function ensureSchema() {
   for (const row of miss.rows) {
     await pg.query('UPDATE teams SET overlay_key=$1 WHERE id=$2', [crypto.randomBytes(8).toString('hex'), row.id]);
   }
+  await pg.query(`
+    CREATE TABLE IF NOT EXISTS terms_versions (
+      id         BIGSERIAL PRIMARY KEY,
+      team_id    TEXT NOT NULL,
+      version    INTEGER NOT NULL,
+      terms      TEXT NOT NULL,
+      changed_by TEXT NOT NULL,
+      note       TEXT,
+      sections   JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (team_id, version)
+    )`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_terms_team ON terms_versions(team_id, version DESC)`);
   await pg.query(`
     CREATE TABLE IF NOT EXISTS team_members (
       team_id   TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
