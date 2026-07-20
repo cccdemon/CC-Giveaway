@@ -46,6 +46,9 @@ const K = {
   cfgAutoResume:(t) => `${TP(t)}gw:cfg:auto_resume`,      // '1' = Start/Resume wenn ein Stream online
   cfgFollowMin: (t) => `${TP(t)}gw:cfg:follow_min`,       // wie vielen Kanälen muss man folgen (Teilnahmebedingung)
   cfgDrawMinSec:(t) => `${TP(t)}gw:cfg:draw_min_sec`,     // min. Viewtime (Sek.) um im Lostopf berücksichtigt zu werden
+  cfgChatBonus: (t) => `${TP(t)}gw:cfg:chat_bonus_sec`,   // Sek. Viewtime pro sinnvoller Chatnachricht
+  cfgChatWords: (t) => `${TP(t)}gw:cfg:chat_min_words`,   // ab wie vielen Wörtern eine Nachricht zählt
+  cfgChatCool:  (t) => `${TP(t)}gw:cfg:chat_cooldown`,    // Sek. Sperre zwischen zwei Boni
   userTeams:    (u) => `gw:user_teams:${u}`,              // GLOBAL Reverse-Index: Teams eines Users
   gwRegistered: (t, u) => `${TP(t)}gw:registered:${u}`,
   gwBanned:     (t, u) => `${TP(t)}gw_banned:${u}`,
@@ -166,6 +169,34 @@ class WatchtimeEngine {
   // Alias: Schwelle für den Lostopf == Coin-Basis (1 Coin).
   async getDrawMinSec(teamId) { return this.getCoinBaseSec(teamId); }
   async setDrawMinSec(teamId, sec) { return this.setCoinBaseSec(teamId, sec); }
+
+  // Chat-Bonus (per-Team). Defaults = die bisherigen Konstanten.
+  async getChatConfig(teamId) {
+    const t = sanitizeTeamId(teamId);
+    const num = async (key, def, min, max) => {
+      const v = parseFloat(await this.redis.get(key(t)));
+      return (Number.isFinite(v) && v >= min && v <= max) ? v : def;
+    };
+    return {
+      bonusSec: await num(K.cfgChatBonus, CHAT_BONUS_SEC, 0, 300),
+      minWords: await num(K.cfgChatWords, CHAT_MIN_WORDS, 1, 50),
+      cooldown: await num(K.cfgChatCool,  CHAT_COOLDOWN,  0, 3600),
+    };
+  }
+  async setChatConfig(teamId, cfg = {}) {
+    const t = sanitizeTeamId(teamId);
+    const put = async (key, val, min, max, round) => {
+      if (val === undefined || val === null || val === '') return;
+      let v = parseFloat(val);
+      if (!Number.isFinite(v)) return;
+      v = Math.max(min, Math.min(max, round ? Math.round(v) : v));
+      await this.redis.set(key(t), String(v));
+    };
+    await put(K.cfgChatBonus, cfg.bonusSec, 0, 300, false);
+    await put(K.cfgChatWords, cfg.minWords, 1, 50, true);
+    await put(K.cfgChatCool,  cfg.cooldown, 0, 3600, true);
+    return this.getChatConfig(t);
+  }
   async setMultiplier(teamId, factor, seconds) {
     const t = sanitizeTeamId(teamId);
     const f = Math.max(1, Math.min(10, parseFloat(factor) || 1));
@@ -274,15 +305,18 @@ class WatchtimeEngine {
     await this._detectAbuse(t, u, cleanMsg);   // Spam-Signale (flaggt, bannt nicht)
 
     if (!this._followAllowed(await this.redis.get(K.chFollows(t, ch, u)))) return { channel: ch, followed: false };
-    if (countWords(cleanMsg) < CHAT_MIN_WORDS) return null;
+
+    const chatCfg = await this.getChatConfig(t);
+    if (!chatCfg.bonusSec) return null;                      // Bonus abgeschaltet
+    if (countWords(cleanMsg) < chatCfg.minWords) return null;
 
     const chatKey = K.chChatTs(t, ch, u);
     const now = Math.floor(Date.now() / 1000);
     const lastTs = await this.redis.get(chatKey);
-    if (lastTs && (now - parseInt(lastTs)) < CHAT_COOLDOWN) return null;
+    if (lastTs && (now - parseInt(lastTs)) < chatCfg.cooldown) return null;
 
     const mult = await this.getMultiplier(t);
-    const inc  = CHAT_BONUS_SEC * mult;
+    const inc  = chatCfg.bonusSec * mult;
     await this.redis.set(chatKey, String(now), 'EX', 86400);
     const newSec = parseFloat(await this.redis.incrbyfloat(K.chWatch(t, ch, u), inc));
     await this._logEvent(t, u, 'chat_bonus', inc, sid, ch);
@@ -634,6 +668,7 @@ class WatchtimeEngine {
         keyword:      await this.redis.get(K.gwKeyword(t)) || '',
         followMin:    await this.getFollowMin(t),
         coinBaseSec:  await this.getCoinBaseSec(t),
+        chat:         await this.getChatConfig(t),
         autoPause:    await this.redis.get(K.cfgAutoPause(t)) === '1',
         autoResume:   await this.redis.get(K.cfgAutoResume(t)) === '1',
       },
@@ -664,6 +699,7 @@ class WatchtimeEngine {
     if (typeof cfg.keyword === 'string')       await this.redis.set(K.gwKeyword(t), sanitizeStr(cfg.keyword, 100));
     if (Number.isFinite(Number(cfg.followMin)))   await this.setFollowMin(t, cfg.followMin);
     if (Number.isFinite(Number(cfg.coinBaseSec))) await this.setCoinBaseSec(t, cfg.coinBaseSec);
+    if (cfg.chat) await this.setChatConfig(t, cfg.chat);
     if (cfg.autoPause)  await this.redis.set(K.cfgAutoPause(t), '1');
     if (cfg.autoResume) await this.redis.set(K.cfgAutoResume(t), '1');
 

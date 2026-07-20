@@ -399,19 +399,27 @@ async function runAdminCmd(send, msg, meta, ctx) {
       if (msg.followMin !== undefined && msg.followMin !== null) fm = await wte.setFollowMin(teamId, msg.followMin);
       let dm = dmBefore;
       if (msg.drawMinHours !== undefined && msg.drawMinHours !== null) dm = await wte.setDrawMinSec(teamId, parseFloat(msg.drawMinHours) * 3600);
+      const chatBefore = await wte.getChatConfig(teamId);
+      const chat = await wte.setChatConfig(teamId, {
+        bonusSec: msg.chatBonusSec, minWords: msg.chatMinWords, cooldown: msg.chatCooldown });
       Object.assign(outcome, { followMinBefore: fmBefore, followMinAfter: fm,
-                               coinBaseSecBefore: dmBefore, coinBaseSecAfter: dm });
-      send({ event: 'gw_ack', type: 'stream_settings', autoPause: ap, autoResume: ar, followMin: fm, drawMinHours: dm / 3600 });
+                               coinBaseSecBefore: dmBefore, coinBaseSecAfter: dm,
+                               chatBefore, chatAfter: chat });
+      send({ event: 'gw_ack', type: 'stream_settings', autoPause: ap, autoResume: ar, followMin: fm, drawMinHours: dm / 3600,
+                chatBonusSec: chat.bonusSec, chatMinWords: chat.minWords, chatCooldown: chat.cooldown });
       log('GW', `[${teamId}] settings: pause=${ap} resume=${ar} followMin=${fm} drawMin=${dm}s`);
       break;
     }
-    case 'gw_get_stream_settings':
+    case 'gw_get_stream_settings': {
+      const chat = await wte.getChatConfig(teamId);
       send({ event: 'gw_ack', type: 'stream_settings',
         autoPause:  await redis.get(K.cfgAutoPause(teamId)) === '1',
         autoResume: await redis.get(K.cfgAutoResume(teamId)) === '1',
         followMin:  await wte.getFollowMin(teamId),
-        drawMinHours: (await wte.getDrawMinSec(teamId)) / 3600 });
+        drawMinHours: (await wte.getDrawMinSec(teamId)) / 3600,
+        chatBonusSec: chat.bonusSec, chatMinWords: chat.minWords, chatCooldown: chat.cooldown });
       break;
+    }
     case 'gw_set_keyword': {
       const kw = sanitizeStr(msg.keyword || '', 100);
       outcome.keywordBefore = await redis.get(K.gwKeyword(teamId)) || '';

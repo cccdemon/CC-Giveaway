@@ -179,6 +179,9 @@ function handle(msg) {
         var arEl = document.getElementById('cfg-auto-resume'); if (arEl) arEl.checked = !!msg.autoResume;
         var fmEl = document.getElementById('cfg-follow-min');  if (fmEl && msg.followMin !== undefined) fmEl.value = msg.followMin;
         var dmEl = document.getElementById('cfg-draw-min');    if (dmEl && msg.drawMinHours !== undefined) dmEl.value = msg.drawMinHours;
+        var cwEl = document.getElementById('cfg-chat-words'); if (cwEl && msg.chatMinWords !== undefined) cwEl.value = msg.chatMinWords;
+        var cbEl = document.getElementById('cfg-chat-bonus'); if (cbEl && msg.chatBonusSec !== undefined) cbEl.value = msg.chatBonusSec;
+        var ccEl = document.getElementById('cfg-chat-cool');  if (ccEl && msg.chatCooldown !== undefined) ccEl.value = msg.chatCooldown;
         if (msg.followMin !== undefined)    gwFollowMin  = parseInt(msg.followMin) || 0;
         if (msg.drawMinHours !== undefined) gwDrawMinSec = Math.round(parseFloat(msg.drawMinHours) * 3600) || 0;
         updateStats(); renderTable();
@@ -239,7 +242,9 @@ function saveStreamSettings() {
   var fm = CC.validate.sanitizeInt((document.getElementById('cfg-follow-min') || {}).value, 0, 10, 2);
   var dmRaw = parseFloat((document.getElementById('cfg-draw-min') || {}).value);
   var dm = isFinite(dmRaw) && dmRaw >= 0.05 ? Math.min(100, dmRaw) : 2;
-  send({ event: 'gw_cmd', cmd: 'gw_set_stream_settings', autoPause: ap, autoResume: ar, followMin: fm, drawMinHours: dm });
+  var num = function(id, def) { var v = parseFloat((document.getElementById(id) || {}).value); return isFinite(v) ? v : def; };
+  send({ event: 'gw_cmd', cmd: 'gw_set_stream_settings', autoPause: ap, autoResume: ar, followMin: fm, drawMinHours: dm,
+         chatMinWords: num('cfg-chat-words', 4), chatBonusSec: num('cfg-chat-bonus', 2), chatCooldown: num('cfg-chat-cool', 10) });
   log('Einstellungen: folge≥' + fm + ' · Pause=' + ap + ' Start=' + ar, 'cyan');
 }
 

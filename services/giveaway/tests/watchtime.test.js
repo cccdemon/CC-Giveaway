@@ -187,6 +187,46 @@ test('coin base is configurable and doubles as the draw threshold', async () => 
   assert.equal(a.eligible, true);       // genau 1 Coin reicht
 });
 
+test('chat bonus is configurable per team', async () => {
+  const e = engine();
+  await e.redis.set(K.gwOpen(TEAM), 'true');
+  await e.redis.set(K.chFollows(TEAM, 'justcallmedeimos', 'bob'), '1');
+  const key = K.chWatch(TEAM, 'justcallmedeimos', 'bob');
+
+  // Default: 4 Wörter, +2s
+  let r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'eins zwei drei vier', true);
+  assert.equal(r.added, 2);
+
+  // Schwelle hoch, Bonus hoch, Cooldown aus
+  await e.setChatConfig(TEAM, { minWords: 6, bonusSec: 5, cooldown: 0 });
+  assert.deepEqual(await e.getChatConfig(TEAM), { bonusSec: 5, minWords: 6, cooldown: 0 });
+  assert.equal(await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'eins zwei drei vier', true), null);
+  r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'eins zwei drei vier fuenf sechs', true);
+  assert.equal(r.added, 5);
+
+  // Bonus 0 = Chat zählt gar nicht
+  await e.setChatConfig(TEAM, { bonusSec: 0 });
+  const before = await e.redis.get(key);
+  assert.equal(await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'eins zwei drei vier fuenf sechs', true), null);
+  assert.equal(await e.redis.get(key), before);
+
+  // Clamping: unsinnige Werte werden begrenzt, nicht übernommen
+  const c = await e.setChatConfig(TEAM, { bonusSec: 9999, minWords: 0, cooldown: -5 });
+  assert.equal(c.bonusSec, 300);
+  assert.equal(c.minWords, 1);
+  assert.equal(c.cooldown, 0);
+});
+
+test('chat bonus honours the viewtime multiplier', async () => {
+  const e = engine();
+  await e.redis.set(K.gwOpen(TEAM), 'true');
+  await e.redis.set(K.chFollows(TEAM, 'justcallmedeimos', 'bob'), '1');
+  await e.setChatConfig(TEAM, { bonusSec: 3, cooldown: 0 });
+  await e.setMultiplier(TEAM, 2, 600);
+  const r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'eins zwei drei vier', true);
+  assert.equal(r.added, 6);
+});
+
 test('backup roundtrip: export → reset → import restores the exact state', async () => {
   const e = engine();
   await e.setCoinBaseSec(TEAM, 3600);
