@@ -717,7 +717,8 @@ app.post('/api/gdpr/subject/:username/delete', async (req, res) => {
 
 // ── Public (kein Login): statische Anleitungen (md) ───────
 const PUB_DOCS = { help: 'help.md', setup: 'setup.md', impressum: 'impressum.md',
-                   datenschutz: 'datenschutz.md', nutzungsbedingungen: 'nutzungsbedingungen.md' };
+                   datenschutz: 'datenschutz.md', nutzungsbedingungen: 'nutzungsbedingungen.md',
+                   haftungsausschluss: 'haftungsausschluss.md' };
 app.get('/pub/doc/:name', (req, res) => {
   const file = PUB_DOCS[String(req.params.name || '')];
   if (!file) return res.status(404).json({ error: 'not_found' });

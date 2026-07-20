@@ -159,7 +159,15 @@ async function load() {
     var mine = await (await jfetch(API + '/mine')).json();
     if (!mine.length) { host.innerHTML = '<div class="muted">Noch kein Team. Gründe eins oder tritt per Code bei.</div>'; return; }
     var details = await Promise.all(mine.map(function(t){ return jfetch(API + '/' + t.id).then(function(r){return r.json();}).catch(function(){return null;}); }));
-    host.innerHTML = details.filter(Boolean).map(renderTeam).join('');
+    // Oeffentliche Team-Daten dazu: daraus ergibt sich, ob das Impressum des
+    // Veranstalters hinterlegt ist - ohne das laesst sich kein Giveaway oeffnen.
+    var pub = await Promise.all(mine.map(function(t){
+      return fetch('/admin/pub/team/' + encodeURIComponent(t.id))
+        .then(function(r){ return r.json(); }).catch(function(){ return null; });
+    }));
+    host.innerHTML = details.filter(Boolean).map(function(t, i) {
+      return renderTeam(Object.assign({}, t, { pub: pub[i] || null }));
+    }).join('');
   } catch(e){ if(e.message!=='unauth') host.innerHTML = '<div class="msg err">'+esc(e.message)+'</div>'; }
 }
 
@@ -188,7 +196,75 @@ function renderTeam(t) {
     + '</div><div id="terms-'+t.id+'"></div><div id="imprint-'+t.id+'"></div>';
   return '<div class="team"><div class="team-head"><span class="team-name">'+esc(t.name)+'</span>'
     + (owner?'<span class="badge">OWNER</span>':'') + '</div>'
-    + '<div class="members">'+members+'</div>' + invite + overlay + terms + '</div>';
+    + '<div class="members">'+members+'</div>' + invite + overlay + terms
+    + legalLinks(t) + '</div>';
+}
+
+// Alle Adressen, die zu einem Giveaway gehoeren - zum Verlinken im
+// Twitch-Panel, im Chat oder in der Videobeschreibung. Streamer muessen diese
+// Angaben zugaenglich machen; sie hier zu suchen darf nicht die Huerde sein.
+function legalLinks(t) {
+  var base = location.origin;
+  var hasImprint = !!(t.pub && (String(t.pub.imprint || '').trim() || String(t.pub.imprintUrl || '').trim()));
+  var termsUrl = base + '/viewer/terms?team=' + encodeURIComponent(t.id);
+
+  var own = [
+    { label: 'Teilnahmebedingungen', url: termsUrl,
+      hint: 'Enthaelt auch dein Impressum als Veranstalter. Diesen Link im Twitch-Panel verlinken.' },
+    { label: 'Teilnehmer-Anleitung', url: base + '/viewer/help',
+      hint: 'Erklaert Zuschauern, wie Lose entstehen.' },
+    { label: 'Mein Status (Zuschauer)', url: base + '/viewer/status',
+      hint: 'Zuschauer sehen dort ihre eigene Zuschauzeit und Lose.' }
+  ];
+  var platform = [
+    { label: 'Impressum der Plattform', url: base + '/admin/impressum.html' },
+    { label: 'Datenschutzerklaerung',   url: base + '/admin/datenschutz.html' },
+    { label: 'Haftungsausschluss',      url: base + '/admin/haftungsausschluss.html' },
+    { label: 'Nutzungsbedingungen',     url: base + '/admin/nutzungsbedingungen.html' },
+    { label: 'Meine Daten (Auskunft/Loeschung)', url: base + '/admin/meine-daten.html' }
+  ];
+
+  function row(l) {
+    return '<div class="lk-row">'
+      + '<a class="lk-name" href="' + esc(l.url) + '" target="_blank" rel="noopener">' + esc(l.label) + '</a>'
+      + '<input class="lk-url" readonly value="' + esc(l.url) + '" onclick="this.select()">'
+      + '<button class="ghost lk-cp" onclick="copyLink(this)">Kopieren</button>'
+      + (l.hint ? '<div class="lk-hint">' + esc(l.hint) + '</div>' : '')
+      + '</div>';
+  }
+
+  var warn = hasImprint ? ''
+    : '<div class="lk-warn">Kein Impressum als Veranstalter hinterlegt. Solange es fehlt, '
+      + 'laesst sich kein Giveaway oeffnen — trage es oben unter „Impressum (Pflicht)“ ein.</div>';
+
+  return '<div class="links">'
+    + '<div class="lk-head">Links zu diesem Giveaway</div>'
+    + warn
+    + '<div class="lk-sub">Dein Gewinnspiel</div>' + own.map(row).join('')
+    + '<div class="lk-sub">Plattform</div>' + platform.map(row).join('')
+    + '<button class="ghost lk-all" onclick="copyAllLinks(\'' + t.id + '\')">Alle Links als Textblock kopieren</button>'
+    + '<span class="msg" id="lk-msg-' + t.id + '"></span>'
+    + '</div>';
+}
+
+function copyLink(btn) {
+  var input = btn.parentElement.querySelector('.lk-url');
+  if (navigator.clipboard) navigator.clipboard.writeText(input.value);
+  var old = btn.textContent;
+  btn.textContent = 'kopiert';
+  setTimeout(function(){ btn.textContent = old; }, 1200);
+}
+
+function copyAllLinks(teamId) {
+  var host = document.getElementById('lk-msg-' + teamId);
+  var box  = host.parentElement;
+  var txt  = Array.prototype.map.call(box.querySelectorAll('.lk-row'), function(r) {
+    return r.querySelector('.lk-name').textContent + ': ' + r.querySelector('.lk-url').value;
+  }).join('\n');
+  if (navigator.clipboard) navigator.clipboard.writeText(txt);
+  host.textContent = 'In die Zwischenablage kopiert';
+  host.className = 'msg ok';
+  setTimeout(function(){ host.textContent = ''; }, 2500);
 }
 
 load();
