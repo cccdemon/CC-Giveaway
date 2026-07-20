@@ -107,6 +107,9 @@ services:
       PG_PASSWORD: ${PG_PASSWORD:-changeme}
       TWITCH_CLIENT_ID:     ${TWITCH_CLIENT_ID:-}
       TWITCH_CLIENT_SECRET: ${TWITCH_CLIENT_SECRET:-}
+      # Test-Console-Simulation. Standard aus — simulierte Ticks erzeugen echte
+      # Viewtime und gingen in den Ziehungs-Snapshot ein.
+      ALLOW_SIM:            ${ALLOW_SIM:-false}
       TZ: Europe/Berlin
     depends_on:
       redis:

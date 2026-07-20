@@ -68,6 +68,18 @@ function handleMsg(msg) {
   if (msg.event === 'gw_join') {
     log('  ↳ Neuer Teilnehmer: ' + msg.user, 'info');
   }
+  // Der Server lehnt simulierte Ticks ab, wenn ALLOW_SIM nicht gesetzt ist.
+  // Ohne diesen Hinweis sieht die Konsole nur "nichts passiert" aus.
+  if (msg.event === 'gw_ack' && msg.type === 'sim_disabled') {
+    simBlocked();
+  }
+}
+
+function simBlocked() {
+  var el = document.getElementById('sim-off');
+  if (el) el.style.display = 'block';
+  log('Simulation ist auf diesem Server deaktiviert (ALLOW_SIM). Simulierte '
+    + 'Ticks wuerden echte Viewtime erzeugen — der Versuch steht im Audit-Log.', 'err');
 }
 
 // ── Giveaway ──────────────────────────────────────────────

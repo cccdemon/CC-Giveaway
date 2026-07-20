@@ -48,6 +48,11 @@ const CFG = {
     statement_timeout: 20000,        // Server-seitiges Limit
     idle_in_transaction_session_timeout: 20000,
   },
+  // Test-Console-Simulation (viewer_tick/chat_msg/time_cmd ueber die Admin-WS).
+  // Standard AUS: simulierte Ticks landen in watchtime_events und damit im
+  // Ziehungs-Snapshot — in einer laufenden Verlosung waere das erfundene
+  // Viewtime. Fuer lokale Entwicklung ALLOW_SIM=true setzen.
+  allowSim: process.env.ALLOW_SIM === 'true',
 };
 
 const redis    = new Redis(CFG.redis);
@@ -454,11 +459,27 @@ async function handleClientMessage(meta, msg) {
       break;
     }
     // Test-Console-Sim: nur für eigene Teams republishen.
+    // Diese Events gehen in dieselbe Pipeline wie echte Ticks vom Ingest und
+    // erzeugen echte watchtime_events. Darum: in Prod aus (ALLOW_SIM), und
+    // wenn an, dann protokolliert — sonst waere Viewtime die einzige
+    // zustandsaendernde Groesse ohne Spur im audit_log.
     case 'viewer_tick':
     case 'chat_msg':
     case 'time_cmd': {
       const teamId = sanitizeTeamId(msg.teamId);
       if (!await ownsTeam(meta.authUser, teamId)) return;
+      const simBase = {
+        teamId, actor: meta.authUser || '(unauthenticated)', ip: meta.ip,
+        action: 'sim_' + msg.event, target: auditTarget(msg),
+        detail: { channel: sanitizeChannel(msg.channel || '') || null,
+                  message: msg.event === 'chat_msg' ? String(msg.message || '').slice(0, 120) : undefined },
+      };
+      if (!CFG.allowSim) {
+        await audit({ ...simBase, result: 'denied', detail: { ...simBase.detail, reason: 'sim_disabled' } });
+        send({ event: 'gw_ack', type: 'sim_disabled' });
+        return;
+      }
+      await audit(simBase);
       redisPub.publish('ch:giveaway', JSON.stringify({ ...msg, team: teamId }))
         .catch((e) => logErr('Sim', 'republish failed:', e.message));
       break;
