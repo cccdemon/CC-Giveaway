@@ -74,7 +74,7 @@ body.privacy .event-log:hover { filter:blur(5px); }
 .audit-ts { margin-left:auto; color:var(--dim); font-size:10px; white-space:nowrap; }
 .audit-sum { font-size:11px; color:var(--dim); margin-top:2px; }
 .audit-flag { font-size:9px; letter-spacing:1px; color:var(--gold); margin-top:2px; }
-.in-wide { flex:1 1 auto; min-width:0; }
+.in-wide { flex:1 1 auto; min-width:120px; }
 .ws-badge.off { color:var(--dim);   border-color:rgba(200,220,232,.12); }
 .ws-badge.off::before { box-shadow:none; }
 
@@ -98,7 +98,9 @@ body.privacy .event-log:hover { filter:blur(5px); }
 .btn-sm    { padding:5px 10px; font-size:9px; }
 
 /* ── Inputs ─────────────────────────────────────────────── */
-input[type=text], input[type=number] { background:var(--sunk); border:1px solid rgba(0,212,255,.2); color:var(--text); font-family:var(--mono); font-size:12px; padding:8px 10px; outline:none; border-radius:6px; }
+input[type=text], input[type=number], input[type=password], select { background:var(--sunk); border:1px solid rgba(0,212,255,.2); color:var(--text); font-family:var(--mono); font-size:12px; padding:8px 10px; outline:none; border-radius:6px; }
+select { cursor:pointer; }
+select:focus { border-color:rgba(0,212,255,.5); box-shadow:0 0 0 2px rgba(0,212,255,.12); }
 input:focus { border-color:rgba(0,212,255,.5); box-shadow:0 0 0 2px rgba(0,212,255,.12); }
 input::placeholder { color:rgba(200,220,232,.24); }
 .in-narrow { flex:0 0 58px; width:58px; text-align:center; }
@@ -176,7 +178,13 @@ tbody td:last-child { text-align:right; }
 
 /* ── Auto-Steuerung Toggles ─────────────────────────────── */
 .cfg-row { display:flex; align-items:center; gap:10px; font-size:12.5px; color:var(--text); padding:5px 0; cursor:pointer; }
-.cfg-row input { width:15px; height:15px; accent-color:var(--cyan); cursor:pointer; flex:0 0 auto; }
+.cfg-row input[type=checkbox] { width:15px; height:15px; accent-color:var(--cyan); cursor:pointer; flex:0 0 auto; }
+/* Text-, Passwort- und Auswahlfelder in Config-Zeilen behalten ihre normale Groesse */
+.cfg-row input[type=text], .cfg-row input[type=password], .cfg-row select { flex:1 1 auto; min-width:0; cursor:auto; }
+.cfg-row select { cursor:pointer; }
+/* Zeilen mit einem breiten Feld duerfen umbrechen statt es zu quetschen */
+.cfg-row.wrap { flex-wrap:wrap; }
+.cfg-row.wrap > .in-wide { flex:1 1 100%; }
 .cfg-row b { color:var(--cyan); font-weight:600; }
 .cfg-row .in-narrow { flex:0 0 52px; }
 .cfg-hint { font-size:10.5px; color:var(--dim); line-height:1.5; margin:2px 0 8px; padding-left:2px; }
