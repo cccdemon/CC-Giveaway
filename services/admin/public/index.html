@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <title>Team Giveaway – Control Center</title>
 <link rel="stylesheet" href="chaos-crew-admin.css">
+<style>
+  /* Superadmin-only Bereiche: standardmaessig aus, damit sie nicht kurz
+     aufblitzen, bevor /auth/me antwortet. admin-shared.js setzt data-role. */
+  .sa-only { display: none; }
+  html[data-role="superadmin"] .sa-only { display: block; }
+  html[data-role="superadmin"] .health-bar.sa-only { display: flex; }
+</style>
 </head>
 <body>
 <script src="admin-shared.js"></script>
@@ -19,7 +26,7 @@
   <div class="header-time" id="clock"></div>
 </div>
 
-<div class="health-bar">
+<div class="health-bar sa-only">
   <div id="h-bridge"   class="health-svc loading"><div class="health-dot"></div>BRIDGE</div>
   <div id="h-giveaway" class="health-svc loading"><div class="health-dot"></div>GIVEAWAY</div>
 </div>
@@ -78,7 +85,9 @@
     </div>
   </section>
 
-  <section class="module-group">
+  <!-- Nur Plattform-Admins: Redis Commander schreibt direkt in den Live-State,
+       /health nennt interne Servicenamen. Durchgesetzt wird das serverseitig. -->
+  <section class="module-group sa-only">
     <div class="group-title">INFRASTRUKTUR</div>
     <div class="module-grid">
 

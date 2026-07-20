@@ -54,6 +54,9 @@ const CFG = {
   cookieSecure:   process.env.COOKIE_SECURE !== 'false',
   bootstrapUser:  process.env.ADMIN_BOOTSTRAP_USER || 'admin',
   bootstrapPass:  process.env.ADMIN_BOOTSTRAP_PASS || '',
+  // Twitch-Logins mit Plattform-Adminrechten (Superadmin). Komma-getrennt.
+  platformAdmins: String(process.env.PLATFORM_ADMINS || 'justcallmedeimos')
+                    .split(',').map(s => A.sanitizeUserName(s)).filter(Boolean),
   loginPath:      '/admin/login.html',
   // Twitch OAuth (open self-registration)
   twitchClientId:     unquote(process.env.TWITCH_CLIENT_ID),
@@ -84,6 +87,21 @@ function sessionFromReq(req) {
 app.get('/auth/verify', (req, res) => {
   const sess = sessionFromReq(req);
   if (!sess) return res.redirect(302, CFG.loginPath);
+  res.set('X-Auth-User', sess.user);
+  res.set('X-Auth-Role', sess.role);
+  res.status(200).end();
+});
+
+// forward_auth target für Superadmin-Pfade (/health, /redis-ui/*). Ohne Session
+// 302 → Login, mit Session aber ohne Superadmin-Rolle hart 403 — ein Redirect
+// wäre hier irreführend, der Nutzer ist ja bereits angemeldet.
+app.get('/auth/verify-superadmin', (req, res) => {
+  const sess = sessionFromReq(req);
+  if (!sess) return res.redirect(302, CFG.loginPath);
+  if (sess.role !== 'superadmin') {
+    return res.status(403).type('text/plain; charset=utf-8')
+      .send('403 — Diese Seite ist Plattform-Administratoren vorbehalten.');
+  }
   res.set('X-Auth-User', sess.user);
   res.set('X-Auth-Role', sess.role);
   res.status(200).end();
@@ -726,6 +744,54 @@ app.get('/pub/doc/:name', (req, res) => {
   catch (e) { res.status(500).json({ error: 'unavailable' }); }
 });
 
+// ── Sitemap + robots.txt ──────────────────────────────────
+// Nur Seiten, die ohne Session UND ohne Parameter vollstaendig sind. Bewusst
+// draussen: /viewer/status (personenbezogen), /viewer/terms (braucht ?team=),
+// /admin/join.html (braucht Einladungscode), /admin/home.html (Dublette zu /).
+// Die Liste muss zur `@needsauth not path`-Whitelist in caddy/Caddyfile.team
+// passen — was hier steht, aber dort fehlt, liefert Crawlern ein 302 auf Login.
+const SITEMAP = [
+  { loc: '/',                             prio: '1.0', freq: 'weekly'  },
+  { loc: '/viewer/help',                  prio: '0.8', freq: 'monthly' },
+  { loc: '/admin/setup.html',             prio: '0.6', freq: 'monthly' },
+  { loc: '/admin/nutzungsbedingungen.html', prio: '0.4', freq: 'yearly' },
+  { loc: '/admin/datenschutz.html',       prio: '0.4', freq: 'yearly'  },
+  { loc: '/admin/impressum.html',         prio: '0.3', freq: 'yearly'  },
+  { loc: '/admin/haftungsausschluss.html', prio: '0.3', freq: 'yearly' },
+];
+
+app.get('/sitemap.xml', (req, res) => {
+  const xml = ['<?xml version="1.0" encoding="UTF-8"?>',
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'];
+  for (const u of SITEMAP) {
+    xml.push('  <url>', `    <loc>${CFG.publicUrl}${u.loc}</loc>`,
+             `    <changefreq>${u.freq}</changefreq>`,
+             `    <priority>${u.prio}</priority>`, '  </url>');
+  }
+  xml.push('</urlset>');
+  res.type('application/xml; charset=utf-8').send(xml.join(NL) + NL);
+});
+
+app.get('/robots.txt', (req, res) => {
+  // Alles hinter Login ist ohnehin gesperrt — die Disallow-Regeln halten
+  // Crawler nur davon ab, sich an 302-Ketten und Personenseiten aufzuhalten.
+  res.type('text/plain; charset=utf-8').send([
+    'User-agent: *',
+    'Disallow: /admin/',
+    'Disallow: /giveaway/',
+    'Disallow: /redis-ui/',
+    'Disallow: /viewer/status',
+    'Disallow: /viewer/terms',
+    'Disallow: /health',
+    'Disallow: /ingest',
+    // Die Rechtstexte liegen unter /admin/, muessen aber auffindbar bleiben.
+    ...SITEMAP.filter(u => u.loc.startsWith('/admin/')).map(u => `Allow: ${u.loc}`),
+    '',
+    `Sitemap: ${CFG.publicUrl}/sitemap.xml`,
+    '',
+  ].join(NL));
+});
+
 // ── Public: Streamerbot-C#-Actions (Code zum Kopieren) ────
 app.get('/pub/actions', (req, res) => {
   try {
@@ -756,8 +822,15 @@ app.get('/pub/team/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── Aggregated health (public) ────────────────────────────
+// ── Liveness (public, ohne Details) ───────────────────────
+// Ziel der Docker-Healthchecks. Verrät bewusst nichts über andere Services.
+app.get('/healthz', (req, res) => res.json({ status: 'ok' }));
+
+// ── Aggregated health (superadmin) ────────────────────────
+// Nennt Namen, URLs und Fehlertexte der internen Services — nicht öffentlich.
+// Die Prüfung steht hier UND in Caddy: /admin/health umgeht den Caddy-Matcher.
 app.get('/health', async (req, res) => {
+  if (!requireSuperadmin(req, res)) return;
   const results = {};
   let allOk = true;
   await Promise.all(Object.entries(CFG.services).map(async ([name, url]) => {
@@ -877,6 +950,16 @@ async function ensureSchema() {
     );
     log('Auth', `Bootstrap superadmin "${CFG.bootstrapUser}" created`);
   }
+
+  // Plattform-Admins (Twitch-Logins) aus der Konfiguration durchsetzen. Der
+  // Eintrag wird vorgemerkt, auch wenn sich der Kanal noch nie eingeloggt hat —
+  // beim ersten Login greift dann sofort die Superadmin-Rolle.
+  for (const login of CFG.platformAdmins) {
+    await pg.query(
+      `INSERT INTO streamers (login, is_platform_admin) VALUES ($1, TRUE)
+       ON CONFLICT (login) DO UPDATE SET is_platform_admin = TRUE`, [login]);
+  }
+  if (CFG.platformAdmins.length) log('Auth', `Platform admins: ${CFG.platformAdmins.join(', ')}`);
 }
 
 async function pgReady() {

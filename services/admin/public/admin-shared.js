@@ -318,6 +318,15 @@
   else document.addEventListener('DOMContentLoaded', function(){ document.body.insertBefore(nav, document.body.firstChild); });
 
   fetch('/admin/auth/me').then(function(r){ return r.ok ? r.json() : null; }).then(function(u){
+    // Rolle fuer Seiten bereitstellen, die Elemente ausblenden muessen. Das ist
+    // reine Anzeige-Logik — durchgesetzt wird der Zugriff in Caddy und im
+    // admin-Service, nicht hier.
+    window.CC = window.CC || {};
+    CC.session = u || null;
+    CC.isSuperadmin = !!(u && u.role === 'superadmin');
+    document.documentElement.setAttribute('data-role', (u && u.role) || 'anon');
+    document.dispatchEvent(new CustomEvent('cc:session', { detail: u || null }));
+
     var login = u && (u.user || u.login);
     if (!login) return;
     document.getElementById('gwnav-uname').textContent = login;

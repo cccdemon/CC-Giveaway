@@ -46,5 +46,13 @@ function fetchHealth() {
     });
 }
 
-fetchHealth();
-setInterval(fetchHealth, 30000);
+// /health ist Superadmin-only — fuer alle anderen bleibt die Leiste versteckt
+// und wir sparen uns den 403-Request.
+function startHealth() {
+  if (!window.CC || !CC.isSuperadmin) return;
+  fetchHealth();
+  setInterval(fetchHealth, 30000);
+}
+// Falls /auth/me schon geantwortet hat, bevor dieses Script lief.
+if (window.CC && CC.session !== undefined) startHealth();
+else document.addEventListener('cc:session', startHealth);

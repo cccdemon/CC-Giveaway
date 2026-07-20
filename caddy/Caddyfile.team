@@ -25,9 +25,20 @@
         # 302 → /admin/login.html.
         # /admin/og-preview.png muss offen bleiben: Link-Vorschau-Crawler
         # (Discord, WhatsApp, X) haben keine Session und wuerden sonst 302 bekommen.
-        @needsauth not path / /admin/home.html /admin/login.html /admin/join.html /admin/setup.html /admin/impressum.html /admin/datenschutz.html /admin/nutzungsbedingungen.html /admin/haftungsausschluss.html /admin/og-preview.png /admin/auth/* /admin/pub/* /viewer/* /health /ingest* /giveaway/overlay-ws /giveaway/giveaway-overlay* /giveaway/giveaway-join*
+        @needsauth not path / /admin/home.html /admin/login.html /admin/join.html /admin/setup.html /admin/impressum.html /admin/datenschutz.html /admin/nutzungsbedingungen.html /admin/haftungsausschluss.html /admin/og-preview.png /admin/auth/* /admin/pub/* /viewer/* /healthz /sitemap.xml /robots.txt /ingest* /giveaway/overlay-ws /giveaway/giveaway-overlay* /giveaway/giveaway-join*
         forward_auth @needsauth admin:3005 {
             uri /auth/verify
+            copy_headers X-Auth-User X-Auth-Role
+        }
+
+        # ── Superadmin-Gate ───────────────────────────────────
+        # Infrastruktur-Werkzeuge: Redis Commander schreibt direkt in den
+        # Live-State, /health nennt interne Servicenamen und Fehlertexte.
+        # Beides nur fuer Plattform-Administratoren. Laeuft NACH dem
+        # allgemeinen Gate, prueft also nur noch die Rolle.
+        @superadmin path /health /redis-ui /redis-ui/*
+        forward_auth @superadmin admin:3005 {
+            uri /auth/verify-superadmin
             copy_headers X-Auth-User X-Auth-Role
         }
 
@@ -69,7 +80,18 @@
             reverse_proxy bridge:3000
         }
 
-        # ── Aggregated health (public) ────────────────────────
+        # ── Crawler (public) ──────────────────────────────────
+        handle /sitemap.xml {
+            reverse_proxy admin:3005
+        }
+        handle /robots.txt {
+            reverse_proxy admin:3005
+        }
+
+        # ── Liveness (public) + Aggregat (superadmin, s. Gate oben) ──
+        handle /healthz {
+            reverse_proxy admin:3005
+        }
         handle /health {
             reverse_proxy admin:3005
         }

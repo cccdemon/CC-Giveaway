@@ -38,7 +38,19 @@
         reverse_proxy bridge:3000
     }
 
-    # ── Aggregated health ─────────────────────────────────
+    # ── Crawler ───────────────────────────────────────────
+    handle /sitemap.xml {
+        reverse_proxy admin:3005
+    }
+    handle /robots.txt {
+        reverse_proxy admin:3005
+    }
+
+    # ── Liveness (offen) + Aggregat (nur superadmin, App-seitig) ──
+    # Dev hat kein forward_auth; /health prueft die Rolle selbst.
+    handle /healthz {
+        reverse_proxy admin:3005
+    }
     handle /health {
         reverse_proxy admin:3005
     }

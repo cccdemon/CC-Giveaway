@@ -150,6 +150,7 @@ services:
       TWITCH_CLIENT_ID:     ${TWITCH_CLIENT_ID:-}
       TWITCH_CLIENT_SECRET: ${TWITCH_CLIENT_SECRET:-}
       ADMIN_PUBLIC_URL:     ${ADMIN_PUBLIC_URL:-https://team.raumdock.org}
+      PLATFORM_ADMINS:      ${PLATFORM_ADMINS:-justcallmedeimos}
       TZ: Europe/Berlin
     depends_on:
       giveaway:
@@ -159,7 +160,7 @@ services:
     networks:
       - chaos-crew
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3005/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:3005/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -241,7 +242,9 @@ services:
       HTTP_PASSWORD: ${REDIS_UI_PASSWORD:-crewpassword}
       TZ: Europe/Berlin
     ports:
-      - "8081:8081"
+      # Nur Loopback: der oeffentliche Weg ist /redis-ui/ hinter dem
+      # Superadmin-Gate in Caddy. Ein 0.0.0.0-Binding wuerde das Gate umgehen.
+      - "127.0.0.1:8081:8081"
     depends_on:
       redis:
         condition: service_healthy
