@@ -189,6 +189,7 @@ function handle(msg) {
         break;
       }
       if (msg.type === 'ai_settings') { applyAiSettings(msg); break; }
+      if (msg.type === 'ai_models')   { applyAiModels(msg); break; }
       if (msg.type === 'ai_error')    { log('KI: ' + (msg.error || '?'), 'red'); break; }
       if (msg.type === 'ai_rotated')  { log('Master-Schlüssel rotiert: ' + msg.reencrypted + ' Keys neu verschlüsselt'
                                             + (msg.unreadable ? ', ' + msg.unreadable + ' unlesbar' : ''), 'gold'); break; }
@@ -591,6 +592,8 @@ function verifyFollows() {
 
 // ── Chat-KI ───────────────────────────────────────────────
 let aiProviders = [];
+let aiModels = [];
+let aiCurrentModel = '';
 
 function applyAiSettings(msg) {
   if (Array.isArray(msg.providers) && msg.providers.length) aiProviders = msg.providers;
@@ -602,9 +605,16 @@ function applyAiSettings(msg) {
     if (msg.provider) sel.value = msg.provider;
   }
   var en = document.getElementById('cfg-ai-enabled'); if (en) en.checked = !!msg.enabled;
-  var mo = document.getElementById('cfg-ai-model');   if (mo && msg.model !== undefined) mo.value = msg.model || '';
+  if (msg.model !== undefined) aiCurrentModel = msg.model || '';
+  // Ohne geladene Liste die bekannten Modelle des Anbieters zeigen -
+  // eine leere Auswahl waere schlimmer als eine unvollstaendige.
+  if (!aiModels.length) {
+    var p = aiProviders.filter(function(x) { return x.id === (msg.provider || 'anthropic'); })[0];
+    if (p && p.knownModels) aiModels = p.knownModels;
+  }
+  renderAiModels();
   var key = document.getElementById('cfg-ai-key');
-  if (key) key.placeholder = msg.hasKey ? '•••••••• (hinterlegt – leer lassen zum Behalten, "-" zum Löschen)' : 'API-Key eintragen';
+  if (key) key.placeholder = msg.hasKey ? '******** (hinterlegt - leer lassen zum Behalten, "-" zum Loeschen)' : 'API-Key eintragen';
   var st = document.getElementById('ai-state');
   if (st) {
     if (msg.enabled && msg.hasKey) { st.textContent = 'AKTIV'; st.style.color = 'var(--green)'; }
@@ -613,13 +623,71 @@ function applyAiSettings(msg) {
   }
 }
 
-function onAiProviderChange() {
-  // Modell auf den Default des Anbieters setzen, damit keine fremde ID stehen bleibt.
-  var sel = document.getElementById('cfg-ai-provider');
-  var mo  = document.getElementById('cfg-ai-model');
-  var p = aiProviders.filter(function(x) { return x.id === (sel || {}).value; })[0];
-  if (p && mo) mo.value = p.defaultModel;
+function renderAiModels() {
+  var sel = document.getElementById('cfg-ai-model-sel');
+  if (!sel) return;
+  var known = aiModels.some(function(m) { return m.id === aiCurrentModel; });
+  var opts = aiModels.map(function(m) {
+    return '<option value="' + esc(m.id) + '">' + esc(m.label || m.id) + '</option>';
+  });
+  // Ein gespeichertes Modell, das nicht in der Liste steht, darf nicht
+  // stillschweigend verschwinden - sonst aendert ein Neuladen die Config.
+  if (aiCurrentModel && !known) {
+    opts.unshift('<option value="' + esc(aiCurrentModel) + '">' + esc(aiCurrentModel) + ' (gespeichert)</option>');
+  }
+  opts.push('<option value="__custom">- eigene Modell-ID ...</option>');
+  sel.innerHTML = opts.join('');
+  sel.value = aiCurrentModel || (aiModels[0] || {}).id || '__custom';
+  toggleCustomModelRow(sel.value === '__custom');
+}
+
+function toggleCustomModelRow(on) {
+  var row = document.getElementById('ai-model-custom-row');
+  if (row) row.style.display = on ? '' : 'none';
+}
+
+function onAiModelChange() {
+  var sel = document.getElementById('cfg-ai-model-sel');
+  if (!sel) return;
+  if (sel.value === '__custom') { toggleCustomModelRow(true); return; }
+  toggleCustomModelRow(false);
+  aiCurrentModel = sel.value;
   saveAiSettings();
+}
+
+function loadAiModels() {
+  var sel = document.getElementById('cfg-ai-provider');
+  log('Frage Modelle beim Anbieter ab ...', 'cyan');
+  send({ event: 'gw_cmd', cmd: 'gw_list_ai_models', provider: (sel || {}).value || 'anthropic' });
+}
+
+function applyAiModels(msg) {
+  aiModels = Array.isArray(msg.models) ? msg.models : [];
+  renderAiModels();
+  var hint = document.getElementById('ai-model-src');
+  if (hint) {
+    hint.textContent = msg.source === 'live'
+      ? aiModels.length + ' Modelle beim Anbieter abgefragt'
+      : 'Anbieterliste nicht abrufbar (' + (msg.error || '?') + ') - zeige bekannte Modelle';
+    hint.style.color = msg.source === 'live' ? 'var(--green)' : 'var(--gold)';
+  }
+}
+
+function onAiProviderChange() {
+  // Anbieterwechsel: alte Modell-Liste ist wertlos, Default des neuen setzen.
+  var sel = document.getElementById('cfg-ai-provider');
+  var p = aiProviders.filter(function(x) { return x.id === (sel || {}).value; })[0];
+  aiModels = (p && p.knownModels) ? p.knownModels : [];
+  aiCurrentModel = p ? p.defaultModel : '';
+  renderAiModels();
+  saveAiSettings();
+  loadAiModels();
+}
+
+function currentAiModel() {
+  var sel = document.getElementById('cfg-ai-model-sel');
+  if (sel && sel.value && sel.value !== '__custom') return sel.value;
+  return ((document.getElementById('cfg-ai-model') || {}).value || '').trim();
 }
 
 function saveAiSettings(withKey) {
@@ -628,7 +696,7 @@ function saveAiSettings(withKey) {
     event: 'gw_cmd', cmd: 'gw_set_ai_settings',
     enabled:  (document.getElementById('cfg-ai-enabled') || {}).checked ? 1 : 0,
     provider: (document.getElementById('cfg-ai-provider') || {}).value || 'anthropic',
-    model:    (document.getElementById('cfg-ai-model') || {}).value || '',
+    model:    currentAiModel(),
   };
   if (withKey && keyEl && keyEl.value.trim()) { payload.apiKey = keyEl.value.trim(); keyEl.value = ''; }
   send(payload);

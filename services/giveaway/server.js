@@ -24,7 +24,7 @@ const fmtDur = (sec) => {                              // 7200→"2 Std", 1800�
   return `${Math.round(sec / 60)} Min`;
 };
 const { Helix } = require('./helix.js');
-const { judgeMessage, encryptKey, decryptKey, PROVIDERS } = require('./chat-ai.js');
+const { judgeMessage, listModels, encryptKey, decryptKey, PROVIDERS } = require('./chat-ai.js');
 
 function log(tag, ...args)    { console.log( `[${tag}]`, ...args); }
 function logErr(tag, ...args) { console.error(`[${tag}]`, ...args); }
@@ -242,7 +242,7 @@ async function memberChannel(login, teamId) {
 // Nur-Lese-Cmds sind ausgenommen, sonst ersäuft der Log in Polling-Rauschen.
 const AUDIT_SKIP = new Set([
   'gw_get_channels', 'gw_get_multiplier', 'gw_get_stream_settings',
-  'gw_get_keyword', 'gw_get_ingest_tokens', 'gw_get_ai_settings',
+  'gw_get_keyword', 'gw_get_ingest_tokens', 'gw_get_ai_settings', 'gw_list_ai_models',
 ]);
 
 async function audit(entry) {
@@ -512,7 +512,7 @@ async function runAdminCmd(send, msg, meta, ctx) {
       // Der Key selbst wird NIE zurueckgegeben - nur ob einer hinterlegt ist.
       send({ event: 'gw_ack', type: 'ai_settings', enabled: cfg.enabled, provider: cfg.provider,
              model: cfg.model, hasKey: cfg.hasKey, secretConfigured: !!AI_SECRET, keySource: 'db',
-             providers: Object.entries(PROVIDERS).map(([id, p]) => ({ id, label: p.label, defaultModel: p.defaultModel })) });
+             providers: Object.entries(PROVIDERS).map(([id, p]) => ({ id, label: p.label, defaultModel: p.defaultModel, knownModels: p.knownModels })) });
       break;
     }
     case 'gw_set_ai_settings': {
@@ -541,6 +541,16 @@ async function runAdminCmd(send, msg, meta, ctx) {
                                modelBefore: before.model, modelAfter: after.model, keyChanged: keyTouched });
       send({ event: 'gw_ack', type: 'ai_settings', enabled: after.enabled, provider: after.provider,
              model: after.model, hasKey: after.hasKey, secretConfigured: !!AI_SECRET });
+      break;
+    }
+    case 'gw_list_ai_models': {
+      // Modelle beim Anbieter abfragen. Der zu pruefende Anbieter kann vom
+      // gespeicherten abweichen - im Panel waehlt man ihn ja, bevor gespeichert wird.
+      const cfg = await getAiConfig(teamId);
+      const provider = PROVIDERS[msg.provider] ? msg.provider : cfg.provider;
+      const r = await listModels({ provider, apiKey: cfg.apiKey });
+      send({ event: 'gw_ack', type: 'ai_models', provider, models: r.models,
+             source: r.source, error: r.error || null });
       break;
     }
     case 'gw_rotate_ai_secret': {

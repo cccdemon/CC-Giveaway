@@ -18,10 +18,32 @@ const TIMEOUT_MS   = 4000;   // danach zählt die Wortregel — Chat wartet nie 
 const CACHE_MAX    = 2000;
 const MAX_MSG_LEN  = 400;
 
+// knownModels = Fallback-Liste, falls kein Key hinterlegt ist oder der
+// Anbieter die Modell-Liste nicht rausgibt. Mit Key wird live abgefragt.
 const PROVIDERS = {
-  anthropic: { label: 'Anthropic (Claude)', defaultModel: 'claude-opus-4-8' },
-  openai:    { label: 'OpenAI (GPT)',       defaultModel: 'gpt-5' },
-  gemini:    { label: 'Google (Gemini)',    defaultModel: 'gemini-2.5-flash' },
+  anthropic: {
+    label: 'Anthropic (Claude)', defaultModel: 'claude-haiku-4-5',
+    knownModels: [
+      { id: 'claude-haiku-4-5', label: 'Haiku 4.5 — schnell & günstig' },
+      { id: 'claude-sonnet-5',  label: 'Sonnet 5' },
+      { id: 'claude-opus-4-8',  label: 'Opus 4.8 — teuer' },
+    ],
+  },
+  openai: {
+    label: 'OpenAI (GPT)', defaultModel: 'gpt-5-mini',
+    knownModels: [
+      { id: 'gpt-5-mini', label: 'GPT-5 mini — schnell & günstig' },
+      { id: 'gpt-5',      label: 'GPT-5' },
+    ],
+  },
+  gemini: {
+    label: 'Google (Gemini)', defaultModel: 'gemini-2.5-flash',
+    knownModels: [
+      { id: 'gemini-2.5-flash',      label: 'Gemini 2.5 Flash — schnell & günstig' },
+      { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
+      { id: 'gemini-2.5-pro',        label: 'Gemini 2.5 Pro — teuer' },
+    ],
+  },
 };
 
 const SYSTEM_PROMPT =
@@ -131,6 +153,59 @@ async function callGemini({ apiKey, model, message, signal, fetchImpl }) {
 
 const CALLERS = { anthropic: callAnthropic, openai: callOpenAI, gemini: callGemini };
 
+// ── Modell-Liste beim Anbieter abfragen ───────────────────
+// Damit niemand Modell-IDs raten muss. Schlägt es fehl, nimmt der Aufrufer
+// die knownModels-Liste — eine leere Auswahl wäre schlimmer als eine alte.
+const LISTERS = {
+  async anthropic({ apiKey, signal, fetchImpl }) {
+    const r = await fetchImpl('https://api.anthropic.com/v1/models?limit=100', {
+      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }, signal });
+    if (!r.ok) throw new Error(`anthropic ${r.status}`);
+    const j = await r.json();
+    return (j.data || []).map(m => ({ id: m.id, label: m.display_name || m.id }));
+  },
+  async openai({ apiKey, signal, fetchImpl }) {
+    const r = await fetchImpl('https://api.openai.com/v1/models', {
+      headers: { authorization: `Bearer ${apiKey}` }, signal });
+    if (!r.ok) throw new Error(`openai ${r.status}`);
+    const j = await r.json();
+    // Die Liste enthält auch Embedding-, Audio- und Bildmodelle — die können
+    // die Frage nicht beantworten und gehören nicht in die Auswahl.
+    return (j.data || [])
+      .map(m => String(m.id))
+      .filter(id => /^(gpt|o\d)/.test(id) && !/(embed|audio|image|tts|whisper|realtime|moderation|transcribe)/.test(id))
+      .sort()
+      .map(id => ({ id, label: id }));
+  },
+  async gemini({ apiKey, signal, fetchImpl }) {
+    const r = await fetchImpl('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', {
+      headers: { 'x-goog-api-key': apiKey }, signal });
+    if (!r.ok) throw new Error(`gemini ${r.status}`);
+    const j = await r.json();
+    return (j.models || [])
+      .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+      .map(m => ({ id: String(m.name || '').replace(/^models\//, ''), label: m.displayName || m.name }))
+      .filter(m => m.id);
+  },
+};
+
+// { models: [...], source: 'live'|'fallback', error? }
+async function listModels(cfg, opts = {}) {
+  const provider = PROVIDERS[cfg && cfg.provider] ? cfg.provider : 'anthropic';
+  const fallback = { models: PROVIDERS[provider].knownModels, source: 'fallback' };
+  const fetchImpl = opts.fetch || globalThis.fetch;
+  if (!cfg || !cfg.apiKey || typeof fetchImpl !== 'function') return { ...fallback, error: 'kein Key' };
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs || 8000);
+  try {
+    const models = await LISTERS[provider]({ apiKey: cfg.apiKey, signal: ctrl.signal, fetchImpl });
+    if (!models.length) return { ...fallback, error: 'leere Liste' };
+    return { models, source: 'live' };
+  } catch (e) {
+    return { ...fallback, error: e.name === 'AbortError' ? 'timeout' : e.message };
+  } finally { clearTimeout(timer); }
+}
+
 // ── Öffentliche API ───────────────────────────────────────
 // Rückgabe: { meaningful: bool|null, source: 'ai'|'cache'|'error', reason? }
 // meaningful === null heißt: keine Entscheidung — Aufrufer nimmt die Wortregel.
@@ -166,4 +241,4 @@ async function judgeMessage(cfg, message, opts = {}) {
   }
 }
 
-module.exports = { judgeMessage, encryptKey, decryptKey, PROVIDERS, SYSTEM_PROMPT, TIMEOUT_MS };
+module.exports = { judgeMessage, listModels, encryptKey, decryptKey, PROVIDERS, SYSTEM_PROMPT, TIMEOUT_MS };
