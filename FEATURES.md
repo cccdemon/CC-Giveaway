@@ -211,6 +211,37 @@ funktioniert unverändert.
   kann.
 - Der Streamer kann seine Teilnehmerliste einsehen und exportieren — das ist
   nötig, um Gewinner zu kontaktieren und die Ziehung zu belegen.
+- **Deine Daten selbst einsehen und löschen:** unter „Meine Daten" siehst du mit
+  Twitch-Login alles, was zu dir gespeichert ist, kannst es als JSON
+  herunterladen und die Löschung selbst auslösen — ohne Mail, ohne Wartezeit.
+
+---
+
+## Rechtlicher Rahmen
+
+- **Kein Glücksspiel — und das ist verbindlich.** Die Nutzungsbedingungen
+  verbieten, Lose oder die Teilnahme an eine Gegenleistung zu koppeln: kein Kauf,
+  keine Abos (auch keine geschenkten), keine Bits, Trinkgelder, Spenden oder
+  Guthaben. Auch Geld- und Krypto-Preise sind ausgeschlossen. Technisch entstehen
+  Lose ohnehin nur aus Zuschauzeit und Chat — es gibt keinen Weg, Geld in Lose zu
+  verwandeln.
+- **Zustimmung ist Pflicht, nicht Dekoration.** Wer ein Team führt, muss den
+  Nutzungsbedingungen zugestimmt haben — sonst lassen sich weder Teams anlegen
+  noch Giveaways öffnen. Jede Zustimmung wird mit Version und Zeitstempel
+  gespeichert; ältere Zustimmungen bleiben als Nachweis erhalten.
+- **Veranstalter bleibt der Streamer.** Die Plattform stellt das Werkzeug, das
+  Gewinnspiel veranstaltet der Streamer — mit eigenem Impressum und eigenen
+  Teilnahmebedingungen. Ohne hinterlegtes Impressum lässt sich kein Giveaway
+  öffnen.
+- **Alle Rechtstexte sind ohne Login erreichbar** — Impressum, Datenschutz,
+  Nutzungsbedingungen und Haftungsausschluss, dazu die Teilnahmebedingungen des
+  jeweiligen Giveaways. Verlinkt sind sie in der Team-Karte und auf der
+  Zuschauer-Statusseite, jeweils mit Kopierknopf.
+- **Löschen heißt nicht Beweise vernichten.** Wird ein Konto gelöscht,
+  verschwinden Zuschauzeit und Teilnahmedaten; in bereits erfolgten Ziehungen
+  wird der Name durch ein Pseudonym ersetzt, damit die Ziehung überprüfbar
+  bleibt. Jeder Auskunfts- und Löschvorgang steht im Audit-Log — auch der reine
+  Zugriff, bewusst ohne IP-Adresse.
 
 ---
 
@@ -218,6 +249,9 @@ funktioniert unverändert.
 
 Ehrlich gesagt, damit niemand falsche Erwartungen hat:
 
+- **Die Rechtstexte sind nicht anwaltlich geprüft.** Sie sind nach bestem Wissen
+  formuliert und decken die üblichen Punkte ab, ersetzen aber keine Prüfung vor
+  einem öffentlichen Launch.
 - **Kein automatischer Gewinner-Kontakt.** Das System zieht und protokolliert;
   Anschreiben und Preisversand macht der Streamer von Hand.
 - **Keine Mehrfachpreise in einem Zug.** Mehrere Gewinner ziehst du nacheinander.

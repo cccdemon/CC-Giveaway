@@ -46,8 +46,12 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 - `services/giveaway/watchtime.js` — Coin/Ticket-Engine (testbar, ohne WS/HTTP)
 - `services/giveaway/public/giveaway-shared.js` — Shared-Lib (`CC.validate`, Nav)
 - `services/giveaway/public/giveaway-admin.js` — Admin-Panel-Logik
-- `services/admin/server.js` — Health + statische Admin-Pages
-- `services/admin/public/admin-shared.js` — `CC.validate`, Nav, Debug-Console
+- `services/admin/server.js` — Login/OAuth, Teams, TOS-Gate, DSGVO, `PUB_DOCS`, Health
+- `services/admin/public/admin-shared.js` — `CC.validate`, Nav, Debug-Console, TOS-Overlay
+- `services/admin/public/teams.js` — Team-Verwaltung + Rechts-/Giveaway-Linkblock
+- `services/admin/public/meine-daten.html` — DSGVO-Selbstauskunft/-Löschung
+- `services/admin/public/status.html` — Zuschauer-Status (`/viewer/status`) inkl. Rechtslinks
+- `services/admin/public-docs/*.md` — öffentliche Rechtstexte
 - `caddy/Caddyfile` (HTTP) · `caddy/Caddyfile.team` (prod, TLS DNS-01) · `caddy/Caddyfile.ssl`
 
 ## REST (`/giveaway/api/...`)
@@ -58,7 +62,7 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 
 ## Data
 - **Redis:** open/closed, keyword, banned, watchsec/msgs pro User, session id, (geplant: per-channel keys, follow-cache, multiplier).
-- **PostgreSQL:** `sessions`, `users`, `session_participants`, `watchtime_events`, `giveaway_draws` (voller Draw-Audit), `audit_log` (append-only: jede zustandsändernde Admin-/System-Aktion mit Actor, IP, Ziel, Vorher/Nachher; auch `denied`/`error`). Schema: `postgres/init.sql` (frisches Volume) + `ensureSchema()` beim Start (verlässlich).
+- **PostgreSQL:** `sessions`, `users`, `session_participants`, `watchtime_events`, `campaign_participation`, `abuse_flags`, `teams`, `team_members`, `streamers`, `terms_versions` (Teilnahmebedingungen pro Team), `tos_acceptances` (Zustimmung Nutzungsbedingungen, append-only), `app_secrets` (verschlüsselt), `giveaway_draws` (voller Draw-Audit), `audit_log` (append-only: jede zustandsändernde Admin-/System-Aktion mit Actor, IP, Ziel, Vorher/Nachher; auch `denied`/`error`). Schema: `postgres/init.sql` (frisches Volume) + `ensureSchema()` beim Start (verlässlich).
 - **Audit-Choke-Point:** `handleAdminCmd()` in `services/giveaway/server.js` — jedes neue `gw_cmd` läuft automatisch mit. Nur-Lese-Cmds in `AUDIT_SKIP` eintragen. Tokens gehören NIE ins `detail`.
 
 ## Streamerbot C# (`streamerbot/`) — inverted ingest client (Phase 6)
@@ -80,7 +84,27 @@ docker compose -f docker-compose.yml -f docker-compose.team.yml -p team up -d --
 Details in Auto-Memory `deploy-target-team-giveaway`.
 
 ## Sicherheit
-Stack hat noch **kein natives Auth** (WS-Cmds/REST offen). Interim: Caddy Basic-Auth über ganze Domain (`Caddyfile.team`). **In Arbeit:** echtes Login + Benutzerverwaltung (zentral via Caddy `forward_auth` → admin-Service, Session-Cookie) ersetzt den Stopgap.
+Auth zentral über Caddy `forward_auth` → `admin:3005/auth/verify` (Session-Cookie).
+Login per Twitch-OAuth, Selbstregistrierung beim ersten Login (Upsert in `streamers`).
+Öffentlich erreichbare Pfade stehen in der `@needsauth not path`-Liste in
+`caddy/Caddyfile.team` — **neue öffentliche Seite dort eintragen**, sonst verlangt
+Caddy Login. Secrets (KI-API-Keys) verschlüsselt in `app_secrets`, nie in ENV/Repo.
+
+## Recht & Compliance
+- Plattformtexte: `services/admin/public-docs/` (`impressum`, `datenschutz`,
+  `nutzungsbedingungen`, `haftungsausschluss`) → Whitelist `PUB_DOCS`, Auslieferung
+  über `GET /admin/pub/doc/:name`, ohne Login.
+- **Zustimmung ist versioniert und erzwungen:** Tabelle `tos_acceptances`,
+  `requireTos()` (HTTP 451) im admin-Service, `ownerAcceptedTos(teamId)` vor
+  `gw_open`/Auto-Open im giveaway-Service, blockierendes Overlay in `admin-shared.js`.
+  **`TOS_VERSION` steht doppelt** (`services/admin/server.js` +
+  `services/giveaway/server.js`) — bei Textänderung **beide** erhöhen.
+- **DSGVO-Selbstbedienung:** `/admin/meine-daten.html`, `GET /api/me/data`,
+  `POST /api/me/delete`. Benutzername kommt nur aus der Session. Ziehungsnachweise
+  werden pseudonymisiert (`geloescht_<sha256[0:8]>`), nicht gelöscht
+  (Art. 17 Abs. 3 lit. e DSGVO). Auch reine Zugriffe landen im `audit_log`, bewusst ohne IP.
+- Details: `docs/RECHT-UND-DATENSCHUTZ.md`. Betrieb/DB-Eingriffe: `docs/BETRIEB.md`.
+  Repo-Herkunft, Altbestände, Neuaufsetzen: `docs/PROJEKTHISTORIE.md`.
 
 ## Konventionen
 - Deutsche UI. Admin-Pages laden `admin-shared.js` zuerst. OBS-Overlays laden es NICHT.

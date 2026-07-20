@@ -38,7 +38,10 @@ cd services/<name> && npm test      # node --test, Redis DB 1
 
 ## Dokumentation
 - Funktionsüberblick: [FEATURES.md](FEATURES.md)
-- Konventionen, Architektur, Deploy: [CLAUDE.md](CLAUDE.md)
+- Konventionen, Architektur, Dateiübersicht: [CLAUDE.md](CLAUDE.md)
+- Deploy, Produktiv-DB, Runbook: [docs/BETRIEB.md](docs/BETRIEB.md)
+- Recht, DSGVO, Zustimmungslogik: [docs/RECHT-UND-DATENSCHUTZ.md](docs/RECHT-UND-DATENSCHUTZ.md)
+- Repo-Herkunft, Altbestände, Neuaufsetzen: [docs/PROJEKTHISTORIE.md](docs/PROJEKTHISTORIE.md)
 - Streamerbot-Setup: [streamerbot/CAMPAIGN_SETUP.md](streamerbot/CAMPAIGN_SETUP.md)
 - Für Teilnehmer: [docs/ANLEITUNG-TEILNEHMER.md](docs/ANLEITUNG-TEILNEHMER.md) ·
   [docs/TEILNAHMEBEDINGUNGEN.md](docs/TEILNAHMEBEDINGUNGEN.md)
