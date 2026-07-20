@@ -78,8 +78,55 @@ async function pgReady() {
 // ── Chat-KI (optional, pro Team) ──────────────────────────
 // Konfiguration liegt in der teams-Tabelle; der API-Key verschluesselt.
 // Kurzer Cache, damit nicht jede Chatnachricht eine DB-Runde kostet.
-const AI_SECRET = process.env.AI_KEY_SECRET || '';
+// Der Master-Schluessel liegt in app_secrets und wird beim ersten Start selbst
+// erzeugt - am Server ist nichts einzustellen. Wichtig und bewusst so:
+// Schluessel und Chiffrat liegen in derselben Datenbank. Das schuetzt gegen
+// Logs, Backup-Exporte und versehentlich geteilte Tabellenauszuege, NICHT
+// gegen jemanden, der die ganze Datenbank hat.
+let AI_SECRET = null;
 const aiCfgCache = new Map();   // teamId -> {cfg, until}
+
+async function loadMasterSecret() {
+  const r = await pg.query(`SELECT value FROM app_secrets WHERE key='ai_master'`);
+  if (r.rows[0] && r.rows[0].value) { AI_SECRET = r.rows[0].value; return AI_SECRET; }
+  const gen = crypto.randomBytes(32).toString('base64');
+  // ON CONFLICT: zwei Instanzen, die gleichzeitig starten, duerfen sich nicht
+  // gegenseitig ueberschreiben - sonst waeren bereits verschluesselte Keys tot.
+  await pg.query(`INSERT INTO app_secrets (key, value) VALUES ('ai_master', $1) ON CONFLICT (key) DO NOTHING`, [gen]);
+  const again = await pg.query(`SELECT value FROM app_secrets WHERE key='ai_master'`);
+  AI_SECRET = again.rows[0].value;
+  log('AI', 'Master-Schluessel erzeugt und gespeichert');
+  return AI_SECRET;
+}
+
+// Rotation: alle Team-Keys mit dem alten Schluessel lesen, mit dem neuen
+// schreiben. Faellt irgendein Key aus, bricht die Transaktion ab - sonst
+// haetten wir Keys, die mit zwei verschiedenen Schluesseln verschluesselt sind.
+async function rotateMasterSecret() {
+  const oldSecret = AI_SECRET;
+  const next = crypto.randomBytes(32).toString('base64');
+  const client = await pg.connect();
+  try {
+    await client.query('BEGIN');
+    const teams = await client.query(`SELECT id, ai_key_enc FROM teams WHERE ai_key_enc IS NOT NULL`);
+    let reencrypted = 0, unreadable = 0;
+    for (const row of teams.rows) {
+      const plain = decryptKey(row.ai_key_enc, oldSecret);
+      if (plain === null) { unreadable++; continue; }   // war schon unlesbar - nicht schlimmer machen
+      await client.query('UPDATE teams SET ai_key_enc=$2 WHERE id=$1', [row.id, encryptKey(plain, next)]);
+      reencrypted++;
+    }
+    await client.query(`UPDATE app_secrets SET value=$1, rotated_at=NOW() WHERE key='ai_master'`, [next]);
+    await client.query('COMMIT');
+    AI_SECRET = next;
+    aiCfgCache.clear();
+    log('AI', `Master-Schluessel rotiert: ${reencrypted} Keys neu verschluesselt, ${unreadable} unlesbar`);
+    return { reencrypted, unreadable };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally { client.release(); }
+}
 
 async function getAiConfig(teamId) {
   const t = sanitizeTeamId(teamId);
@@ -464,7 +511,7 @@ async function runAdminCmd(send, msg, meta, ctx) {
       const cfg = await getAiConfig(teamId);
       // Der Key selbst wird NIE zurueckgegeben - nur ob einer hinterlegt ist.
       send({ event: 'gw_ack', type: 'ai_settings', enabled: cfg.enabled, provider: cfg.provider,
-             model: cfg.model, hasKey: cfg.hasKey, secretConfigured: !!AI_SECRET,
+             model: cfg.model, hasKey: cfg.hasKey, secretConfigured: !!AI_SECRET, keySource: 'db',
              providers: Object.entries(PROVIDERS).map(([id, p]) => ({ id, label: p.label, defaultModel: p.defaultModel })) });
       break;
     }
@@ -494,6 +541,12 @@ async function runAdminCmd(send, msg, meta, ctx) {
                                modelBefore: before.model, modelAfter: after.model, keyChanged: keyTouched });
       send({ event: 'gw_ack', type: 'ai_settings', enabled: after.enabled, provider: after.provider,
              model: after.model, hasKey: after.hasKey, secretConfigured: !!AI_SECRET });
+      break;
+    }
+    case 'gw_rotate_ai_secret': {
+      const r = await rotateMasterSecret();
+      Object.assign(outcome, r);
+      send({ event: 'gw_ack', type: 'ai_rotated', ...r });
       break;
     }
     case 'gw_test_ai': {
@@ -942,11 +995,18 @@ async function ensureSchema() {
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_audit_team_ts ON audit_log(team_id, ts DESC)`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_audit_target ON audit_log(target)`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor)`);
-  // Chat-KI pro Team. ai_key_enc ist AES-256-GCM (Schluessel aus AI_KEY_SECRET).
+  // Chat-KI pro Team. ai_key_enc ist AES-256-GCM; Schluessel aus app_secrets.
   await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS ai_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
   await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS ai_provider TEXT`);
   await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS ai_model TEXT`);
   await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS ai_key_enc TEXT`);
+  await pg.query(`
+    CREATE TABLE IF NOT EXISTS app_secrets (
+      key        TEXT PRIMARY KEY,
+      value      TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      rotated_at TIMESTAMPTZ
+    )`);
   log('Schema', 'multi-tenant + abuse + audit schema ensured');
 }
 
@@ -954,6 +1014,7 @@ async function main() {
   await redisReady();
   await pgReady();
   await ensureSchema();
+  await loadMasterSecret();
   subscribeToGiveaway();
   startWatchtimeTicker();
   server.listen(CFG.port, () => log('Giveaway', `Service on port ${CFG.port}`));

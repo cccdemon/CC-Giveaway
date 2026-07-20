@@ -49,14 +49,17 @@ function cacheSet(k, v) {
 }
 
 // ── Key-Verschlüsselung (AES-256-GCM) ─────────────────────
-// Der API-Key eines Teams liegt verschlüsselt in Postgres. Ohne AI_KEY_SECRET
-// ist er nicht lesbar — ein DB-Dump allein gibt ihn also nicht preis.
+// Der API-Key eines Teams liegt verschlüsselt in Postgres. Der Master-Schlüssel
+// steht in app_secrets — also in derselben Datenbank. Das schützt gegen Logs,
+// Backup-Exporte und versehentlich geteilte Tabellenauszüge, NICHT gegen
+// jemanden mit vollem Datenbankzugriff. Wer das braucht: Schlüssel auslagern
+// (KMS, Datei-Mount) und keyFromSecret von dort speisen.
 function keyFromSecret(secret) {
   return scryptSync(String(secret || ''), 'cc-giveaway-ai', 32);
 }
 function encryptKey(plain, secret) {
   if (!plain) return null;
-  if (!secret) throw new Error('AI_KEY_SECRET nicht gesetzt — API-Key kann nicht sicher gespeichert werden');
+  if (!secret) throw new Error('Kein Master-Schlüssel — API-Key kann nicht verschlüsselt werden');
   const iv = randomBytes(12);
   const c  = createCipheriv('aes-256-gcm', keyFromSecret(secret), iv);
   const enc = Buffer.concat([c.update(String(plain), 'utf8'), c.final()]);

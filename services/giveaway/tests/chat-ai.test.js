@@ -87,5 +87,5 @@ test('API-Key: verschlüsseln und wieder lesen; falsches Secret gibt nichts prei
   assert.equal(decryptKey(enc, 'secret-a'), 'sk-geheim-123');
   assert.equal(decryptKey(enc, 'secret-b'), null);      // falscher Schlüssel
   assert.equal(decryptKey('kaputt', 'secret-a'), null); // manipulierter Wert
-  assert.throws(() => encryptKey('sk-x', ''), /AI_KEY_SECRET/);
+  assert.throws(() => encryptKey('sk-x', ''), /Master-Schl/);
 });

@@ -106,8 +106,8 @@
         <div class="cfg-row"><span>Anbieter</span><select id="cfg-ai-provider" class="in-wide" onchange="onAiProviderChange()"></select></div>
         <div class="cfg-row"><span>Modell</span><input type="text" id="cfg-ai-model" class="in-wide" placeholder="Modell-ID" onchange="saveAiSettings()"></div>
         <div class="cfg-row"><span>API-Key</span><input type="password" id="cfg-ai-key" class="in-wide" placeholder="(hinterlegt lassen)" autocomplete="off"><button class="btn btn-cyan btn-sm" onclick="saveAiSettings(true)">SPEICHERN</button></div>
-        <div class="btn-group mt-6"><button class="btn btn-gold" onclick="testAi()">KI TESTEN</button></div>
-        <div class="cfg-hint">Ohne KI zählt die Wortregel oben. Bei Timeout oder Ausfall greift sie automatisch wieder — der Chat blockiert nie. <b>Chatnachrichten werden dabei an den gewählten Anbieter übertragen</b>; das gehört in eure Teilnahmebedingungen.</div>
+        <div class="btn-group mt-6"><button class="btn btn-gold" onclick="testAi()">KI TESTEN</button><button class="btn btn-cyan" onclick="rotateAiSecret()" title="Erzeugt einen neuen Master-Schluessel und verschluesselt alle hinterlegten API-Keys damit neu">SCHLÜSSEL ROTIEREN</button></div>
+        <div class="cfg-hint">Ohne KI zählt die Wortregel oben. Bei Timeout oder Ausfall greift sie automatisch wieder — der Chat blockiert nie. <b>Chatnachrichten werden dabei an den gewählten Anbieter übertragen</b>; das gehört in eure Teilnahmebedingungen.<br>API-Keys liegen verschlüsselt in der Datenbank. Der Schlüssel liegt dort ebenfalls — das schützt gegen Logs, Backups und versehentliche Weitergabe, <b>nicht</b> gegen jemanden mit vollem Datenbankzugriff.</div>
         <label class="cfg-row"><input type="checkbox" id="cfg-auto-pause" onchange="saveStreamSettings()"><span>Pause wenn alle Streams <b>offline</b></span></label>
         <label class="cfg-row"><input type="checkbox" id="cfg-auto-resume" onchange="saveStreamSettings()"><span>Start/Fortsetzen wenn ein Stream <b>online</b></span></label>
       </div>

@@ -190,6 +190,8 @@ function handle(msg) {
       }
       if (msg.type === 'ai_settings') { applyAiSettings(msg); break; }
       if (msg.type === 'ai_error')    { log('KI: ' + (msg.error || '?'), 'red'); break; }
+      if (msg.type === 'ai_rotated')  { log('Master-Schlüssel rotiert: ' + msg.reencrypted + ' Keys neu verschlüsselt'
+                                            + (msg.unreadable ? ', ' + msg.unreadable + ' unlesbar' : ''), 'gold'); break; }
       if (msg.type === 'ai_test') {
         if (!msg.ok) log('KI-Test fehlgeschlagen: ' + (msg.error || '?') + ' – Wortregel greift', 'red');
         else log('KI-Test ok (' + msg.source + '): "' + msg.sample + '" -> ' + (msg.meaningful ? 'sinnvoll' : 'nicht sinnvoll'), 'cyan');
@@ -605,8 +607,7 @@ function applyAiSettings(msg) {
   if (key) key.placeholder = msg.hasKey ? '•••••••• (hinterlegt – leer lassen zum Behalten, "-" zum Löschen)' : 'API-Key eintragen';
   var st = document.getElementById('ai-state');
   if (st) {
-    if (!msg.secretConfigured) { st.textContent = 'AI_KEY_SECRET FEHLT'; st.style.color = 'var(--red)'; }
-    else if (msg.enabled && msg.hasKey) { st.textContent = 'AKTIV'; st.style.color = 'var(--green)'; }
+    if (msg.enabled && msg.hasKey) { st.textContent = 'AKTIV'; st.style.color = 'var(--green)'; }
     else if (msg.enabled) { st.textContent = 'KEIN KEY'; st.style.color = 'var(--red)'; }
     else { st.textContent = 'AUS'; st.style.color = ''; }
   }
@@ -632,6 +633,14 @@ function saveAiSettings(withKey) {
   if (withKey && keyEl && keyEl.value.trim()) { payload.apiKey = keyEl.value.trim(); keyEl.value = ''; }
   send(payload);
   log('KI-Einstellungen gespeichert' + (payload.apiKey ? ' (Key ersetzt)' : ''), 'cyan');
+}
+
+function rotateAiSecret() {
+  var warn = 'Master-Schlüssel neu erzeugen?\n\n'
+           + 'Alle hinterlegten API-Keys werden damit neu verschlüsselt. '
+           + 'Das läuft in einer Transaktion — schlägt es fehl, bleibt alles wie es war.';
+  if (!confirm(warn)) return;
+  send({ event: 'gw_cmd', cmd: 'gw_rotate_ai_secret' });
 }
 
 function testAi() {
