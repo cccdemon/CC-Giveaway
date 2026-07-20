@@ -115,6 +115,11 @@ Wertebereichen — Referenz bei Config-Fragen) · `docs/BETRIEB.md` ·
 `docs/ANLEITUNG-TEILNEHMER.md` · `docs/TEILNAHMEBEDINGUNGEN.md` ·
 `streamerbot/CAMPAIGN_SETUP.md`.
 
+## Git / GitHub
+**Immer `gh` statt `git` für alles, was GitHub berührt** (Push, PR, Issues, Releases,
+API). Der SSH-Remote authentifiziert hier nicht — `origin` ist HTTPS und `gh auth
+setup-git` liefert die Credentials. Lokales `git` bleibt für commit/diff/log.
+
 ## Konventionen
 - **Streamermodus** (`giveaway-admin.js`): maskiert Zuschauernamen + Ingest-Tokens im
   Admin-Panel für Screenshare. Neue UI, die Namen oder Tokens zeigt, muss ihn beachten.
