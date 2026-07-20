@@ -47,6 +47,46 @@ async function removeMember(id, login) {
 }
 function copyInvite(code) { navigator.clipboard && navigator.clipboard.writeText(inviteLink(code)); }
 
+async function editImprint(id) {
+  var box = document.getElementById('imprint-' + id);
+  if (box.dataset.open === '1') { box.innerHTML = ''; box.dataset.open = ''; return; }
+  box.dataset.open = '1';
+  box.innerHTML = '<div style="opacity:.6;font-size:12px;margin-top:8px">lädt…</div>';
+  try {
+    var d = await (await jfetch(API + '/' + id + '/imprint')).json();
+    var missing = !d.imprint && !d.imprintUrl;
+    box.innerHTML = '<div style="margin-top:10px">' +
+      (missing ? '<div class="msg err" style="margin-bottom:6px">Pflichtangabe fehlt — ohne Impressum lässt sich kein Giveaway öffnen.</div>' : '') +
+      '<div class="muted" style="font-size:12px;margin-bottom:4px">Entweder ein Link auf dein bestehendes Impressum …</div>' +
+      '<input id="iu-'+id+'" value="'+esc(d.imprintUrl)+'" placeholder="https://dein-impressum.de" ' +
+      'style="width:100%;background:#060a11;border:1px solid rgba(0,212,255,0.25);color:#c8dce8;border-radius:6px;padding:8px;font-size:12px;">' +
+      '<div class="muted" style="font-size:12px;margin:8px 0 4px">… oder als Text (Markdown), der auf der Bedingungsseite erscheint:</div>' +
+      '<textarea id="im-'+id+'" style="width:100%;height:170px;background:#060a11;border:1px solid rgba(0,212,255,0.25);color:#c8dce8;border-radius:6px;padding:10px;font-family:ui-monospace,monospace;font-size:12px;">'+
+      esc(d.imprint)+'</textarea>' +
+      '<div style="display:flex;gap:8px;margin-top:8px;align-items:center">' +
+      '<button onclick="saveImprint(\''+id+'\')">Speichern</button>' +
+      '<button class="ghost" onclick="editImprint(\''+id+'\')">Schließen</button>' +
+      '<span class="msg" id="imsg-'+id+'"></span></div></div>';
+  } catch(e){ if(e.message!=='unauth') box.innerHTML = '<div class="msg err">'+esc(e.message)+'</div>'; }
+}
+
+async function saveImprint(id) {
+  var body = {
+    imprint: document.getElementById('im-' + id).value,
+    imprintUrl: document.getElementById('iu-' + id).value.trim(),
+  };
+  var m = document.getElementById('imsg-' + id);
+  if (!body.imprint.trim() && !body.imprintUrl) {
+    m.textContent = 'Mindestens Link oder Text angeben'; m.className = 'msg err'; return;
+  }
+  try {
+    var r = await jfetch(API + '/' + id + '/imprint', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+    var d = await r.json();
+    if (r.ok) { m.textContent = d.unchanged ? 'Unverändert' : 'Gespeichert ✓'; m.className = 'msg ok'; }
+    else { m.textContent = d.error || 'Fehler'; m.className = 'msg err'; }
+  } catch(e){ if(e.message!=='unauth'){ m.textContent=e.message; m.className='msg err'; } }
+}
+
 async function editTerms(id) {
   var box = document.getElementById('terms-' + id);
   if (box.dataset.open === '1') { box.innerHTML = ''; box.dataset.open = ''; return; }
@@ -144,7 +184,8 @@ function renderTeam(t) {
   var terms = '<div class="invite" style="margin-top:10px">'
     + '<a class="ghost" style="text-decoration:none;padding:8px 12px;border-radius:6px" href="/viewer/terms?team='+encodeURIComponent(t.id)+'" target="_blank">Teilnahmebedingungen ansehen</a>'
     + (owner ? '<button class="ghost" onclick="editTerms(\''+t.id+'\')">Bearbeiten</button>' : '')
-    + '</div><div id="terms-'+t.id+'"></div>';
+    + (owner ? '<button class="ghost" onclick="editImprint(\''+t.id+'\')">Impressum (Pflicht)</button>' : '')
+    + '</div><div id="terms-'+t.id+'"></div><div id="imprint-'+t.id+'"></div>';
   return '<div class="team"><div class="team-head"><span class="team-name">'+esc(t.name)+'</span>'
     + (owner?'<span class="badge">OWNER</span>':'') + '</div>'
     + '<div class="members">'+members+'</div>' + invite + overlay + terms + '</div>';

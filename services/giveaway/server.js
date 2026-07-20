@@ -276,6 +276,21 @@ function auditDetail(msg) {
 function auditTarget(msg) { return sanitizeUsername(msg.user || '') || sanitizeChannel(msg.channel || '') || null; }
 
 // ── Session (per team) ────────────────────────────────────
+// Jedes Giveaway braucht ein eigenes Impressum des Veranstalters. Das ist
+// keine Empfehlung, sondern Bedingung fuers Oeffnen - ein laufendes
+// Gewinnspiel ohne Anbieterkennzeichnung ist ein rechtliches Problem des
+// Veranstalters, und der Betreiber der Plattform ist dafuer nicht zustaendig.
+async function hasImprint(teamId) {
+  try {
+    const r = await pg.query('SELECT imprint, imprint_url FROM teams WHERE id=$1', [teamId]);
+    if (!r.rowCount) return false;
+    return !!(String(r.rows[0].imprint || '').trim() || String(r.rows[0].imprint_url || '').trim());
+  } catch(e) { logErr('GW', 'imprint check:', e.message); return false; }
+}
+const IMPRINT_HINT = 'Kein Impressum hinterlegt. Trage unter MEINE TEAMS das Impressum des '
+                   + 'Veranstalters ein (Text oder Link), dann laesst sich das Giveaway oeffnen.';
+
+
 async function openGiveaway(teamId, keyword) {
   const sid = `sess_${Date.now()}`;
   await wte.openGiveaway(teamId, keyword, sid);
@@ -311,6 +326,12 @@ async function handleStreamOnline(teamId, channel) {
                     sessionId: await wte.getSessionId(teamId), detail: { trigger: 'stream_online' } });
     }
   } else {
+    if (!await hasImprint(teamId)) {
+      log('Auto', `[${teamId}] stream online (${ch}) -> NICHT geoeffnet: kein Impressum`);
+      await audit({ teamId, actor: 'system', action: 'auto_open', target: ch,
+                    result: 'denied', detail: { reason: 'no_imprint' } });
+      return;
+    }
     const kw = await redis.get(K.gwKeyword(teamId)) || '';
     const newSid = await openGiveaway(teamId, kw);
     log('Auto', `[${teamId}] stream online (${ch}) → open`);
@@ -465,6 +486,11 @@ async function runAdminCmd(send, msg, meta, ctx) {
 
   switch (msg.cmd) {
     case 'gw_open':
+      if (!await hasImprint(teamId)) {
+        Object.assign(outcome, { blocked: 'no_imprint' });
+        send({ event: 'gw_ack', type: 'open_blocked', error: IMPRINT_HINT });
+        break;
+      }
       outcome.sessionOpened = await openGiveaway(teamId, sanitizeStr(msg.keyword || '', 100));
       send({ event: 'gw_status', status: 'open' });
       break;

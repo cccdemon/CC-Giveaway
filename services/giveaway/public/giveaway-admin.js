@@ -191,6 +191,7 @@ function handle(msg) {
       if (msg.type === 'ai_settings') { applyAiSettings(msg); break; }
       if (msg.type === 'ai_models')   { applyAiModels(msg); break; }
       if (msg.type === 'ai_error')    { log('KI: ' + (msg.error || '?'), 'red'); break; }
+      if (msg.type === 'open_blocked') { log(msg.error || 'Öffnen blockiert', 'red'); alert(msg.error || 'Öffnen blockiert'); break; }
       if (msg.type === 'ai_rotated')  { log('Master-Schlüssel rotiert: ' + msg.reencrypted + ' Keys neu verschlüsselt'
                                             + (msg.unreadable ? ', ' + msg.unreadable + ' unlesbar' : ''), 'gold'); break; }
       if (msg.type === 'ai_test') {

@@ -411,6 +411,55 @@ async function currentTermsVersion(teamId) {
   return (r.rows[0] && r.rows[0].v) || 0;
 }
 
+app.get('/api/teams/:id/imprint', async (req, res) => {
+  const s = requireSession(req, res); if (!s) return;
+  const id = req.params.id;
+  if (!await isTeamMember(id, s.user)) return res.status(403).json({ error: 'forbidden' });
+  try {
+    const r = await pg.query('SELECT imprint, imprint_url FROM teams WHERE id=$1', [id]);
+    if (!r.rowCount) return res.status(404).json({ error: 'not_found' });
+    res.json({ imprint: r.rows[0].imprint || '', imprintUrl: r.rows[0].imprint_url || '' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/teams/:id/imprint', async (req, res) => {
+  const s = requireSession(req, res); if (!s) return;
+  const id = req.params.id;
+  if (!await isTeamOwner(id, s.user)) return res.status(403).json({ error: 'forbidden' });
+  const imprint = String((req.body && req.body.imprint) || '').slice(0, 20000).trim();
+  const rawUrl  = String((req.body && req.body.imprintUrl) || '').slice(0, 500).trim();
+  // Nur http(s) zulassen - ein javascript:-Link waere sonst ein XSS-Vektor
+  // auf einer Seite, die Teilnehmer als verbindlich lesen sollen.
+  if (rawUrl && !/^https?:\/\//i.test(rawUrl)) {
+    return res.status(400).json({ error: 'Der Link muss mit http:// oder https:// beginnen' });
+  }
+  try {
+    const prev = await pg.query('SELECT imprint, imprint_url FROM teams WHERE id=$1', [id]);
+    if (!prev.rowCount) return res.status(404).json({ error: 'not_found' });
+    const same = (prev.rows[0].imprint || '') === imprint && (prev.rows[0].imprint_url || '') === rawUrl;
+    if (same) return res.json({ ok: true, unchanged: true });
+    const version = (await currentTermsVersion(id)) + 1;
+    const client = await pg.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('UPDATE teams SET imprint=$1, imprint_url=$2 WHERE id=$3',
+        [imprint || null, rawUrl || null, id]);
+      // Impressumsaenderungen laufen durch dieselbe Historie wie die
+      // Bedingungen - fuer Teilnehmer ist beides derselbe verbindliche Stand.
+      const cur = await client.query('SELECT terms FROM teams WHERE id=$1', [id]);
+      await client.query(
+        `INSERT INTO terms_versions (team_id, version, terms, changed_by, note, sections)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [id, version, cur.rows[0].terms || TERMS_TEMPLATE, s.user,
+         String((req.body && req.body.note) || '').slice(0, 300).trim() || null,
+         JSON.stringify([{ section: 'Impressum des Veranstalters', kind: 'geändert' }])]);
+      await client.query('COMMIT');
+    } catch (e) { await client.query('ROLLBACK'); throw e; }
+    finally { client.release(); }
+    res.json({ ok: true, version });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/teams/:id/terms/history', async (req, res) => {
   const s = requireSession(req, res); if (!s) return;
   const id = req.params.id;
@@ -445,7 +494,7 @@ app.get('/pub/actions', (req, res) => {
 app.get('/pub/team/:id', async (req, res) => {
   const id = String(req.params.id || '').replace(/[^a-zA-Z0-9_]/g, '').slice(0, 40);
   try {
-    const t = await pg.query('SELECT name, terms FROM teams WHERE id=$1', [id]);
+    const t = await pg.query('SELECT name, terms, imprint, imprint_url FROM teams WHERE id=$1', [id]);
     if (!t.rowCount) return res.status(404).json({ error: 'not_found' });
     const mem = await pg.query('SELECT channel FROM team_members WHERE team_id=$1 ORDER BY joined_at', [id]);
     // Aenderungshistorie ist bewusst oeffentlich - sie ist der Beleg dafuer,
@@ -454,6 +503,7 @@ app.get('/pub/team/:id', async (req, res) => {
       `SELECT version, note, sections, created_at FROM terms_versions
        WHERE team_id=$1 ORDER BY version DESC LIMIT 20`, [id]);
     res.json({ id, name: t.rows[0].name, terms: t.rows[0].terms || TERMS_TEMPLATE,
+               imprint: t.rows[0].imprint || '', imprintUrl: t.rows[0].imprint_url || '',
                isDefault: !t.rows[0].terms, channels: mem.rows.map(r => r.channel),
                version: hist.rows[0] ? hist.rows[0].version : 0,
                updatedAt: hist.rows[0] ? hist.rows[0].created_at : null,
@@ -542,6 +592,10 @@ async function ensureSchema() {
       UNIQUE (team_id, version)
     )`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_terms_team ON terms_versions(team_id, version DESC)`);
+  // Jedes Giveaway braucht ein eigenes Impressum des Veranstalters -
+  // entweder als Text oder als Link auf eine bestehende Seite.
+  await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS imprint TEXT`);
+  await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS imprint_url TEXT`);
   await pg.query(`
     CREATE TABLE IF NOT EXISTS team_members (
       team_id   TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,

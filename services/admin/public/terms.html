@@ -64,6 +64,16 @@
          + 'und betroffenen Abschnitten festgehalten.</p><ul>' + rows + '</ul>';
   }
 
+  // Impressum des Veranstalters - Text oder Link, eines von beidem ist Pflicht.
+  function organizerHtml(d) {
+    var inner;
+    if (d.imprint && d.imprint.trim()) inner = mdToHtml(d.imprint);
+    else if (d.imprintUrl) inner = '<p><a href="' + esc(d.imprintUrl) + '" target="_blank" rel="noopener noreferrer">'
+                                 + esc(d.imprintUrl) + '</a></p>';
+    else inner = '<p class="err">Der Veranstalter hat noch kein Impressum hinterlegt.</p>';
+    return '<h2 style="margin-top:32px">Impressum des Veranstalters</h2>' + inner;
+  }
+
   var team = new URLSearchParams(location.search).get('team') || '';
   var doc = document.getElementById('doc'), meta = document.getElementById('meta');
   if (!team) { doc.innerHTML = '<span class="err">Kein Team angegeben (?team=…).</span>'; }
@@ -79,6 +89,7 @@
       + (d.isDefault ? '<div style="margin-top:4px;font-size:12px;opacity:.5">Standard-Vorlage</div>' : '');
     doc.innerHTML = mdToHtml(d.terms) + historyHtml(d.history)
       + '<hr style="margin:28px 0;border:0;border-top:1px solid rgba(0,212,255,0.18)">'
+      + organizerHtml(d)
       + '<p style="font-size:12px;opacity:.7">Veranstalter dieses Gewinnspiels ist <b>' + esc(d.name) + '</b>, nicht der Betreiber dieser Plattform. Ansprüche aus der Teilnahme bestehen ausschließlich gegenüber dem Veranstalter. <a href="/admin/impressum.html">Impressum</a> &middot; <a href="/admin/datenschutz.html">Datenschutz</a> der Plattform.</p>';
   }).catch(function(){ doc.innerHTML = '<span class="err">Ladefehler.</span>'; });
 </script>
