@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Team Giveaway — Multi-Channel Community-Giveaway für Twitch-Teams</title>
-<meta name="description" content="Ein Giveaway über mehrere Twitch-Kanäle: Zuschauzeit zählt kanalübergreifend auf ein Konto. Gewichtete, nachvollziehbare Ziehung.">
+<title>Team Giveaway — Community-Giveaway nach Zuschauzeit für Twitch</title>
+<meta name="description" content="Giveaway nach echter Zuschauzeit — für einen Kanal oder ein ganzes Team. Alle Regeln frei einstellbar, Ziehung gewichtet und nachvollziehbar.">
 <link rel="canonical" href="https://team.raumdock.org/">
 
 <!-- Link-Vorschau (Discord, WhatsApp, X, Slack …) -->
@@ -12,16 +12,16 @@
 <meta property="og:site_name" content="Team Giveaway">
 <meta property="og:locale" content="de_DE">
 <meta property="og:url" content="https://team.raumdock.org/">
-<meta property="og:title" content="Team Giveaway — ein Giveaway, viele Kanäle">
-<meta property="og:description" content="Zuschauzeit zählt über alle Team-Kanäle auf ein Konto. Anmelden per Keyword im Chat, Ziehung gewichtet nach gesammelter Zeit — und vollständig nachvollziehbar.">
+<meta property="og:title" content="Team Giveaway — Lose für echte Zuschauzeit">
+<meta property="og:description" content="Für einen Kanal oder ein ganzes Team: Zuschauzeit wird zu gewichteten Losen. Anmeldung per Keyword im Chat, alle Regeln frei einstellbar, Ziehung vollständig nachvollziehbar.">
 <meta property="og:image" content="https://team.raumdock.org/admin/og-preview.png">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Team Giveaway – Multi-Channel-Community-Giveaway für Twitch">
+<meta property="og:image:alt" content="Team Giveaway – Community-Giveaway nach Zuschauzeit für Twitch">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Team Giveaway — ein Giveaway, viele Kanäle">
-<meta name="twitter:description" content="Zuschauzeit zählt über alle Team-Kanäle auf ein Konto. Ziehung gewichtet nach gesammelter Zeit, vollständig nachvollziehbar.">
+<meta name="twitter:title" content="Team Giveaway — Lose für echte Zuschauzeit">
+<meta name="twitter:description" content="Für einen Kanal oder ein ganzes Team: Zuschauzeit wird zu gewichteten Losen. Ziehung gewichtet und vollständig nachvollziehbar.">
 <meta name="twitter:image" content="https://team.raumdock.org/admin/og-preview.png">
 <meta name="theme-color" content="#00d4ff">
 <style>
@@ -96,6 +96,11 @@
   .step .no{font-family:var(--mono);font-size:11px;color:var(--gold);letter-spacing:1px}
   .step h3{font-family:var(--disp);font-weight:600;font-size:19px;margin:8px 0 6px}
   .step p{font-size:13.5px;color:var(--mute)}
+  /* Hinweis, welche Werte in diesem Schritt frei einstellbar sind */
+  .cfg{display:block;margin-top:10px;padding-top:9px;border-top:1px dashed var(--edge2);
+    font-size:12px;line-height:1.45;color:var(--faint)}
+  .cfg::before{content:'⚙ ';color:var(--gold)}
+  .cfg i{font-style:normal;color:var(--mute)}
   .step::after{content:'→';position:absolute;right:-11px;top:50%;transform:translateY(-50%);color:var(--faint);font-size:15px;z-index:2}
   .step:last-child::after{display:none}
 
@@ -149,17 +154,17 @@
   <div class="hero">
     <div>
       <span class="eyebrow">Multi-Channel Community-Giveaway</span>
-      <h1>Ein Giveaway.<br>Das <span class="c">ganze Team</span>.<br>Faire <span class="g">Lose</span>.</h1>
-      <p class="lede">Mehrere Twitch-Kanäle, ein gemeinsames Giveaway. Deine Community sammelt Zuschauzeit über alle Streams des Teams — verwandelt in gewichtete Lose. Keine Bots, keine Zufalls-Discords. Nachvollziehbar bis zur Ziehung.</p>
+      <h1>Ein Giveaway.<br>Ein Kanal oder <span class="c">das ganze Team</span>.<br>Faire <span class="g">Lose</span>.</h1>
+      <p class="lede">Deine Community sammelt Zuschauzeit — verwandelt in gewichtete Lose. Als <b>einzelner Streamer</b> oder mit mehreren Kanälen, die auf ein gemeinsames Konto einzahlen. Alle Regeln stellst du selbst ein. Keine Bots, keine Zufalls-Discords. Nachvollziehbar bis zur Ziehung.</p>
       <div class="cta">
         <a class="btn tw" id="hero-cta" href="/admin/auth/twitch?next=/admin/">▶ Mit Twitch anmelden</a>
         <a class="btn ghost" href="#how">So funktioniert's</a>
       </div>
-      <div class="micro">Kostenlos für Streamer-Teams · Login mit Twitch · kein Passwort</div>
+      <div class="micro">Kostenlos für Streamer und Teams · Login mit Twitch · kein Passwort</div>
     </div>
 
     <div class="viz" id="viz">
-      <div class="viz-h"><span>Live · Zuschauzeit sammeln</span><span>2 h = 1 Los</span></div>
+      <div class="viz-h"><span>Live · Zuschauzeit sammeln</span><span>Standard: 2 h = 1 Los</span></div>
       <div class="chan"><div class="chan-top"><span class="nm">justcallmedeimos</span><span class="vt" data-vt>0:00</span></div><div class="bar"><i data-bar></i></div></div>
       <div class="chan"><div class="chan-top"><span class="nm">jerichoramirez</span><span class="vt" data-vt>0:00</span></div><div class="bar"><i data-bar></i></div></div>
       <div class="chan"><div class="chan-top"><span class="nm">x_jazzz_x</span><span class="vt" data-vt>0:00</span></div><div class="bar"><i data-bar></i></div></div>
@@ -175,7 +180,8 @@
 <section class="forwho">
   <div class="wrap">
     <div class="sec-label">Für wen</div>
-    <p>Für <b>Twitch-Streamer die als Team</b> auftreten und nacheinander streamen — und ihre <em>treuen Zuschauer</em> über alle Kanäle hinweg belohnen wollen.</p>
+    <p>Für <b>einzelne Streamer</b>, die ihre <em>treuen Zuschauer</em> für echte Zuschauzeit belohnen wollen — und für <b>Teams, die nacheinander streamen</b> und dieselbe Community über alle Kanäle hinweg zählen lassen.</p>
+    <p class="sec-sub" style="margin-top:10px">Ein Team ist <b>keine Voraussetzung</b>. Allein starten, später Kanäle dazunehmen — die gesammelte Zuschauzeit bleibt dabei erhalten.</p>
   </div>
 </section>
 
@@ -183,12 +189,12 @@
   <div class="wrap">
     <div class="sec-label">Ablauf</div>
     <h2>Von der Zuschauzeit zur Ziehung</h2>
-    <p class="sec-sub">Vier Schritte — genau in dieser Reihenfolge. Jeder baut auf dem vorigen auf.</p>
+    <p class="sec-sub">Vier Schritte — jeder baut auf dem vorigen auf. <b>Alle Werte legst du selbst fest</b>; die genannten Zahlen sind nur die Voreinstellung.</p>
     <div class="steps">
-      <div class="step"><div class="no">01</div><h3>Sammeln</h3><p>Zuschauer bekommen Zuschauzeit auf jedem Kanal. 2 h = 1 Los. Sinnvoller Chat gibt Bonus.</p></div>
-      <div class="step"><div class="no">02</div><h3>Beitreten</h3><p>Ab dem ersten Los per Keyword im Chat teilnehmen — das ist zugleich die Zustimmung zu den Bedingungen.</p></div>
-      <div class="step"><div class="no">03</div><h3>Qualifizieren</h3><p>Mindestens 2 Team-Kanälen folgen. Vor der Ziehung per Twitch-Helix echt geprüft.</p></div>
-      <div class="step"><div class="no">04</div><h3>Ziehen</h3><p>Zufall gewichtet nach Losen. Voller Audit-Snapshot. 14 Tage Meldefrist, sonst Ersatz.</p></div>
+      <div class="step"><div class="no">01</div><h3>Sammeln</h3><p>Zuschauer bekommen Zuschauzeit auf jedem Kanal. Sinnvoller Chat gibt Bonus.<span class="cfg">Einstellbar: 1 Los = X Stunden <i>(Standard 2 h)</i>, Chat-Bonus, zeitlich begrenzte Multiplier</span></p></div>
+      <div class="step"><div class="no">02</div><h3>Beitreten</h3><p>Per Keyword im Chat teilnehmen — das ist zugleich die Zustimmung zu den Bedingungen.<span class="cfg">Einstellbar: Keyword frei wählbar, jederzeit änderbar oder ganz aus</span></p></div>
+      <div class="step"><div class="no">03</div><h3>Qualifizieren</h3><p>Kanälen folgen und genug Zuschauzeit sammeln. Vor der Ziehung per Twitch-Helix echt geprüft.<span class="cfg">Einstellbar: 0–10 Follows nötig <i>(Standard 2)</i>, Lostopf ab 1 Los</span></p></div>
+      <div class="step"><div class="no">04</div><h3>Ziehen</h3><p>Zufall gewichtet nach Losen. Voller Audit-Snapshot.<span class="cfg">Einstellbar: Preis pro Ziehung, Testziehung, eigene Teilnahmebedingungen <i>(Meldefrist im Standardtext: 14 Tage)</i></span></p></div>
     </div>
   </div>
 </section>
@@ -197,7 +203,7 @@
   <div class="wrap">
     <div class="sec-label">Was drin ist</div>
     <h2>Alles für ein sauberes Giveaway</h2>
-    <p class="sec-sub">Ein Admin-Panel pro Team. Live-Steuerung, Overlays, volle Nachvollziehbarkeit.</p>
+    <p class="sec-sub">Ein Admin-Panel — für einen Kanal genauso wie für ein ganzes Team. Live-Steuerung, Overlays, volle Nachvollziehbarkeit.</p>
     <div class="feat">
       <div class="f"><span class="ic">📊</span><h3>Multi-Channel Viewtime</h3><p>Punkte pro Kanal, kanalübergreifend zusammengeführt. Wer überall dabei ist, hat mehr Chancen.</p></div>
       <div class="f"><span class="ic">💬</span><h3>Chat zählt</h3><p>Jede sinnvolle Nachricht (&gt;3 Wörter) gibt Viewtime-Bonus. Spam-Cooldown inklusive.</p></div>

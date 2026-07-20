@@ -1,12 +1,41 @@
 # Features
 
-CC-Giveaway ist ein Verlosungssystem für Twitch, bei dem **Zuschauzeit über
-mehrere Kanäle hinweg auf ein gemeinsames Konto zählt**. Es ist für Teams
-gebaut, die nacheinander streamen — wer bei einem Kanal zuschaut, sammelt für
-dasselbe Giveaway wie jemand, der bei einem anderen zuschaut.
+CC-Giveaway ist ein Verlosungssystem für Twitch, bei dem **Lose aus echter
+Zuschauzeit entstehen** statt aus einem Klick zur richtigen Sekunde.
+
+Es funktioniert für **einen einzelnen Kanal** genauso wie für ein **Team mit
+mehreren Kanälen** — dann zählt die Zuschauzeit von allen Kanälen auf ein
+gemeinsames Konto pro Zuschauer. Ein Team ist keine Voraussetzung; du kannst
+allein anfangen und später Kanäle dazunehmen, ohne dass gesammelte Zeit
+verlorengeht.
+
+**Alle Regeln sind einstellbar.** Die Zahlen in diesem Dokument sind
+Voreinstellungen, keine festen Vorgaben — siehe
+[Was du einstellen kannst](#was-du-einstellen-kannst).
 
 Drei Sichtweisen: [Streamer](#für-streamer) · [Streamteams](#für-streamteams) ·
 [Zuschauer](#für-zuschauer-und-teilnehmer)
+
+---
+
+## Was du einstellen kannst
+
+Nichts davon ist fest verdrahtet. Änderungen greifen sofort und rückwirkend —
+Coins werden immer aus der gespeicherten Zuschauzeit berechnet, nie eingefroren.
+
+| Einstellung | Bedeutung | Voreinstellung | Bereich |
+|---|---|---|---|
+| **Coin-Basis** | Wie viel Zuschauzeit ein Los kostet. Gleichzeitig die Schwelle für den Lostopf: drin ist, wer ≥1 Los hat. | 2 Stunden | 1 Minute – 100 Stunden |
+| **Follow-Bedingung** | Wie vielen der teilnehmenden Kanäle jemand folgen muss. `0` schaltet die Bedingung ganz ab. | 2 Kanäle | 0 – 10 |
+| **Keyword** | Das Wort, mit dem sich Zuschauer anmelden. Leer = keine Anmeldung nötig. | frei wählbar | beliebiger Text |
+| **Chat-Bonus** | Zuschauzeit-Gutschrift für sinnvolle Nachrichten, mit Cooldown gegen Spam. | +2 s ab 4 Wörtern | Code-Konstante |
+| **Viewtime-Multiplier** | Zeitlich begrenzter Faktor auf Zuschauzeit und Chat-Bonus. | aus | Faktor 1–10, 1 s – 24 h |
+| **Automatik** | Giveaway startet/pausiert automatisch mit dem Stream-Status. | aus | an/aus |
+| **Teilnehmende Kanäle** | Von einem bis viele. | dein eigener | 1 – n |
+
+Für den **Einzelstreamer-Betrieb** setzt du die Follow-Bedingung auf `1` (nur
+deinem eigenen Kanal folgen) oder `0` (Follow spielt keine Rolle). Alles andere
+funktioniert unverändert.
 
 ---
 
@@ -74,17 +103,23 @@ Drei Sichtweisen: [Streamer](#für-streamer) · [Streamteams](#für-streamteams)
 
 ## Für Streamteams
 
+> Dieser Abschnitt beschreibt den Mehr-Kanal-Betrieb. Als Einzelstreamer kannst
+> du ihn überspringen — das System läuft mit einem einzigen Kanal genauso.
+
 ### Das Grundprinzip
 - **Ein Giveaway, mehrere Kanäle.** Zuschauzeit von allen teilnehmenden Kanälen
   läuft auf ein gemeinsames Konto pro Zuschauer. Gedacht für Teams, die
   **nacheinander** streamen — die Community wandert mit, statt sich aufzuteilen.
+- **Später erweiterbar.** Startest du allein und nimmst später Kanäle dazu,
+  bleibt die bereits gesammelte Zuschauzeit aller Zuschauer erhalten.
 - **Kein Kanal wird bevorzugt.** Es zählt die Summe, nicht wo sie entstanden
   ist. Ein Zuschauer, der nur bei einem Teammitglied guckt, ist genauso
   teilnahmeberechtigt wie einer, der überall vorbeischaut.
 - **Follow-Bedingung als Team-Anreiz.** Ihr legt fest, wie vielen der
   teilnehmenden Kanäle jemand folgen muss, um in den Lostopf zu kommen
-  (Standard: zwei). Zuschauen zählt überall, aber Folgen ist die Eintrittskarte
-  — so profitiert das ganze Team, nicht nur der Kanal mit den meisten Zuschauern.
+  (Voreinstellung: zwei, abschaltbar). Zuschauen zählt überall, aber Folgen ist
+  die Eintrittskarte — so profitiert das ganze Team, nicht nur der Kanal mit den
+  meisten Zuschauern.
 
 ### Team-Verwaltung
 - **Team anlegen** und per **Einladungslink** Mitglieder aufnehmen. Jedes
@@ -131,8 +166,12 @@ Drei Sichtweisen: [Streamer](#für-streamer) · [Streamteams](#für-streamteams)
 - **Chatten bringt etwas.** Nachrichten mit mehr als drei Wörtern geben einen
   kleinen Zuschauzeit-Bonus, auf denselben Topf. Ein Cooldown verhindert, dass
   Spammen sich lohnt.
-- **Kanal egal.** Ob du bei einem oder allen Team-Kanälen zuschaust, macht für
-  deine Zuschauzeit keinen Unterschied — sie zählt zusammen.
+- **Kanal egal.** Läuft das Giveaway über mehrere Kanäle, macht es für deine
+  Zuschauzeit keinen Unterschied, bei welchem du zuschaust — sie zählt zusammen.
+- **Wie viel wofür nötig ist, legt der Streamer fest.** Wie lange eine Stunde
+  Zuschauen wert ist und wie vielen Kanälen du folgen musst, steht in den
+  Teilnahmebedingungen des jeweiligen Giveaways — `!los` sagt dir jederzeit
+  deinen konkreten Stand.
 
 ### Deinen Stand sehen
 - **`!los` im Chat** — der Bot sagt dir deine Punkte, deine Gewinnchance und,

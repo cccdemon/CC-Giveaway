@@ -102,9 +102,9 @@ const line = (s, y, want, col) => { text(s, MARGIN, y, fit(s, want), ...col); re
 
 let y = 120;
 y += line('TEAM GIVEAWAY', y, 12, CYAN) + 48;
-y += line('EIN GIVEAWAY - VIELE STREAMS', y, 6, INK) + 36;
-y += line('ZUSCHAUZEIT ZAEHLT UEBER ALLE', y, 4, MUTE) + 18;
-y += line('TEAM-KANAELE AUF EIN KONTO.', y, 4, MUTE) + 18;
+y += line('LOSE FUER ECHTE ZUSCHAUZEIT', y, 6, INK) + 36;
+y += line('FUER EINEN KANAL ODER EIN GANZES', y, 4, MUTE) + 18;
+y += line('TEAM. ALLE REGELN FREI EINSTELLBAR.', y, 4, MUTE) + 18;
 y += line('ZIEHUNG GEWICHTET, NACHVOLLZIEHBAR.', y, 4, MUTE);
 
 // Fusszeile: Domain, goldener Marker davor
