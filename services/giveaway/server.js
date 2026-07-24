@@ -487,10 +487,13 @@ async function handleClientMessage(meta, msg) {
   }
 }
 
-// Cmds die ein Member (nicht-Owner) darf: nur lesen + EIGENEN Ingest-Token.
+// Cmds die ein Member (nicht-Owner) darf: lesen, EIGENER Ingest-Token +
+// Giveaway-Steuerung (oeffnen/pausieren/fortsetzen/Boost) fuer den Team-Pott.
+// Destruktiv (close/reset), Tickets, Bans + Konfig bleiben Owner-only.
 const MEMBER_CMDS = new Set([
   'gw_get_channels', 'gw_get_multiplier', 'gw_get_stream_settings', 'gw_get_keyword',
   'gw_get_ingest_tokens', 'gw_gen_ingest_token',
+  'gw_open', 'gw_pause', 'gw_resume', 'gw_set_multiplier',
 ]);
 async function handleAdminCmd(send, msg, meta) {
   const teamId = sanitizeTeamId(msg.teamId);
