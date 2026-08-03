@@ -312,6 +312,21 @@ const TOS_HINT = 'Den Nutzungsbedingungen wurde noch nicht zugestimmt. Melde dic
                + 'MEINE TEAMS an und bestaetige sie, dann laesst sich das Giveaway oeffnen.';
 
 
+// Die Erklaerung, wie man mitmacht — identisch fuer !giveaway und die
+// Eroeffnungsansage. Ein Text, eine Stelle zum Pflegen.
+async function giveawayInfoText(teamId) {
+  const kw    = await redis.get(K.gwKeyword(teamId)) || '';
+  const host  = (process.env.PUBLIC_URL || 'https://team.raumdock.org').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  const kwTxt = kw ? `"${kw}"` : 'das Keyword';
+  const fm    = await wte.getFollowMin(teamId);
+  const dmSec = await wte.getDrawMinSec(teamId);
+  const dmTxt = dmSec > 0 ? ` + mind. 1 Punkt (${fmtDur(dmSec)} Zuschauzeit)` : '';
+  return `🎁 Team-Giveaway: schau auf EINEM der Team-Kanäle zu — die Zuschauzeit zählt zusammen (${fmtDur(dmSec)} = 1 Punkt), sinnvoller Chat (>3 Wörter) gibt Bonus. Mitmachen: schreib ${kwTxt} im Chat (= anmelden). Für den Lostopf: folge ≥${fm} ${kw2(fm)}${dmTxt}. Befehle: !los = dein Status & Chance · !giveaway = diese Info. Regeln: ${host}/viewer/terms?team=${teamId} | Status: ${host}/viewer/status`;
+}
+
+// Jeder Statuswechsel wird im Chat angesagt. Die Ansagen sitzen in diesen
+// Helfern und nicht in den gw_cmd-Faellen, damit der Auto-Pfad
+// (stream_online/-offline) dieselbe Nachricht schickt und nichts vergessen wird.
 async function openGiveaway(teamId, keyword) {
   const sid = `sess_${Date.now()}`;
   await wte.openGiveaway(teamId, keyword, sid);
@@ -320,6 +335,7 @@ async function openGiveaway(teamId, keyword) {
   await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING`,
     [sid, teamId, keyword || '', JSON.stringify(chans)]);
   broadcastTeam(teamId, { event: 'gw_status', status: 'open' });
+  await announceTeam(teamId, '🎉 Das Giveaway ist ERÖFFNET! ' + await giveawayInfoText(teamId));
   log('GW', `[${teamId}] opened session ${sid}, kw="${keyword}", channels=${chans.join(',')}`);
   return sid;
 }
@@ -327,8 +343,28 @@ async function closeGiveaway(teamId) {
   const sid = await wte.getSessionId(teamId);
   await wte.closeGiveaway(teamId, sid);
   await redis.del(K.gwOnline(teamId), K.gwAutoPaused(teamId));
+  boostAnnounced.delete(teamId);
   broadcastTeam(teamId, { event: 'gw_status', status: 'closed' });
+  await announceTeam(teamId, '🔒 Das Giveaway ist GESCHLOSSEN — ab jetzt zählt keine Zuschauzeit mehr. '
+    + 'Die Ziehung erfolgt gewichtet nach Punkten unter allen Zugelassenen. Viel Glück!');
   log('GW', `[${teamId}] closed`);
+}
+async function pauseGiveaway(teamId, { auto = false } = {}) {
+  await wte.setPaused(teamId, true);
+  if (auto) await redis.set(K.gwAutoPaused(teamId), '1');
+  else      await redis.del(K.gwAutoPaused(teamId));
+  broadcastTeam(teamId, { event: 'gw_status', status: 'paused' });
+  await announceTeam(teamId, auto
+    ? '⏸ Giveaway pausiert — alle Team-Kanäle sind offline. Zuschauzeit zählt gerade nicht, euer Punktestand bleibt erhalten.'
+    : '⏸ Giveaway pausiert — Zuschauzeit zählt gerade nicht. Euer Punktestand bleibt erhalten.');
+}
+async function resumeGiveaway(teamId, { auto = false } = {}) {
+  await wte.setPaused(teamId, false);
+  await redis.del(K.gwAutoPaused(teamId));
+  broadcastTeam(teamId, { event: 'gw_status', status: 'open' });
+  await announceTeam(teamId, auto
+    ? '▶ Giveaway läuft weiter — der Stream ist wieder online, Zuschauzeit zählt ab jetzt wieder.'
+    : '▶ Giveaway läuft weiter — Zuschauzeit zählt ab jetzt wieder.');
 }
 
 // ── Auto-Steuerung: Stream online/offline → Giveaway pause/resume ──
@@ -339,9 +375,7 @@ async function handleStreamOnline(teamId, channel) {
   if (await redis.get(K.cfgAutoResume(teamId)) !== '1') return;
   if (await wte.isOpen(teamId)) {
     if (await wte.isPaused(teamId)) {
-      await wte.setPaused(teamId, false);
-      await redis.del(K.gwAutoPaused(teamId));
-      broadcastTeam(teamId, { event: 'gw_status', status: 'open' });
+      await resumeGiveaway(teamId, { auto: true });
       log('Auto', `[${teamId}] stream online (${ch}) → resume`);
       await audit({ teamId, actor: 'system', action: 'auto_resume', target: ch,
                     sessionId: await wte.getSessionId(teamId), detail: { trigger: 'stream_online' } });
@@ -373,9 +407,7 @@ async function handleStreamOffline(teamId, channel) {
   if (await redis.get(K.cfgAutoPause(teamId)) !== '1') return;
   if (await redis.scard(K.gwOnline(teamId)) > 0) return;   // noch ein Kanal live
   if (await wte.isOpen(teamId) && !await wte.isPaused(teamId)) {
-    await wte.setPaused(teamId, true);
-    await redis.set(K.gwAutoPaused(teamId), '1');
-    broadcastTeam(teamId, { event: 'gw_status', status: 'paused' });
+    await pauseGiveaway(teamId, { auto: true });
     log('Auto', `[${teamId}] alle Streams offline → pause`);
     await audit({ teamId, actor: 'system', action: 'auto_pause', target: ch,
                   sessionId: await wte.getSessionId(teamId), detail: { trigger: 'stream_offline' } });
@@ -391,6 +423,34 @@ const clients = new Map(); // clientId → { ws, authUser, teamId, role, ip, con
 function broadcastTeam(teamId, obj) {
   const str = JSON.stringify(obj);
   for (const [, c] of clients) if (c.teamId === teamId && c.ws.readyState === WebSocket.OPEN) c.ws.send(str);
+}
+
+// Ansage in die Chats aller Team-Kanaele. Die bridge verwirft Nachrichten an
+// Kanaele ohne verbundenen Bot, offline schadet also nicht.
+async function announceTeam(teamId, message) {
+  try {
+    const channels = await wte.getChannels(teamId);
+    for (const ch of channels) {
+      redisPub.publish('ch:chat_reply', JSON.stringify({ event: 'chat_reply', channel: ch, message }));
+    }
+    return channels.length;
+  } catch(e) { logErr('Announce', e.message); return 0; }
+}
+
+// Der Boost laeuft ueber ein Redis-TTL aus, es gibt also kein Ereignis dafuer.
+// Der Ticker merkt sich pro Team den angesagten Faktor und sagt das Ende an,
+// sobald er weg ist — sonst wundern sich die Zuschauer, warum es langsamer wird.
+const boostAnnounced = new Map();
+async function watchBoostExpiry() {
+  for (const [teamId, factor] of [...boostAnnounced]) {
+    try {
+      const st = await wte.multiplierState(teamId);
+      if (st.factor > 1) { boostAnnounced.set(teamId, st.factor); continue; }
+      boostAnnounced.delete(teamId);
+      await announceTeam(teamId, `⚡ Giveaway-Boost (Faktor ×${factor}) ist abgelaufen — Zuschauzeit zählt wieder normal.`);
+      broadcastTeam(teamId, { event: 'gw_multiplier', factor: 1, secondsLeft: 0 });
+    } catch(e) { logErr('Boost', e.message); boostAnnounced.delete(teamId); }
+  }
 }
 
 async function verifyOverlayKey(teamId, key) {
@@ -568,16 +628,12 @@ async function runAdminCmd(send, msg, meta, ctx) {
       send({ event: 'gw_status', status: 'closed' });
       break;
     case 'gw_pause':
-      await wte.setPaused(teamId, true);
-      await redis.del(K.gwAutoPaused(teamId));   // manuell, nicht auto
-      broadcastTeam(teamId, { event: 'gw_status', status: 'paused' });
+      await pauseGiveaway(teamId);               // manuell, nicht auto
       send({ event: 'gw_status', status: 'paused' });
       log('GW', `[${teamId}] paused`);
       break;
     case 'gw_resume':
-      await wte.setPaused(teamId, false);
-      await redis.del(K.gwAutoPaused(teamId));
-      broadcastTeam(teamId, { event: 'gw_status', status: 'open' });
+      await resumeGiveaway(teamId);
       send({ event: 'gw_status', status: 'open' });
       log('GW', `[${teamId}] resumed`);
       break;
@@ -745,6 +801,16 @@ async function runAdminCmd(send, msg, meta, ctx) {
       const r = await wte.setMultiplier(teamId, msg.factor, (parseInt(msg.minutes) || 0) * 60);
       Object.assign(outcome, { factorBefore: prev.factor, factorAfter: r.factor, seconds: r.seconds });
       broadcastTeam(teamId, { event: 'gw_multiplier', factor: r.factor, secondsLeft: r.seconds });
+      // Ein Boost, den keiner mitbekommt, bringt niemanden zum Zuschauen.
+      // Faktor 1 = aus, das ist derselbe Befehl und wird genauso angesagt.
+      if (r.factor > 1) {
+        boostAnnounced.set(teamId, r.factor);
+        await announceTeam(teamId, `⚡ Giveaway-Boost für ${Math.round(r.seconds / 60)} Minuten — Faktor ×${r.factor}`
+          + ' auf Zuschauzeit UND Chat-Bonus. Jetzt zählt jede Minute mehr!');
+      } else if (prev.factor > 1) {
+        boostAnnounced.delete(teamId);
+        await announceTeam(teamId, '⚡ Giveaway-Boost vorzeitig beendet — Zuschauzeit zählt wieder normal.');
+      }
       send({ event: 'gw_ack', type: 'multiplier_set', factor: r.factor, seconds: r.seconds });
       break;
     }
@@ -862,13 +928,7 @@ function subscribeToGiveaway() {
         break;
       }
       case 'giveaway_cmd': {
-        const kw = await redis.get(K.gwKeyword(teamId)) || '';
-        const host = (process.env.PUBLIC_URL || 'https://team.raumdock.org').replace(/^https?:\/\//, '').replace(/\/+$/, '');
-        const kwTxt = kw ? `"${kw}"` : 'das Keyword';
-        const fm = await wte.getFollowMin(teamId);
-        const dmSec = await wte.getDrawMinSec(teamId);
-        const dmTxt = dmSec > 0 ? ` + mind. 1 Punkt (${fmtDur(dmSec)} Zuschauzeit)` : '';
-        const info = `🎁 Team-Giveaway: schau auf EINEM der Team-Kanäle zu — die Zuschauzeit zählt zusammen (${fmtDur(dmSec)} = 1 Punkt), sinnvoller Chat (>3 Wörter) gibt Bonus. Mitmachen: schreib ${kwTxt} im Chat (= anmelden). Für den Lostopf: folge ≥${fm} ${kw2(fm)}${dmTxt}. Befehle: !los = dein Status & Chance · !giveaway = diese Info. Regeln: ${host}/viewer/terms?team=${teamId} | Status: ${host}/viewer/status`;
+        const info = await giveawayInfoText(teamId);
         redisPub.publish('ch:chat_reply', JSON.stringify({ event: 'chat_reply', channel: msg.channel, message: info }));
         break;
       }
@@ -1292,11 +1352,26 @@ async function main() {
   server.listen(CFG.port, () => log('Giveaway', `Service on port ${CFG.port}`));
 }
 
+// Ein Boost ueberlebt den Neustart (Redis-TTL), die Merkliste im Speicher nicht.
+// Ohne dieses Nachziehen bliebe das Boost-Ende nach einem Deploy stumm.
+async function seedBoostWatch() {
+  try {
+    const r = await pg.query('SELECT id FROM teams');
+    for (const row of r.rows) {
+      const st = await wte.multiplierState(row.id);
+      if (st.factor > 1) boostAnnounced.set(row.id, st.factor);
+    }
+    if (boostAnnounced.size) log('Boost', `laufende Boosts uebernommen: ${boostAnnounced.size}`);
+  } catch(e) { logErr('Boost', 'seed:', e.message); }
+}
+
 function startWatchtimeTicker() {
+  seedBoostWatch();
   setInterval(async () => {
     try {
       const updates = await wte.tickPresentUsers();
       for (const u of updates) broadcastTeam(u.teamId, { event: 'wt_update', user: u.username, channel: u.channel, watchSec: u.watchSec, coins: u.coins });
+      await watchBoostExpiry();
     } catch(e) { logErr('Tick', e.message); }
   }, TICK_SEC * 1000);
   log('Tick', `Ticker started (${TICK_SEC}s)`);
