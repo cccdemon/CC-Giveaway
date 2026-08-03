@@ -787,38 +787,9 @@ function loadAudit() {
     });
 }
 
-// Freitext für die Liste: nur die Felder, die für den Menschen zählen.
-function auditSummary(e) {
-  const d = e.detail || {};
-  switch (e.action) {
-    case 'gw_add_ticket': return `+1 Coin (${d.deltaSec}s) auf ${d.channel || '?'}`;
-    case 'gw_sub_ticket': return `-1 Coin (${d.deltaSec}s) auf ${d.channel || '?'}`;
-    case 'gw_ban':        return `gebannt (hatte ${parseDec(d.coinsAtBan).toFixed(2)} Coins${d.wasEligible ? ', war im Lostopf' : ''})`;
-    case 'gw_unban':      return 'entbannt';
-    case 'gw_set_multiplier':
-      return d.factorAfter > 1 ? `Multiplier ×${d.factorAfter} für ${Math.round((d.seconds||0)/60)} min`
-                               : 'Multiplier aus';
-    case 'gw_set_keyword': return `Keyword "${d.keywordBefore || '–'}" → "${d.keywordAfter || '–'}"`;
-    case 'gw_set_stream_settings':
-      return `Follows ${d.followMinBefore}→${d.followMinAfter}, Coin-Basis ${fmtDurShort(d.coinBaseSecBefore)}→${fmtDurShort(d.coinBaseSecAfter)}`;
-    case 'gw_draw_winner':
-      if (d.error) return 'Ziehung fehlgeschlagen: ' + d.error;
-      if (!d.winner) return 'Ziehung ohne Teilnehmer';
-      return `${d.isTest ? 'TEST-' : ''}Ziehung: ${d.winner} (${parseDec(d.winnerCoins).toFixed(2)} Coins von ${d.eligibleCount} Teilnehmern)`;
-    case 'gw_reset':
-      return `RESET – ${d.wipedParticipants} Teilnehmer / ${d.wipedCoins} Coins gelöscht`;
-    case 'gw_open':   return `geöffnet (${d.sessionOpened || '?'})`;
-    case 'gw_close':  return `geschlossen (${d.sessionClosed || '?'})`;
-    case 'gw_pause':  return 'pausiert';
-    case 'gw_resume': return 'fortgesetzt';
-    case 'auto_pause':  return 'Auto-Pause (alle Streams offline)';
-    case 'auto_resume': return 'Auto-Resume (Stream online)';
-    case 'auto_open':   return 'Auto-Open (Stream online)';
-    case 'gw_gen_ingest_token': return d.rotated ? 'Ingest-Token rotiert' : 'Ingest-Token erstellt';
-    case 'gw_verify_follows':   return 'Follow-Abgleich (Helix)';
-    default: return e.action;
-  }
-}
+// Freitext für die Liste. Die Fallunterscheidung steht in giveaway-shared.js,
+// damit Dashboard und Audit-Seite nicht auseinanderlaufen.
+function auditSummary(e) { return CC.audit.summary(e); }
 
 function renderAudit() {
   const el = document.getElementById('audit-list');
@@ -835,8 +806,10 @@ function renderAudit() {
     const who  = privacyOn ? 'Admin' : esc(e.actor || '?');
     const tgt  = e.target ? ' → ' + esc(privacyOn ? 'Zuschauer' : e.target) : '';
     const cls  = e.result === 'ok' ? '' : (e.result === 'denied' ? 'denied' : 'err');
+    // Der Server fasst direkt aufeinanderfolgende identische Eintraege zusammen.
+    const rep  = e.n > 1 ? ' <span style="color:var(--gold)">×' + e.n + '</span>' : '';
     return '<div class="audit-row ' + cls + '">'
-      + '<div class="audit-head"><b>' + who + '</b>' + tgt
+      + '<div class="audit-head"><b>' + who + '</b>' + tgt + rep
       + '<span class="audit-ts">' + when + '</span></div>'
       + '<div class="audit-sum">' + esc(auditSummary(e)) + '</div>'
       + (e.result !== 'ok' ? '<div class="audit-flag">' + esc(e.result.toUpperCase()) + '</div>' : '')

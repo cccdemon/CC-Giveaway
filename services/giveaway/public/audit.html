@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chaos Crew – Audit-Log</title>
+<link rel="stylesheet" href="chaos-crew-admin.css">
+<style>
+  .aud-wrap { padding:14px 18px 40px; max-width:1200px; margin:0 auto; }
+  .aud-title { font-size:13px; letter-spacing:2px; color:var(--cyan); margin:8px 0 4px; }
+  .aud-note { font-size:11px; color:var(--dim); margin-bottom:14px; line-height:1.6; }
+
+  .aud-kpis { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+  .aud-kpi { border:1px solid rgba(0,212,255,.16); border-radius:8px; padding:8px 14px; min-width:104px; }
+  .aud-kpi b { display:block; font-size:19px; color:var(--text); font-weight:600; }
+  .aud-kpi label { font-size:9px; letter-spacing:1.4px; color:var(--dim); }
+  .aud-kpi.ok b     { color:#22e07a; }
+  .aud-kpi.denied b { color:var(--gold); }
+  .aud-kpi.error b  { color:var(--red); }
+
+  .aud-filters { display:flex; flex-wrap:wrap; gap:7px; align-items:center; margin-bottom:10px; }
+  .aud-filters input, .aud-filters select { min-width:132px; }
+  .aud-filters .grow { flex:1; min-width:190px; }
+
+  .aud-chips { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:12px; }
+  .aud-chip { font-size:10px; letter-spacing:.6px; padding:3px 9px; border-radius:20px; cursor:pointer;
+              border:1px solid rgba(0,212,255,.18); color:var(--dim); background:transparent; font-family:inherit; }
+  .aud-chip:hover  { color:var(--text); border-color:rgba(0,212,255,.4); }
+  .aud-chip.active { color:var(--cyan); border-color:var(--cyan); }
+  .aud-chip span   { opacity:.55; margin-left:5px; }
+
+  .aud-list { border-top:1px solid rgba(255,255,255,.06); }
+  .aud-row { display:flex; gap:10px; align-items:flex-start; padding:8px 4px;
+             border-bottom:1px solid rgba(255,255,255,.05); }
+  .aud-row.denied { border-left:3px solid var(--gold); padding-left:8px; }
+  .aud-row.err    { border-left:3px solid var(--red);  padding-left:8px; }
+  .aud-when { width:132px; flex-shrink:0; font-size:10px; color:var(--dim); line-height:1.5; }
+  .aud-main { flex:1; min-width:0; }
+  .aud-who  { font-size:12px; color:var(--text); }
+  .aud-who b { color:var(--cyan); font-weight:600; }
+  .aud-sum  { font-size:11px; color:var(--dim); margin-top:2px; word-break:break-word; }
+  .aud-meta { font-size:9px; color:var(--dim); opacity:.65; margin-top:3px; letter-spacing:.5px; }
+  .aud-side { flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
+  .aud-n    { font-size:11px; color:var(--gold); border:1px solid rgba(240,165,0,.35);
+              border-radius:20px; padding:1px 9px; white-space:nowrap; }
+  .aud-res  { font-size:9px; letter-spacing:1.2px; }
+  .aud-res.denied { color:var(--gold); } .aud-res.err { color:var(--red); }
+  .aud-detail { display:none; margin-top:6px; font-size:10px; color:var(--dim);
+                background:rgba(255,255,255,.03); border-radius:6px; padding:7px 9px;
+                white-space:pre-wrap; word-break:break-all; }
+  .aud-row.open .aud-detail { display:block; }
+  .aud-main { cursor:pointer; }
+
+  .aud-foot { display:flex; gap:9px; align-items:center; flex-wrap:wrap; margin-top:14px; }
+  .aud-info { font-size:10px; color:var(--dim); }
+</style>
+</head>
+<body>
+<script src="giveaway-shared.js"></script>
+
+<div class="gw-app">
+  <div class="cmdbar">
+    <div class="cb-left">
+      <select id="team-select" onchange="onTeamChange()" title="Team"><option>— lädt —</option></select>
+      <div class="state-chip idle" id="aud-state">AUDIT-LOG</div>
+    </div>
+  </div>
+
+  <div class="aud-wrap">
+    <div class="aud-title">AUDIT-LOG</div>
+    <div class="aud-note">
+      Append-only. Jede zustandsändernde Aktion steht hier — es wird nichts gelöscht und nichts geändert.
+      Direkt aufeinanderfolgende identische Einträge werden zu einer Zeile mit Zähler zusammengefasst;
+      auf eine Zeile klicken zeigt die Rohdaten. Das Archiv lädt den gefilterten Ausschnitt als
+      <code>.tar.gz</code> herunter — auch das ist eine Kopie, im Log bleibt alles stehen.
+    </div>
+
+    <div class="aud-kpis" id="aud-kpis"></div>
+
+    <div class="aud-filters">
+      <input type="text"  id="f-q"      class="grow" placeholder="Suche: Actor, Ziel oder Aktion" oninput="debouncedLoad()">
+      <select id="f-result" onchange="reload()">
+        <option value="">alle Ergebnisse</option>
+        <option value="ok">nur ok</option>
+        <option value="denied">nur denied</option>
+        <option value="error">nur error</option>
+      </select>
+      <select id="f-action" onchange="reload()"><option value="">alle Aktionen</option></select>
+      <select id="f-actor"  onchange="reload()"><option value="">alle Actors</option></select>
+      <input type="date" id="f-from" onchange="reload()" title="von">
+      <input type="date" id="f-to"   onchange="reload()" title="bis">
+      <label class="aud-info"><input type="checkbox" id="f-group" checked onchange="reload()"> verdichten</label>
+      <button class="btn" onclick="resetFilters()">RESET</button>
+    </div>
+
+    <div class="aud-chips" id="aud-quick"></div>
+
+    <div class="aud-list" id="aud-list"><div class="wsc-empty">Lade…</div></div>
+
+    <div class="aud-foot">
+      <button class="btn" id="btn-more" onclick="loadMore()" style="display:none">WEITERE LADEN</button>
+      <button class="btn" onclick="downloadArchive()">ARCHIV (.tar.gz)</button>
+      <button class="btn" onclick="exportCsv()">CSV (Ansicht)</button>
+      <span class="aud-info" id="aud-info"></span>
+    </div>
+  </div>
+</div>
+
+<script src="audit.js"></script>
+</body>
+</html>

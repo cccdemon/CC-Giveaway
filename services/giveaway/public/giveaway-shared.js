@@ -170,7 +170,61 @@
     return sanitize(raw, type || 'display');
   }
 
+  // ── Audit: Aktion → deutscher Klartext ──────────────────
+  // Liegt hier, weil Dashboard und Audit-Seite denselben Satz zeigen muessen.
+  // Neue gw_cmd? Hier einen Fall ergaenzen, sonst steht nur der rohe Cmd-Name da.
+  function num(v) {
+    if (v === null || v === undefined) return 0;
+    if (typeof v === 'string') return parseFloat(v.replace(/,/g, '.')) || 0;
+    return parseFloat(v) || 0;
+  }
+  function durShort(s) {
+    if (!s) return '0';
+    if (s < 3600) return Math.round(s / 60) + 'm';
+    return (Math.round((s / 3600) * 10) / 10).toString().replace(/\.0$/, '') + 'h';
+  }
+  function auditSummary(e) {
+    var d = e.detail || {};
+    switch (e.action) {
+      case 'gw_add_ticket': return '+1 Coin (' + d.deltaSec + 's) auf ' + (d.channel || '?');
+      case 'gw_sub_ticket': return '-1 Coin (' + d.deltaSec + 's) auf ' + (d.channel || '?');
+      case 'gw_ban':        return 'gebannt (hatte ' + num(d.coinsAtBan).toFixed(2) + ' Coins'
+                                 + (d.wasEligible ? ', war im Lostopf' : '') + ')';
+      case 'gw_unban':      return 'entbannt';
+      case 'gw_set_multiplier':
+        return d.factorAfter > 1
+          ? 'Multiplier ×' + d.factorAfter + ' für ' + Math.round((d.seconds || 0) / 60) + ' min'
+          : 'Multiplier aus';
+      case 'gw_set_keyword':
+        return 'Keyword "' + (d.keywordBefore || '–') + '" → "' + (d.keywordAfter || '–') + '"';
+      case 'gw_set_stream_settings':
+        return 'Follows ' + d.followMinBefore + '→' + d.followMinAfter
+             + ', Coin-Basis ' + durShort(d.coinBaseSecBefore) + '→' + durShort(d.coinBaseSecAfter);
+      case 'gw_draw_winner':
+        if (d.error)   return 'Ziehung fehlgeschlagen: ' + d.error;
+        if (!d.winner) return 'Ziehung ohne Teilnehmer';
+        return (d.isTest ? 'TEST-' : '') + 'Ziehung: ' + d.winner
+             + ' (' + num(d.winnerCoins).toFixed(2) + ' Coins von ' + d.eligibleCount + ' Teilnehmern)';
+      case 'gw_reset':  return 'RESET – ' + d.wipedParticipants + ' Teilnehmer / ' + d.wipedCoins + ' Coins gelöscht';
+      case 'gw_open':   return 'geöffnet (' + (d.sessionOpened || '?') + ')';
+      case 'gw_close':  return 'geschlossen (' + (d.sessionClosed || '?') + ')';
+      case 'gw_pause':  return 'pausiert';
+      case 'gw_resume': return 'fortgesetzt';
+      case 'auto_pause':  return 'Auto-Pause (alle Streams offline)';
+      case 'auto_resume': return 'Auto-Resume (Stream online)';
+      case 'auto_open':   return 'Auto-Open (Stream online)';
+      case 'gw_gen_ingest_token': return d.rotated ? 'Ingest-Token rotiert' : 'Ingest-Token erstellt';
+      case 'gw_verify_follows':   return 'Follow-Abgleich (Helix)';
+      case 'gw_get_ai_settings':  return 'KI-Einstellungen gelesen';
+      case 'audit_archive':       return 'Audit-Archiv erzeugt (' + (d.entries || 0) + ' Einträge)';
+      case 'export':              return 'Backup exportiert';
+      case 'import':              return 'Backup importiert';
+      default: return e.action;
+    }
+  }
+
   global.CC = global.CC || {};
+  global.CC.audit = { summary: auditSummary, durShort: durShort };
   global.CC.validate = {
     escHtml:          escHtml,
     sanitize:         sanitize,
@@ -207,6 +261,7 @@
   ];
   var TOOLS = [
     { head:'Verwaltung' },
+    { href:'/giveaway/audit.html', label:'Audit-Log', ic:'🧾' },
     { href:'/admin/users.html', label:'Benutzer', ic:'👥' },
     { href:'/admin/datenschutz-admin.html', label:'Betroffenenrechte', ic:'🛡' },
     { href:'/viewer/help',      label:'Anleitung', ic:'📖' },

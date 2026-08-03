@@ -25,6 +25,7 @@ const fmtDur = (sec) => {                              // 7200→"2 Std", 1800�
 };
 const { Helix } = require('./helix.js');
 const { judgeMessage, listModels, encryptKey, decryptKey, PROVIDERS } = require('./chat-ai.js');
+const { targz } = require('./targz.js');
 
 function log(tag, ...args)    { console.log( `[${tag}]`, ...args); }
 function logErr(tag, ...args) { console.error(`[${tag}]`, ...args); }
@@ -492,9 +493,24 @@ async function handleClientMessage(meta, msg) {
 // Destruktiv (close/reset), Tickets, Bans + Konfig bleiben Owner-only.
 const MEMBER_CMDS = new Set([
   'gw_get_channels', 'gw_get_multiplier', 'gw_get_stream_settings', 'gw_get_keyword',
-  'gw_get_ingest_tokens', 'gw_gen_ingest_token',
+  'gw_get_ingest_tokens', 'gw_gen_ingest_token', 'gw_get_ai_settings',
   'gw_open', 'gw_pause', 'gw_resume', 'gw_set_multiplier',
 ]);
+
+// Abgelehnte Versuche gehoeren ins Protokoll — aber das Admin-Panel pollt die
+// Nur-Lese-Cmds im Sekundentakt, und ein Member, dem eines davon fehlt, hat so
+// schon 4,5 Mio Zeilen erzeugt und den Log unbrauchbar gemacht. Fuer AUDIT_SKIP-
+// Cmds daher nur die erste Ablehnung je (Team, Actor, Cmd) pro Fenster
+// protokollieren: das Signal "hat es versucht" bleibt, das Rauschen faellt weg.
+// Echte Mutationen laufen hier nie durch und werden immer protokolliert.
+const DENY_LOG_WINDOW_SEC = 300;
+async function shouldLogDeny(teamId, actor, cmd) {
+  if (!AUDIT_SKIP.has(cmd)) return true;
+  try {
+    const key = `t:${teamId}:audit_deny:${actor}:${cmd}`;
+    return (await redis.set(key, '1', 'EX', DENY_LOG_WINDOW_SEC, 'NX')) === 'OK';
+  } catch { return true; }   // im Zweifel protokollieren
+}
 async function handleAdminCmd(send, msg, meta) {
   const teamId = sanitizeTeamId(msg.teamId);
   const actor  = meta.authUser || '(unauthenticated)';
@@ -503,7 +519,9 @@ async function handleAdminCmd(send, msg, meta) {
   const auditBase = { teamId, actor, ip: meta.ip, action: msg.cmd, target: auditTarget(msg) };
   if (!owner) {
     if (!MEMBER_CMDS.has(msg.cmd) || !await isMember(meta.authUser, teamId)) {
-      await audit({ ...auditBase, result: 'denied', detail: auditDetail(msg) });
+      if (await shouldLogDeny(teamId, actor, msg.cmd)) {
+        await audit({ ...auditBase, result: 'denied', detail: auditDetail(msg) });
+      }
       send({ event: 'gw_ack', type: 'forbidden' }); return;
     }
   }
@@ -940,23 +958,185 @@ app.post('/api/import', async (req, res) => {
   }
 });
 
-// Audit-Log: nur der Team-Owner sieht, wer was gemacht hat.
+// ── Audit-Log: Filter, Verdichtung, Archiv ────────────────
+// Das Log ist append-only und wird NIE geloescht — auch nicht vom Archiv-Export.
+// Damit es trotzdem lesbar bleibt, passiert zweierlei: der Server filtert
+// (statt dass der Client 200 Zeilen zieht und selbst siebt) und verdichtet
+// direkt aufeinanderfolgende identische Eintraege zu einer Zeile mit Zaehler.
+function auditFilters(q) {
+  const params = [];
+  let where = 'team_id = $1';
+  params.push(sanitizeTeamId(q.team));
+  const add = (sql, val) => { params.push(val); where += ` AND ${sql.replace('?', '$' + params.length)}`; };
+  if (q.actor)   add('actor = ?',      sanitizeUsername(q.actor));
+  if (q.target)  add('target = ?',     sanitizeUsername(q.target));
+  if (q.action)  add('action = ?',     sanitizeStr(q.action, 50));
+  if (q.result)  add('result = ?',     sanitizeStr(q.result, 20));
+  if (q.session) add('session_id = ?', sanitizeStr(q.session, 60));
+  if (q.from)    add('ts >= ?',        new Date(q.from));
+  if (q.to)      add('ts <= ?',        new Date(q.to));
+  // Freitext ueber die menschlich relevanten Spalten.
+  if (q.q) {
+    params.push('%' + sanitizeStr(q.q, 60).toLowerCase() + '%');
+    where += ` AND (LOWER(actor) LIKE $${params.length} OR LOWER(COALESCE(target,'')) LIKE $${params.length}`
+           + ` OR LOWER(action) LIKE $${params.length})`;
+  }
+  return { where, params };
+}
+
 app.get('/api/audit', async (req, res) => {
   try {
     const teamId = sanitizeTeamId(req.query.team);
     if (!await ownsTeam(reqUser(req), teamId)) return res.status(403).json({ error: 'forbidden' });
-    const limit  = Math.min(500, Math.max(1, parseInt(req.query.limit) || 100));
-    const params = [teamId];
-    let where = 'team_id = $1';
-    if (req.query.actor)  { params.push(sanitizeUsername(req.query.actor));  where += ` AND actor = $${params.length}`; }
-    if (req.query.target) { params.push(sanitizeUsername(req.query.target)); where += ` AND target = $${params.length}`; }
-    if (req.query.action) { params.push(sanitizeStr(req.query.action, 50));  where += ` AND action = $${params.length}`; }
+    const limit = Math.min(500,    Math.max(1, parseInt(req.query.limit) || 100));
+    // Verdichtet wird ueber ein Rohzeilen-Fenster, nicht ueber die ganze Tabelle —
+    // sonst laeuft jede Anfrage ueber Millionen Zeilen. `scanned`/`hasMore` sagen
+    // dem Client, wie tief wirklich geschaut wurde.
+    const scan  = Math.min(200000, Math.max(limit, parseInt(req.query.scan) || 20000));
+    const { where, params } = auditFilters(req.query);
+    let w = where;
+    if (req.query.before) { params.push(parseInt(req.query.before)); w += ` AND id < $${params.length}`; }
+    params.push(scan);
+    const scanIdx = params.length;
     params.push(limit);
-    const r = await pg.query(
-      `SELECT id, ts, actor, actor_ip, action, target, result, detail, session_id
-       FROM audit_log WHERE ${where} ORDER BY ts DESC, id DESC LIMIT $${params.length}`, params);
-    res.json({ team: teamId, entries: r.rows });
+
+    const grouped = String(req.query.group || '1') !== '0';
+    const sql = grouped ? `
+      WITH base AS (
+        SELECT id, ts, actor, actor_ip, action, target, result, detail, session_id
+        FROM audit_log WHERE ${w} ORDER BY ts DESC, id DESC LIMIT $${scanIdx}
+      ), num AS (
+        SELECT *, ROW_NUMBER() OVER (ORDER BY ts DESC, id DESC) AS rn FROM base
+      ), grp AS (
+        SELECT *, rn - ROW_NUMBER() OVER (
+                    PARTITION BY actor, COALESCE(actor_ip,''), action,
+                                 COALESCE(target,''), result
+                    ORDER BY rn) AS island
+        FROM num
+      )
+      SELECT MIN(rn) AS ord, COUNT(*)::int AS n,
+             MAX(ts) AS ts, MIN(ts) AS ts_first,
+             MAX(id) AS id, MIN(id) AS id_first,
+             actor, actor_ip, action, target, result,
+             (ARRAY_AGG(detail     ORDER BY rn))[1] AS detail,
+             (ARRAY_AGG(session_id ORDER BY rn))[1] AS session_id
+      FROM grp
+      GROUP BY actor, actor_ip, action, target, result, island
+      ORDER BY ord
+      LIMIT $${params.length}` : `
+      SELECT id, id AS id_first, ts, ts AS ts_first, 1 AS n,
+             actor, actor_ip, action, target, result, detail, session_id
+      FROM (SELECT * FROM audit_log WHERE ${w} ORDER BY ts DESC, id DESC LIMIT $${scanIdx}) s
+      ORDER BY ts DESC, id DESC LIMIT $${params.length}`;
+
+    const r = await pg.query(sql, params);
+    const rows = r.rows;
+    const scanned = rows.reduce((s, x) => s + x.n, 0);
+    const last = rows[rows.length - 1];
+    res.json({
+      team: teamId, entries: rows, grouped,
+      scanned, scanLimit: scan,
+      hasMore: scanned >= scan || rows.length >= limit,
+      nextBefore: last ? Number(last.id_first) : null,
+    });
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Kennzahlen fuer den Kopf der Audit-Seite: Gesamtzahl, Verteilung, Zeitraum,
+// vorkommende Aktionen/Actors als Filter-Vorschlaege. Bewusst ein eigener
+// Aufruf — die Zaehlung laeuft ueber die ganze Tabelle und wird nicht gepollt.
+app.get('/api/audit/stats', async (req, res) => {
+  try {
+    const teamId = sanitizeTeamId(req.query.team);
+    if (!await ownsTeam(reqUser(req), teamId)) return res.status(403).json({ error: 'forbidden' });
+    const [byResult, byAction, actors, span] = await Promise.all([
+      pg.query(`SELECT result, COUNT(*)::bigint AS n FROM audit_log WHERE team_id=$1 GROUP BY 1 ORDER BY 2 DESC`, [teamId]),
+      pg.query(`SELECT action, result, COUNT(*)::bigint AS n FROM audit_log WHERE team_id=$1 GROUP BY 1,2 ORDER BY 3 DESC LIMIT 60`, [teamId]),
+      pg.query(`SELECT actor, COUNT(*)::bigint AS n FROM audit_log WHERE team_id=$1 GROUP BY 1 ORDER BY 2 DESC LIMIT 40`, [teamId]),
+      pg.query(`SELECT MIN(ts) AS first_ts, MAX(ts) AS last_ts, COUNT(*)::bigint AS n FROM audit_log WHERE team_id=$1`, [teamId]),
+    ]);
+    res.json({
+      team: teamId,
+      total:    Number(span.rows[0].n || 0),
+      firstTs:  span.rows[0].first_ts,
+      lastTs:   span.rows[0].last_ts,
+      byResult: byResult.rows.map(r => ({ result: r.result, n: Number(r.n) })),
+      byAction: byAction.rows.map(r => ({ action: r.action, result: r.result, n: Number(r.n) })),
+      actors:   actors.rows.map(r => ({ actor: r.actor, n: Number(r.n) })),
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Archiv: laedt den gefilterten Ausschnitt als .tar.gz herunter (CSV + JSONL +
+// MANIFEST mit SHA-256 je Datei). Rein lesend — im Log bleibt jede Zeile stehen,
+// das Archiv ist eine Kopie zum Weglegen, kein Verschieben.
+const AUDIT_ARCHIVE_MAX = 500000;
+app.get('/api/audit/archive', async (req, res) => {
+  const teamId = sanitizeTeamId(req.query.team);
+  const actor  = reqUser(req);
+  try {
+    if (!await ownsTeam(actor, teamId)) return res.status(403).json({ error: 'forbidden' });
+    const { where, params } = auditFilters(req.query);
+    params.push(AUDIT_ARCHIVE_MAX);
+    const r = await pg.query(
+      `SELECT id, ts, team_id, session_id, actor, actor_ip, action, target, result, detail
+       FROM audit_log WHERE ${where} ORDER BY ts ASC, id ASC LIMIT $${params.length}`, params);
+    if (!r.rows.length) return res.status(404).json({ error: 'keine Eintraege fuer diesen Filter' });
+
+    const csvCell = (v) => {
+      const s = v === null || v === undefined ? '' : String(v);
+      return /[";\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const head = ['id','ts','team_id','session_id','actor','actor_ip','action','target','result','detail'];
+    const csv = '﻿' + [head.join(';')].concat(r.rows.map(e => [
+      e.id, e.ts.toISOString(), e.team_id || '', e.session_id || '', e.actor,
+      e.actor_ip || '', e.action, e.target || '', e.result, JSON.stringify(e.detail || {}),
+    ].map(csvCell).join(';'))).join('\r\n') + '\r\n';
+    const jsonl = r.rows.map(e => JSON.stringify(e)).join('\n') + '\n';
+
+    const now  = new Date();
+    const open = await wte.isOpen(teamId).catch(() => null);
+    const sha  = (s) => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
+    const filt = ['actor','target','action','result','session','from','to','q']
+      .filter(k => req.query[k]).map(k => `  ${k} = ${req.query[k]}`).join('\n') || '  (kein Filter — voller Log dieses Teams)';
+    const manifest = [
+      'CC-Giveaway — Audit-Archiv',
+      '',
+      `Team:            ${teamId}`,
+      `Erstellt:        ${now.toISOString()}`,
+      `Erstellt von:    ${actor}`,
+      `Eintraege:       ${r.rows.length}${r.rows.length >= AUDIT_ARCHIVE_MAX ? `  (Obergrenze ${AUDIT_ARCHIVE_MAX} erreicht — Archiv ist unvollstaendig, Zeitraum enger waehlen)` : ''}`,
+      `Zeitraum:        ${r.rows[0].ts.toISOString()}  bis  ${r.rows[r.rows.length-1].ts.toISOString()}`,
+      `Giveaway offen:  ${open === null ? 'unbekannt' : (open ? 'ja' : 'nein')}`,
+      '',
+      'Filter:',
+      filt,
+      '',
+      'Dateien (SHA-256):',
+      `  audit.csv    ${sha(csv)}`,
+      `  audit.jsonl  ${sha(jsonl)}`,
+      '',
+      'Das Audit-Log ist append-only. Dieses Archiv ist eine Kopie —',
+      'es wurde nichts geloescht und nichts veraendert.',
+      '',
+    ].join('\n');
+
+    const stamp = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const gz = targz([
+      { name: 'MANIFEST.txt', content: manifest },
+      { name: 'audit.csv',    content: csv },
+      { name: 'audit.jsonl',  content: jsonl },
+    ], now.getTime() / 1000);
+
+    await audit({ teamId, actor, ip: req.ip, action: 'audit_archive', result: 'ok',
+                  detail: { entries: r.rows.length, filter: filt.trim(), bytes: gz.length } });
+    res.setHeader('Content-Type', 'application/gzip');
+    res.setHeader('Content-Disposition', `attachment; filename="audit-${teamId}-${stamp}.tar.gz"`);
+    res.send(gz);
+  } catch(e) {
+    await audit({ teamId, actor, ip: req.ip, action: 'audit_archive', result: 'error', detail: { error: e.message } });
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Zuschauer-Statusseite: eigener Stand über alle Teams (nur eigene Daten).
@@ -1081,6 +1261,11 @@ async function ensureSchema() {
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_audit_team_ts ON audit_log(team_id, ts DESC)`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_audit_target ON audit_log(target)`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor)`);
+  // Die Audit-Seite filtert fast immer auf result/action — ohne diese Indizes
+  // scannt jede Anfrage die ganze Team-Partition.
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_audit_team_result_ts ON audit_log(team_id, result, ts DESC)`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_audit_team_action_ts ON audit_log(team_id, action, ts DESC)`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_audit_session ON audit_log(session_id)`);
   // Chat-KI pro Team. ai_key_enc ist AES-256-GCM; Schluessel aus app_secrets.
   await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS ai_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
   await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS ai_provider TEXT`);

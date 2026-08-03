@@ -207,6 +207,7 @@
   ];
   var TOOLS = [
     { head:'Verwaltung' },
+    { href:'/giveaway/audit.html', label:'Audit-Log', ic:'🧾' },
     { href:'/admin/users.html', label:'Benutzer', ic:'👥' },
     { href:'/admin/datenschutz-admin.html', label:'Betroffenenrechte', ic:'🛡' },
     { href:'/admin/nutzungsbedingungen.html', label:'Nutzungsbedingungen', ic:'§' },
