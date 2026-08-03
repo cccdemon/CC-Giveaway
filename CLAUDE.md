@@ -46,6 +46,8 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 - `services/giveaway/server.js` — Giveaway REST + WS + Ticker
 - `services/giveaway/watchtime.js` — Coin/Ticket-Engine (testbar, ohne WS/HTTP)
 - `services/giveaway/chat-ai.js` — optionale KI-Chatbewertung + Key-Krypto
+- `services/giveaway/helix.js` — Twitch-Helix-Follow-Reconcile, Follower/User-ID-Cache, Token-Refresh
+- `services/admin/auth.js` — pure Auth-Helper (HMAC-signierte Cookie-Sessions, bcrypt), ohne express/pg/redis
 - `services/giveaway/public/giveaway-shared.js` — Shared-Lib (`CC.validate`, Nav)
 - `services/giveaway/public/giveaway-admin.js` — Admin-Panel-Logik
 - `services/admin/server.js` — Login/OAuth, Teams, TOS-Gate, DSGVO, `PUB_DOCS`, Health
@@ -53,6 +55,8 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 - `services/admin/public/teams.js` — Team-Verwaltung + Rechts-/Giveaway-Linkblock
 - `services/admin/public/meine-daten.html` — DSGVO-Selbstauskunft/-Löschung
 - `services/admin/public/status.html` — Zuschauer-Status (`/viewer/status`) inkl. Rechtslinks
+- `services/admin/public/giveaway-test.js` + `public/tests/test-suite.js` — Browser-Test-Console (Sim-Events, hängt an `ALLOW_SIM`)
+- `tools/make-og-preview.js` — OG-Preview-Bild generieren (Node-Script, kein Service)
 - `services/admin/public-docs/*.md` — öffentliche Rechtstexte
 - `caddy/Caddyfile` (HTTP) · `caddy/Caddyfile.team` (prod, TLS DNS-01) · `caddy/Caddyfile.ssl`
 
@@ -64,7 +68,14 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 
 ## Data
 - **Redis:** open/closed, keyword, banned, watchsec/msgs pro User, session id, (geplant: per-channel keys, follow-cache, multiplier).
-- **PostgreSQL:** `sessions`, `users`, `session_participants`, `watchtime_events`, `campaign_participation`, `abuse_flags`, `teams`, `team_members`, `streamers`, `terms_versions` (Teilnahmebedingungen pro Team), `tos_acceptances` (Zustimmung Nutzungsbedingungen, append-only), `app_secrets` (verschlüsselt), `giveaway_draws` (voller Draw-Audit), `audit_log` (append-only: jede zustandsändernde Admin-/System-Aktion mit Actor, IP, Ziel, Vorher/Nachher; auch `denied`/`error`). Schema: `postgres/init.sql` (frisches Volume) + `ensureSchema()` beim Start (verlässlich).
+- **PostgreSQL:** `sessions`, `users`, `session_participants`, `watchtime_events`, `campaign_participation`, `abuse_flags`, `teams`, `team_members`, `streamers`, `terms_versions` (Teilnahmebedingungen pro Team), `tos_acceptances` (Zustimmung Nutzungsbedingungen, append-only), `app_secrets` (verschlüsselt), `giveaway_draws` (voller Draw-Audit), `audit_log` (append-only: jede zustandsändernde Admin-/System-Aktion mit Actor, IP, Ziel, Vorher/Nachher; auch `denied`/`error`). Schema: **`ensureSchema()` beim Start ist die Quelle der Wahrheit.** `postgres/init.sql`
+(nur bei frischem Volume) legt lediglich `users`, `sessions`, `session_participants`,
+`watchtime_events`, `campaign_participation`, `debug_log`, `giveaway_draws` an — alles
+Team-/Auth-/Compliance-bezogene (`teams`, `team_members`, `streamers`, `terms_versions`,
+`tos_acceptances`, `app_secrets`, `audit_log`, `abuse_flags`) kommt ausschließlich aus
+`ensureSchema()`. Neue Tabelle/Spalte also dort ergänzen, nicht in `init.sql`.
+In prod stehen zusätzlich `admin_users` und `spacefight_results`/`spacefight_stats` —
+Altbestand aus der CC-StreamSuite, von diesem Code nicht benutzt (`docs/PROJEKTHISTORIE.md`).
 - **Audit-Choke-Point:** `handleAdminCmd()` in `services/giveaway/server.js` — jedes neue `gw_cmd` läuft automatisch mit. Nur-Lese-Cmds in `AUDIT_SKIP` eintragen. Tokens gehören NIE ins `detail`.
 - **Zweiter zustandsändernder Pfad:** die Test-Console-Sim (`viewer_tick`/`chat_msg`/`time_cmd` über die Admin-WS) geht NICHT durch `handleAdminCmd`, erzeugt aber echte `watchtime_events`. Darum `ALLOW_SIM` (Default `false`, Prod also aus) + eigener `audit()`-Aufruf (`sim_*`, auch `denied`). Wer hier weitere Events ergänzt, muss beides mitnehmen.
 
@@ -128,7 +139,8 @@ setup-git` liefert die Credentials. Lokales `git` bleibt für commit/diff/log.
 - WS-Events `{event:'name',...}`; Admin-Cmds `{event:'gw_cmd',cmd}`. Neue Events/Cmds in `ALLOWED_EVENTS`/`ALLOWED_CMDS` (admin-shared.js + giveaway-shared.js).
 - `CC.validate` für alle Input-Sanitization. `sanitizeUsername(s)` konsistent C# ↔ JS (lowercase, [a-z0-9_], max 25).
 - `log(tag,...)`/`logErr(tag,...)` statt raw console.
-- Redis DB 0 = prod, DB 1 = tests — nie DB 0 im Testcode.
+- Redis DB 0 = prod (`REDIS_DB` in `docker-compose.yml`), DB 1 für alles, was gegen echtes
+  Redis läuft — nie DB 0 im Testcode. Die `node --test`-Suites fassen Redis gar nicht an.
 
 ## Dev
 ```bash
@@ -137,11 +149,15 @@ docker compose up -d [--build]            # lokal HTTP (caddy/Caddyfile)
 
 # services/<name>/
 npm start · npm run dev (--watch)
-npm test                                  # node --test tests/*.test.js, Redis DB 1
+npm test                                  # node --test tests/*.test.js
 node --test tests/watchtime.test.js       # einzelne Datei
 node --test --test-name-pattern="coins"   # einzelner Test
 ```
 Tests nur in `giveaway` (`watchtime`, `chat-ai`) und `admin` (`auth`) — `bridge` hat kein `test`-Script.
+**Die Suites brauchen keine laufende Infrastruktur**: Redis/pg sind In-Memory-Mocks
+(`makeRedis()` in `watchtime.test.js`), `fetch` ist gestubbt (`stubFetch()` in
+`chat-ai.test.js`). Also kein `docker compose up` vor `npm test`. Neue Tests genauso
+halten — was Redis/pg/Netz wirklich braucht, gehört nicht in `tests/`.
 
 ## Response Rules
 - Terse. Kein Filler, keine „was ich geändert habe"-Zusammenfassung (Diff ist sichtbar).

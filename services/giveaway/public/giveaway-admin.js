@@ -900,11 +900,15 @@ function fmtDrawDate(iso) {
 function exportCSV() {
   const active = Object.values(participants).filter(p => !p.banned);
   if (!active.length) { log('Keine Daten zum Exportieren', 'red'); return; }
-  const total = active.reduce((s,p) => s + (p.coins||0), 0);
-  const rows = [['Username','Coins','Watchtime (s)','Watchtime','Gewinnchance %']];
+  // Nenner ist der Lostopf, nicht die Crew: nur `eligible` (Keyword + Follow-Gate
+  // + ≥1 Coin) wird gezogen, also auch nur darüber die Chance. Nicht Zugelassene
+  // stehen mit ihren Coins in der Liste, aber mit 0 %.
+  const total = active.reduce((s,p) => s + (p.eligible ? (p.coins||0) : 0), 0);
+  const rows = [['Username','Coins','Watchtime (s)','Watchtime','Zugelassen','Gewinnchance %']];
   active.sort((a,b) => b.coins - a.coins).forEach(p => {
-    const chance = total > 0 ? ((p.coins / total) * 100).toFixed(2) : '0.00';
-    rows.push([p.display, parseDec(p.coins).toFixed(2), p.watchSec, fmtTime(p.watchSec), chance]);
+    const chance = (p.eligible && total > 0) ? ((p.coins / total) * 100).toFixed(2) : '0.00';
+    rows.push([p.display, parseDec(p.coins).toFixed(2), p.watchSec, fmtTime(p.watchSec),
+               p.eligible ? 'ja' : 'nein', chance]);
   });
   const csv = rows.map(r => r.join(';')).join('\n');
   dlFile('giveaway_export.csv', csv, 'text/csv;charset=utf-8');
@@ -912,8 +916,9 @@ function exportCSV() {
 }
 
 function exportChances() {
-  const active = Object.values(participants).filter(p => !p.banned && p.coins > 0);
-  if (!active.length) { log('Keine Teilnehmer mit Tickets', 'red'); return; }
+  // Nur der echte Lostopf — `eligible` deckt bereits !banned und ≥1 Coin mit ab.
+  const active = Object.values(participants).filter(p => p.eligible);
+  if (!active.length) { log('Keine zugelassenen Teilnehmer', 'red'); return; }
   const total = active.reduce((s,p) => s + p.coins, 0);
   const sep = '-'.repeat(48);
   let txt = 'CHAOS CREW - GIVEAWAY GEWINNCHANCEN\n';
