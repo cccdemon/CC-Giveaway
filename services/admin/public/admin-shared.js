@@ -661,7 +661,12 @@
       if (r.status === 401) return null;   // nicht angemeldet - nichts zu tun
       return r.json();
     }).then(function (st) {
-      if (st && !st.accepted) show(st);
+      // Ohne belastbare Fassungsnummer kein Overlay: eine Fehlerantwort hat
+      // sonst kein `accepted`, das Overlay erschien trotz Zustimmung und der
+      // Klick auf "Zustimmen" schickte `version: undefined` — was der Server
+      // korrekt, aber fuer den Nutzer voellig unverstaendlich mit
+      // "version_mismatch" quittierte.
+      if (st && typeof st.current === 'number' && !st.accepted) show(st);
     }).catch(function () { /* Netzfehler blockiert die Seite nicht */ });
   }
 
