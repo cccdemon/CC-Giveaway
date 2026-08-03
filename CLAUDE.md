@@ -23,6 +23,13 @@ keine Abhängigkeit zu Spacefight, Alerts, HUD-Chat, Gamescenes, Stats oder Haul
 
 > Multi-Channel-Campaign-Umbau (Kanal-Dimension, Ingest-Inversion, Login) ist in Arbeit — siehe Auto-Memory `team-giveaway-design`. Der Live-Code ist teils noch Single-Channel (Legacy-Session-Fallback).
 
+> **Geplant: austauschbare Mechaniken („Cores").** Die oben beschriebene Mechanik
+> wird zu `CORE_WatchtimeChatActivity`, daneben `CORE_TicketBuy` und
+> `CORE_CurrentViewers`; mehrere Giveaways je Team parallel. Entwurf mit
+> Ist-Zustand-Karte, Core-Vertrag und Phasenplan: `docs/ARCHITEKTUR-CORES.md`.
+> **Wer die Mechanik anfasst, liest das vorher** — sonst wächst die Verdrahtung,
+> die dort gerade abgebaut werden soll.
+
 ## Services (`services/`)
 | Service | Container | Port | Zweck |
 |---|---|---|---|
@@ -138,7 +145,11 @@ Caddy Login. Secrets (KI-API-Keys) verschlüsselt in `app_secrets`, nie in ENV/R
 Wertebereichen — Referenz bei Config-Fragen) · `docs/BETRIEB.md` ·
 `docs/RECHT-UND-DATENSCHUTZ.md` · `docs/PROJEKTHISTORIE.md` ·
 `docs/ANLEITUNG-TEILNEHMER.md` · `docs/TEILNAHMEBEDINGUNGEN.md` ·
+`docs/ARCHITEKTUR-CORES.md` (Entwurf austauschbarer Mechaniken) ·
 `streamerbot/CAMPAIGN_SETUP.md`.
+Öffentlich (ohne Login): `services/admin/public-docs/roadmap.md` +
+`changelog.md` → `/admin/roadmap.html`, `/admin/changelog.html`. Nutzerrelevante
+Änderung? Dann gehört sie ins `changelog.md`.
 
 ## Git / GitHub
 **Immer `gh` statt `git` für alles, was GitHub berührt** (Push, PR, Issues, Releases,
