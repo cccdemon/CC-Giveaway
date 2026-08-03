@@ -17,6 +17,7 @@ keine Abhängigkeit zu Spacefight, Alerts, HUD-Chat, Gamescenes, Stats oder Haul
 - **Viewtime-Multiplier:** Admin kann zeitlich begrenzt beschleunigen („nächste 15 min doppelte Viewtime", gilt auch für Chat) — time-boxed Faktor auf Tick + Chat-Bonus.
 - **Teilnahme:** Folge ≥2 der teilnehmenden Kanäle (konfigurierbar) + Viewtime + sinnvoller Chat. Lurken allein = keine Lose. Ab ≥1 Ticket per Keyword im Chat opt-in (= Zustimmung Teilnahmebedingungen).
 - **Ziehung:** Zufall gewichtet nach Ticketzahl. Gewinner 14 Tage Meldefrist, sonst Ersatz.
+- **Gewinnermeldung:** echte Ziehung legt einen `draw_claims`-Satz an (Frist `CLAIM_DEADLINE_DAYS=14`) und sagt den Gewinner im Chat an. Kontaktdaten (Name/E-Mail/Anschrift) trägt **nur der Gewinner selbst** auf `/giveaway/claim.html` ein — identifiziert über die Twitch-Session, nie per Fremdeingabe. Automatische Löschung der Kontaktfelder nach `CLAIM_RETENTION_DAYS=365`; der Ziehungsnachweis bleibt.
 - **Follow-Check = Hybrid:** Streamerbot-Live-Gate (`follows` am Event) + Helix-Reconcile vor Ziehung. Follower werden **pro Kanal über den Self-OAuth-Token des Kanal-Owners** gelesen (Scope `moderator:read:followers`, Login auf team.raumdock.org → Tabelle `streamers`, self=broadcaster). Kanäle ohne eingeloggten Owner bleiben permissiv. Divergenz → Flag, Coins des Kanals raus.
 - **Nachvollziehbarkeit:** jede Coin-Bewegung in `watchtime_events`, Per-Kanal-Stand in `campaign_participation`, jede Ziehung in `giveaway_draws` mit reproduzierbarem Snapshot + Follow-Audit.
 
@@ -48,8 +49,12 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 - `services/giveaway/chat-ai.js` — optionale KI-Chatbewertung + Key-Krypto
 - `services/giveaway/helix.js` — Twitch-Helix-Follow-Reconcile, Follower/User-ID-Cache, Token-Refresh
 - `services/admin/auth.js` — pure Auth-Helper (HMAC-signierte Cookie-Sessions, bcrypt), ohne express/pg/redis
-- `services/giveaway/public/giveaway-shared.js` — Shared-Lib (`CC.validate`, Nav)
+- `services/giveaway/public/giveaway-shared.js` — Shared-Lib (`CC.validate`, `CC.audit.summary`, Nav)
 - `services/giveaway/public/giveaway-admin.js` — Admin-Panel-Logik
+- `services/giveaway/public/audit.html|js` — Audit-Seite (Filter, Verdichtung, tar.gz-Archiv)
+- `services/giveaway/public/archive.html|js` — vergangene Giveaways, volles Dossier je Sitzung
+- `services/giveaway/public/claim.html|js` — Gewinnermeldung (nur der Gewinner selbst)
+- `services/giveaway/targz.js` — minimaler ustar-Writer für die Archive (getestet)
 - `services/admin/server.js` — Login/OAuth, Teams, TOS-Gate, DSGVO, `PUB_DOCS`, Health
 - `services/admin/public/admin-shared.js` — `CC.validate`, Nav, Debug-Console, TOS-Overlay
 - `services/admin/public/teams.js` — Team-Verwaltung + Rechts-/Giveaway-Linkblock
@@ -62,13 +67,16 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 
 ## REST (`/giveaway/api/...`)
 `GET participants` · `GET user/:u` · `GET sessions` · `GET leaderboard` · `GET draws` (`?session=`,`?full=1`,`?limit=`) · `GET ws/clients`
+`GET audit` (Filter + Verdichtung + `before`-Cursor) · `GET audit/stats` · `GET audit/archive` (tar.gz)
+`GET archive` (Sitzungsliste) · `GET archive/:sid` (Dossier) · `GET archive/:sid/export` (tar.gz, Owner)
+`GET claim/mine` · `POST claim` (nur der eingeloggte Gewinner)
 
 ## Admin WS `gw_cmd` (`{event:'gw_cmd',cmd,...}`)
 `gw_open`(+keyword) · `gw_close` · `gw_draw_winner` · `gw_set_keyword` · `gw_get_keyword` · `gw_add_ticket`(user,amount) · `gw_sub_ticket` · `gw_ban`/`gw_unban` · `gw_reset`
 
 ## Data
 - **Redis:** open/closed, keyword, banned, watchsec/msgs pro User, session id, (geplant: per-channel keys, follow-cache, multiplier).
-- **PostgreSQL:** `sessions`, `users`, `session_participants`, `watchtime_events`, `campaign_participation`, `abuse_flags`, `teams`, `team_members`, `streamers`, `terms_versions` (Teilnahmebedingungen pro Team), `tos_acceptances` (Zustimmung Nutzungsbedingungen, append-only), `app_secrets` (verschlüsselt), `giveaway_draws` (voller Draw-Audit), `audit_log` (append-only: jede zustandsändernde Admin-/System-Aktion mit Actor, IP, Ziel, Vorher/Nachher; auch `denied`/`error`). Schema: **`ensureSchema()` beim Start ist die Quelle der Wahrheit.** `postgres/init.sql`
+- **PostgreSQL:** `sessions`, `users`, `session_participants`, `watchtime_events`, `campaign_participation`, `abuse_flags`, `teams`, `team_members`, `streamers`, `terms_versions` (Teilnahmebedingungen pro Team), `tos_acceptances` (Zustimmung Nutzungsbedingungen, append-only), `app_secrets` (verschlüsselt), `giveaway_draws` (voller Draw-Audit), `draw_claims` (Gewinnermeldung — **einzige Klardaten im System**: Name/E-Mail/Anschrift, 12 Monate), `audit_log` (append-only: jede zustandsändernde Admin-/System-Aktion mit Actor, IP, Ziel, Vorher/Nachher; auch `denied`/`error`). Schema: **`ensureSchema()` beim Start ist die Quelle der Wahrheit.** `postgres/init.sql`
 (nur bei frischem Volume) legt lediglich `users`, `sessions`, `session_participants`,
 `watchtime_events`, `campaign_participation`, `debug_log`, `giveaway_draws` an — alles
 Team-/Auth-/Compliance-bezogene (`teams`, `team_members`, `streamers`, `terms_versions`,
@@ -77,6 +85,8 @@ Team-/Auth-/Compliance-bezogene (`teams`, `team_members`, `streamers`, `terms_ve
 In prod stehen zusätzlich `admin_users` und `spacefight_results`/`spacefight_stats` —
 Altbestand aus der CC-StreamSuite, von diesem Code nicht benutzt (`docs/PROJEKTHISTORIE.md`).
 - **Audit-Choke-Point:** `handleAdminCmd()` in `services/giveaway/server.js` — jedes neue `gw_cmd` läuft automatisch mit. Nur-Lese-Cmds in `AUDIT_SKIP` eintragen. Tokens gehören NIE ins `detail`.
+- **Das Audit-Log wird nie gelöscht.** `runRetention()` anonymisiert nach `protocolDays` nur noch (IP raus, `target` pseudonymisiert) — Vorgang, Zeitpunkt und Ergebnis bleiben. Gleiches gilt für `giveaway_draws`. Wer hier wieder ein `DELETE` einbaut, zerstört den Nachweis.
+- **Ablehnungen von `AUDIT_SKIP`-Cmds sind gedrosselt** (`shouldLogDeny`, 5-min-Fenster je Team/Actor/Cmd). Ohne das flutet ein pollendes Panel den Log — genau so entstanden schon einmal 4,5 Mio Zeilen.
 - **Zweiter zustandsändernder Pfad:** die Test-Console-Sim (`viewer_tick`/`chat_msg`/`time_cmd` über die Admin-WS) geht NICHT durch `handleAdminCmd`, erzeugt aber echte `watchtime_events`. Darum `ALLOW_SIM` (Default `false`, Prod also aus) + eigener `audit()`-Aufruf (`sim_*`, auch `denied`). Wer hier weitere Events ergänzt, muss beides mitnehmen.
 
 ## Streamerbot C# (`streamerbot/`) — inverted ingest client (Phase 6)
@@ -117,6 +127,9 @@ Caddy Login. Secrets (KI-API-Keys) verschlüsselt in `app_secrets`, nie in ENV/R
   `POST /api/me/delete`. Benutzername kommt nur aus der Session. Ziehungsnachweise
   werden pseudonymisiert (`geloescht_<sha256[0:8]>`), nicht gelöscht
   (Art. 17 Abs. 3 lit. e DSGVO). Auch reine Zugriffe landen im `audit_log`, bewusst ohne IP.
+  **Neue personenbezogene Spalte? Dann in `collectSubjectData()` UND `eraseSubject()`
+  (`services/admin/server.js`) mitziehen** — sonst ist die Auskunft unvollständig
+  und die Löschung wirkungslos.
 - Details: `docs/RECHT-UND-DATENSCHUTZ.md`. Betrieb/DB-Eingriffe: `docs/BETRIEB.md`.
   Repo-Herkunft, Altbestände, Neuaufsetzen: `docs/PROJEKTHISTORIE.md`.
 

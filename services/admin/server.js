@@ -571,7 +571,7 @@ async function auditGdpr(actor, action, target, result, detail) {
 // Alles, was zu einer Person gespeichert ist - Grundlage fuer Art. 15 DSGVO.
 async function collectSubjectData(u) {
   const q = (sql, p) => pg.query(sql, p).then(r => r.rows).catch(() => []);
-  const [user, events, participation, flags, audit, draws, teams, tos] = await Promise.all([
+  const [user, events, participation, flags, audit, draws, teams, tos, claims] = await Promise.all([
     q('SELECT username, display, last_seen FROM users WHERE username=$1', [u]),
     q(`SELECT team_id, channel, event_type, count(*)::int AS n, min(ts) AS first, max(ts) AS last,
               sum(delta_sec)::int AS total_sec
@@ -585,13 +585,19 @@ async function collectSubjectData(u) {
        WHERE winner=$1 ORDER BY drawn_at DESC`, [u]),
     q(`SELECT DISTINCT team_id FROM watchtime_events WHERE username=$1`, [u]),
     q('SELECT version, accepted_at FROM tos_acceptances WHERE login=$1 ORDER BY version', [u]),
+    // Die Gewinnermeldung ist der einzige Ort mit Klarnamen und Anschrift -
+    // sie gehoert damit zwingend in die Selbstauskunft nach Art. 15 DSGVO.
+    q(`SELECT id, team_id, session_id, status, deadline_at, claimed_at, purge_at, purged_at,
+              real_name, email, street, zip, city, country, note, terms_version
+       FROM draw_claims WHERE winner=$1 ORDER BY created_at DESC`, [u]),
   ]);
   return {
     username: u,
-    found: !!(user.length || events.length || participation.length || audit.length || draws.length || tos.length),
+    found: !!(user.length || events.length || participation.length || audit.length
+              || draws.length || tos.length || claims.length),
     user: user[0] || null, teams: teams.map(t => t.team_id),
     watchtimeEvents: events, participation, abuseFlags: flags,
-    auditEntries: audit, draws, tosAcceptances: tos,
+    auditEntries: audit, draws, tosAcceptances: tos, winnerClaims: claims,
   };
 }
 
@@ -639,6 +645,14 @@ async function eraseSubject(u, actor, action) {
     done.snapshots_pseudonymisiert = sn.rowCount;
     const al = await client.query('UPDATE audit_log SET target=$2 WHERE target=$1', [u, pseudo]);
     done.audit_log_pseudonymisiert = al.rowCount;
+    // Gewinnermeldung: die Kontaktdaten sind echte Klardaten und fallen sofort
+    // weg. Der Datensatz selbst bleibt pseudonymisiert stehen, weil er belegt,
+    // dass der Gewinn gemeldet und zugestellt wurde (Art. 17 Abs. 3 lit. e).
+    const cl = await client.query(
+      `UPDATE draw_claims SET winner=$2, real_name=NULL, email=NULL, street=NULL, zip=NULL,
+              city=NULL, country=NULL, note=NULL, claim_ip=NULL, purged_at=NOW()
+       WHERE winner=$1`, [u, pseudo]);
+    done.gewinnermeldung_bereinigt = cl.rowCount;
 
     await client.query(
       `INSERT INTO audit_log (team_id, actor, action, target, result, detail)

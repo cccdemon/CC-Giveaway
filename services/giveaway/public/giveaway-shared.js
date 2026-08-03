@@ -261,7 +261,9 @@
   ];
   var TOOLS = [
     { head:'Verwaltung' },
+    { href:'/giveaway/archive.html', label:'Vergangene Giveaways', ic:'🗄' },
     { href:'/giveaway/audit.html', label:'Audit-Log', ic:'🧾' },
+    { href:'/giveaway/claim.html', label:'Gewinn melden', ic:'🏆' },
     { href:'/admin/users.html', label:'Benutzer', ic:'👥' },
     { href:'/admin/datenschutz-admin.html', label:'Betroffenenrechte', ic:'🛡' },
     { href:'/viewer/help',      label:'Anleitung', ic:'📖' },

@@ -572,7 +572,8 @@ class WatchtimeEngine {
 
     console.log(`[WTE] [${t}] Draw #${drawId}: ${winner.username} won, coins=${winner.totalCoins}, eligible=${eligible.length}, test=${isTest}`);
     return { winner: winner.username, coins: winner.totalCoins, watchSec: Math.round(winner.totalWatchSec),
-             drawId, drawIndex, eligibleCount: eligible.length, total: totalRounded, rand: randRounded, isTest, prize };
+             drawId, drawIndex, sessionId, eligibleCount: eligible.length,
+             total: totalRounded, rand: randRounded, isTest, prize };
   }
 
   async closeGiveaway(teamId, sessionId) {

@@ -425,6 +425,35 @@ function broadcastTeam(teamId, obj) {
   for (const [, c] of clients) if (c.teamId === teamId && c.ws.readyState === WebSocket.OPEN) c.ws.send(str);
 }
 
+function publicHost() {
+  return (process.env.PUBLIC_URL || 'https://team.raumdock.org').replace(/\/+$/, '');
+}
+
+// ── Gewinnermeldung ───────────────────────────────────────
+// Meldefrist aus den Teilnahmebedingungen. Wer sie verstreichen laesst,
+// verliert den Anspruch — deshalb steht die Frist im Datensatz und nicht
+// nur im Text.
+const CLAIM_DEADLINE_DAYS  = 14;
+const CLAIM_RETENTION_DAYS = 365;   // 12 Monate ab Meldung, s. Datenschutzerklaerung
+
+async function createClaim(teamId, result) {
+  try {
+    // Der Token macht den Direktlink aus dem Chat bequem. Er ersetzt die
+    // Anmeldung aber nicht: abgeben darf nur, wer als Gewinner eingeloggt ist.
+    const token = crypto.randomBytes(24).toString('base64url');
+    const hash  = crypto.createHash('sha256').update(token).digest('hex');
+    const deadline = new Date(Date.now() + CLAIM_DEADLINE_DAYS * 86400 * 1000);
+    const r = await pg.query(`
+      INSERT INTO draw_claims (draw_id, team_id, session_id, winner, token_hash, deadline_at)
+      VALUES ($1,$2,$3,$4,$5,$6)
+      ON CONFLICT (draw_id) DO NOTHING
+      RETURNING id, deadline_at`,
+      [result.drawId, teamId, result.sessionId || null, result.winner, hash, deadline]);
+    if (!r.rowCount) return null;
+    return { id: r.rows[0].id, deadlineAt: r.rows[0].deadline_at, token };
+  } catch(e) { logErr('Claim', 'create:', e.message); return null; }
+}
+
 // Ansage in die Chats aller Team-Kanaele. Die bridge verwirft Nachrichten an
 // Kanaele ohne verbundenen Bot, offline schadet also nicht.
 async function announceTeam(teamId, message) {
@@ -857,6 +886,14 @@ async function runAdminCmd(send, msg, meta, ctx) {
                                  randValue: result.rand, isTest: !!result.isTest });
         send({ event: 'gw_ack', type: 'winner_drawn', winner: result.winner, watchSec: result.watchSec, coins: result.coins, drawId: result.drawId, prize: result.prize });
         broadcastTeam(teamId, { event: 'gw_overlay', winner: result.winner, coins: result.coins });
+        // Testziehungen erzeugen keine Meldefrist und keine Ansage.
+        if (!result.isTest) {
+          const claim = await createClaim(teamId, result);
+          outcome.claimDeadline = claim ? claim.deadlineAt : null;
+          await announceTeam(teamId, `🎉 Gewinner: @${result.winner} — herzlichen Glückwunsch! `
+            + `Melde dich innerhalb von ${CLAIM_DEADLINE_DAYS} Tagen unter ${publicHost()}/viewer/claim `
+            + '(Login mit Twitch), sonst wird ein Ersatzgewinner gezogen.');
+        }
       } catch (e) {
         outcome.error = e.message;
         logErr('GW', 'draw failed:', e.message);
@@ -1199,6 +1236,197 @@ app.get('/api/audit/archive', async (req, res) => {
   }
 });
 
+// ── Gewinnermeldung: Selbstauskunft des Gewinners ─────────
+// Kontaktdaten traegt ausschliesslich der Gewinner selbst ein, identifiziert
+// ueber die Twitch-Session. Ein Token aus dem Chat-Link ist nur Bequemlichkeit
+// und ersetzt die Anmeldung nicht — sonst koennte jeder, der den Chat mitliest,
+// fremde Adressdaten hinterlegen.
+const CLAIM_FIELDS = { real_name: 120, email: 190, street: 140, zip: 20, city: 90, country: 60, note: 500 };
+
+app.get('/api/claim/mine', async (req, res) => {
+  try {
+    const user = sanitizeUsername(reqUser(req) || '');
+    if (!user) return res.status(401).json({ error: 'unauthenticated' });
+    const r = await pg.query(`
+      SELECT c.id, c.team_id, c.session_id, c.status, c.deadline_at, c.claimed_at, c.purge_at,
+             c.real_name, c.email, c.street, c.zip, c.city, c.country, c.note,
+             d.drawn_at, d.prize, d.winner_coins, t.name AS team_name
+      FROM draw_claims c
+      JOIN giveaway_draws d ON d.id = c.draw_id
+      LEFT JOIN teams t ON t.id = c.team_id
+      WHERE c.winner = $1 ORDER BY d.drawn_at DESC`, [user]);
+    res.json({ user, claims: r.rows.map(c => ({ ...c, overdue: c.status === 'pending' && new Date(c.deadline_at) < new Date() })) });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/claim', express.json(), async (req, res) => {
+  const user = sanitizeUsername(reqUser(req) || '');
+  const id   = parseInt(req.body && req.body.id);
+  try {
+    if (!user) return res.status(401).json({ error: 'unauthenticated' });
+    const cur = await pg.query('SELECT id, team_id, status, deadline_at FROM draw_claims WHERE id=$1 AND winner=$2', [id, user]);
+    if (!cur.rowCount) return res.status(404).json({ error: 'Keine Gewinnmeldung fuer dich unter dieser Nummer' });
+    const c = cur.rows[0];
+    if (new Date(c.deadline_at) < new Date()) {
+      await audit({ teamId: c.team_id, actor: user, ip: req.ip, action: 'claim_submit', target: user,
+                    result: 'denied', detail: { claimId: id, reason: 'deadline_passed' } });
+      return res.status(410).json({ error: 'Die Meldefrist ist abgelaufen' });
+    }
+    if (!req.body.acceptTerms) return res.status(400).json({ error: 'Bitte die Teilnahmebedingungen bestaetigen' });
+
+    const vals = {};
+    for (const [k, max] of Object.entries(CLAIM_FIELDS)) vals[k] = sanitizeStr(req.body[k] || '', max) || null;
+    if (!vals.real_name) return res.status(400).json({ error: 'Name fehlt' });
+    if (!vals.email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(vals.email)) {
+      return res.status(400).json({ error: 'E-Mail-Adresse sieht nicht gueltig aus' });
+    }
+    const tv = await pg.query('SELECT MAX(version) AS v FROM terms_versions WHERE team_id=$1', [c.team_id]).catch(() => ({ rows: [{}] }));
+    const purge = new Date(Date.now() + CLAIM_RETENTION_DAYS * 86400 * 1000);
+
+    await pg.query(`
+      UPDATE draw_claims SET status='claimed', real_name=$2, email=$3, street=$4, zip=$5, city=$6,
+             country=$7, note=$8, terms_version=$9, claimed_at=NOW(), claim_ip=$10, purge_at=$11
+      WHERE id=$1`,
+      [id, vals.real_name, vals.email, vals.street, vals.zip, vals.city, vals.country, vals.note,
+       tv.rows[0] ? tv.rows[0].v : null, req.ip || null, purge]);
+
+    // Bewusst ohne die Kontaktdaten selbst: das Protokoll belegt, DASS gemeldet
+    // wurde, es ist keine zweite Kopie der personenbezogenen Daten.
+    await audit({ teamId: c.team_id, actor: user, ip: req.ip, action: 'claim_submit', target: user,
+                  result: 'ok', detail: { claimId: id, fields: Object.keys(vals).filter(k => vals[k]), purgeAt: purge } });
+    res.json({ ok: true, purgeAt: purge });
+  } catch(e) {
+    await audit({ actor: user, ip: req.ip, action: 'claim_submit', target: user, result: 'error', detail: { claimId: id, error: e.message } });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Archiv: abgeschlossene Giveaways ──────────────────────
+// Ein abgeschlossenes Giveaway soll ohne Datenbankzugriff nachvollziehbar sein:
+// Sitzung, Kanaele, Teilnehmerstand, jede Ziehung mit Snapshot, das Audit-Log
+// des Zeitraums und die Gewinnermeldung.
+app.get('/api/archive', async (req, res) => {
+  try {
+    const teamId = sanitizeTeamId(req.query.team);
+    if (!await isMember(reqUser(req), teamId)) return res.status(403).json({ error: 'forbidden' });
+    const r = await pg.query(`
+      SELECT s.id, s.keyword, s.channels, s.opened_at, s.closed_at,
+             s.total_participants, s.total_coins,
+             (SELECT COUNT(*)::int FROM giveaway_draws d WHERE d.session_id = s.id AND NOT d.is_test) AS draws,
+             (SELECT COUNT(*)::int FROM giveaway_draws d WHERE d.session_id = s.id AND d.is_test)     AS test_draws,
+             (SELECT STRING_AGG(d.winner, ', ' ORDER BY d.drawn_at)
+                FROM giveaway_draws d WHERE d.session_id = s.id AND NOT d.is_test)                    AS winners,
+             (SELECT COUNT(*)::int FROM draw_claims c WHERE c.session_id = s.id AND c.status='claimed') AS claimed
+      FROM sessions s WHERE s.team_id = $1
+      ORDER BY s.opened_at DESC LIMIT 200`, [teamId]);
+    res.json({ team: teamId, sessions: r.rows });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Volles Dossier zu einer Sitzung. Kontaktdaten des Gewinners sieht nur der
+// Owner — Members bekommen dieselbe Seite ohne diese Felder.
+async function archiveDossier(teamId, sessionId, withContact) {
+  const q = (sql, p) => pg.query(sql, p).then(r => r.rows).catch(() => []);
+  const contact = withContact
+    ? 'c.real_name, c.email, c.street, c.zip, c.city, c.country, c.note, c.claim_ip,'
+    : '';
+  const [session, draws, participation, claims, auditRows] = await Promise.all([
+    q(`SELECT * FROM sessions WHERE id=$1 AND team_id=$2`, [sessionId, teamId]),
+    q(`SELECT id, winner, winner_coins, winner_watch_sec, total_coins, eligible_count,
+              rand_value, draw_index, is_test, prize, drawn_at, eligible_snapshot
+       FROM giveaway_draws WHERE session_id=$1 ORDER BY drawn_at`, [sessionId]),
+    q(`SELECT username, channel, watch_sec, msgs, coins, follows, valid
+       FROM campaign_participation WHERE session_id=$1 ORDER BY coins DESC, username`, [sessionId]),
+    q(`SELECT c.id, c.draw_id, c.winner, c.status, c.deadline_at, c.claimed_at,
+              c.terms_version, c.purge_at, c.purged_at, ${contact} c.created_at
+       FROM draw_claims c WHERE c.session_id=$1 ORDER BY c.created_at`, [sessionId]),
+    q(`SELECT id, ts, actor, actor_ip, action, target, result, detail
+       FROM audit_log WHERE session_id=$1 ORDER BY ts LIMIT 50000`, [sessionId]),
+  ]);
+  return { session: session[0] || null, draws, participation, claims, audit: auditRows };
+}
+
+app.get('/api/archive/:sessionId', async (req, res) => {
+  try {
+    const teamId = sanitizeTeamId(req.query.team);
+    const user   = reqUser(req);
+    if (!await isMember(user, teamId)) return res.status(403).json({ error: 'forbidden' });
+    const owner = await ownsTeam(user, teamId);
+    const d = await archiveDossier(teamId, sanitizeStr(req.params.sessionId, 60), owner);
+    if (!d.session) return res.status(404).json({ error: 'Sitzung nicht gefunden' });
+    res.json({ ...d, contactVisible: owner });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Komplettes Giveaway als .tar.gz. Nur der Owner — hier liegen Kontaktdaten drin.
+app.get('/api/archive/:sessionId/export', async (req, res) => {
+  const teamId = sanitizeTeamId(req.query.team);
+  const actor  = reqUser(req);
+  const sid    = sanitizeStr(req.params.sessionId, 60);
+  try {
+    if (!await ownsTeam(actor, teamId)) return res.status(403).json({ error: 'forbidden' });
+    const d = await archiveDossier(teamId, sid, true);
+    if (!d.session) return res.status(404).json({ error: 'Sitzung nicht gefunden' });
+
+    const now = new Date();
+    const sha = (s) => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
+    const cell = (v) => {
+      const s = v === null || v === undefined ? '' : (typeof v === 'object' ? JSON.stringify(v) : String(v));
+      return /[";\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const toCsv = (rows) => {
+      if (!rows.length) return '';
+      const cols = Object.keys(rows[0]);
+      return '﻿' + [cols.join(';')].concat(rows.map(r => cols.map(c => cell(r[c])).join(';'))).join('\r\n') + '\r\n';
+    };
+    const files = [
+      { name: 'session.json',       content: JSON.stringify(d.session, null, 2) },
+      { name: 'draws.json',         content: JSON.stringify(d.draws, null, 2) },
+      { name: 'teilnehmer.csv',     content: toCsv(d.participation) },
+      { name: 'ziehungen.csv',      content: toCsv(d.draws.map(({ eligible_snapshot, ...r }) => r)) },
+      { name: 'gewinnermeldung.csv',content: toCsv(d.claims) },
+      { name: 'audit.csv',          content: toCsv(d.audit) },
+    ].filter(f => f.content);
+
+    const manifest = [
+      'CC-Giveaway — Archiv eines abgeschlossenen Giveaways',
+      '',
+      `Team:        ${teamId}`,
+      `Sitzung:     ${sid}`,
+      `Eroeffnet:   ${d.session.opened_at ? new Date(d.session.opened_at).toISOString() : '–'}`,
+      `Geschlossen: ${d.session.closed_at ? new Date(d.session.closed_at).toISOString() : 'noch offen'}`,
+      `Erstellt:    ${now.toISOString()} von ${actor}`,
+      '',
+      `Ziehungen:   ${d.draws.length} (davon Test: ${d.draws.filter(x => x.is_test).length})`,
+      `Teilnehmer:  ${d.participation.length} Kanal-Datensaetze`,
+      `Audit:       ${d.audit.length} Eintraege`,
+      `Meldungen:   ${d.claims.length}`,
+      '',
+      'draws.json enthaelt je Ziehung den vollstaendigen eligible_snapshot —',
+      'damit laesst sich jede Ziehung mit rand_value nachrechnen.',
+      '',
+      'Dateien (SHA-256):',
+      ...files.map(f => `  ${f.name.padEnd(22)} ${sha(f.content)}`),
+      '',
+      'gewinnermeldung.csv enthaelt personenbezogene Daten des Gewinners.',
+      `Im System werden diese Felder ${CLAIM_RETENTION_DAYS} Tage nach der Meldung automatisch`,
+      'geloescht. Fuer dieses Archiv ist der Empfaenger selbst verantwortlich.',
+      '',
+    ].join('\n');
+    files.unshift({ name: 'MANIFEST.txt', content: manifest });
+
+    const gz = targz(files, now.getTime() / 1000);
+    await audit({ teamId, actor, ip: req.ip, action: 'archive_export', target: sid, sessionId: sid,
+                  result: 'ok', detail: { files: files.map(f => f.name), bytes: gz.length } });
+    res.setHeader('Content-Type', 'application/gzip');
+    res.setHeader('Content-Disposition', `attachment; filename="giveaway-${sid}.tar.gz"`);
+    res.send(gz);
+  } catch(e) {
+    await audit({ teamId, actor, ip: req.ip, action: 'archive_export', target: sid, result: 'error', detail: { error: e.message } });
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Zuschauer-Statusseite: eigener Stand über alle Teams (nur eigene Daten).
 app.get('/api/my-status', async (req, res) => {
   try {
@@ -1326,6 +1554,41 @@ async function ensureSchema() {
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_audit_team_result_ts ON audit_log(team_id, result, ts DESC)`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_audit_team_action_ts ON audit_log(team_id, action, ts DESC)`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_audit_session ON audit_log(session_id)`);
+
+  // ── Gewinnermeldung ─────────────────────────────────────
+  // Die einzigen Klardaten im System (Name, E-Mail, Anschrift). Sie kommen
+  // ausschliesslich vom Gewinner selbst ueber ein Formular hinter Twitch-Login,
+  // nie aus einer Fremdeingabe. purge_at setzt die 12-Monats-Frist aus der
+  // Datenschutzerklaerung; runRetention() raeumt danach nur die Kontaktfelder,
+  // der Ziehungsnachweis bleibt vollstaendig.
+  await pg.query(`
+    CREATE TABLE IF NOT EXISTS draw_claims (
+      id            BIGSERIAL PRIMARY KEY,
+      draw_id       BIGINT NOT NULL REFERENCES giveaway_draws(id) ON DELETE CASCADE,
+      team_id       TEXT NOT NULL,
+      session_id    TEXT,
+      winner        TEXT NOT NULL,
+      token_hash    TEXT NOT NULL,
+      status        TEXT NOT NULL DEFAULT 'pending',
+      deadline_at   TIMESTAMPTZ NOT NULL,
+      real_name     TEXT,
+      email         TEXT,
+      street        TEXT,
+      zip           TEXT,
+      city          TEXT,
+      country       TEXT,
+      note          TEXT,
+      terms_version INTEGER,
+      claimed_at    TIMESTAMPTZ,
+      claim_ip      TEXT,
+      purge_at      TIMESTAMPTZ,
+      purged_at     TIMESTAMPTZ,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+  await pg.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_claims_draw   ON draw_claims(draw_id)`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_claims_winner ON draw_claims(winner)`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_claims_team   ON draw_claims(team_id, created_at DESC)`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_claims_purge  ON draw_claims(purge_at) WHERE purge_at IS NOT NULL`);
   // Chat-KI pro Team. ai_key_enc ist AES-256-GCM; Schluessel aus app_secrets.
   await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS ai_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
   await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS ai_provider TEXT`);
@@ -1383,7 +1646,8 @@ function startWatchtimeTicker() {
 // Datenschutzerklaerung; wer sie hier aendert, muss sie dort mitaendern.
 const RETENTION = {
   participationDays: 90,   // Teilnahmedaten nach Abschluss der Session
-  protocolDays:     365,   // Ziehungs- und Verwaltungsprotokolle
+  protocolDays:     365,   // ab hier werden Protokolle anonymisiert, NICHT geloescht
+  claimDays: CLAIM_RETENTION_DAYS,   // Kontaktdaten des Gewinners (12 Monate)
 };
 
 async function runRetention() {
@@ -1408,21 +1672,48 @@ async function runRetention() {
       [RETENTION.participationDays]);
     deleted.abuse_flags = af.rowCount;
 
-    // Protokolle laenger, aber nicht unbegrenzt.
-    const al = await pg.query(
-      `DELETE FROM audit_log WHERE ts < NOW() - ($1 || ' days')::interval`,
+    // Protokolle werden NICHT geloescht — sie sind der Nachweis, dass korrekt
+    // gezogen und verwaltet wurde, und muessen dauerhaft nachvollziehbar
+    // bleiben. Nach Ablauf der Frist fallen stattdessen die personenbezogenen
+    // Anteile weg: die IP verschwindet, betroffene Namen werden pseudonymisiert.
+    // Vorgang, Zeitpunkt und Ergebnis bleiben vollstaendig erhalten
+    // (Art. 17 Abs. 3 lit. e DSGVO, Datenminimierung nach Art. 5 Abs. 1 lit. c).
+    const anonymized = {};
+    const alIp = await pg.query(
+      `UPDATE audit_log SET actor_ip = NULL
+       WHERE actor_ip IS NOT NULL AND ts < NOW() - ($1 || ' days')::interval`,
       [RETENTION.protocolDays]);
-    deleted.audit_log = al.rowCount;
+    anonymized.audit_log_ip = alIp.rowCount;
 
-    const dr = await pg.query(
-      `DELETE FROM giveaway_draws WHERE drawn_at < NOW() - ($1 || ' days')::interval`,
+    const alTgt = await pg.query(
+      `UPDATE audit_log
+       SET target = 'anonym_' || SUBSTRING(ENCODE(SHA256(target::bytea), 'hex') FOR 8)
+       WHERE target IS NOT NULL AND target NOT LIKE 'anonym\\_%'
+         AND ts < NOW() - ($1 || ' days')::interval`,
       [RETENTION.protocolDays]);
-    deleted.giveaway_draws = dr.rowCount;
+    anonymized.audit_log_target = alTgt.rowCount;
 
-    const total = Object.values(deleted).reduce((a, b) => a + b, 0);
-    if (total) log('Retention', `geloescht: ${JSON.stringify(deleted)}`);
-    return deleted;
-  } catch(e) { logErr('Retention', e.message); return deleted; }
+    // Kontaktdaten des Gewinners: eigene Frist, und nur diese Felder. Der
+    // Ziehungsnachweis samt Snapshot bleibt unangetastet.
+    const cl = await pg.query(
+      `UPDATE draw_claims
+       SET real_name=NULL, email=NULL, street=NULL, zip=NULL, city=NULL, country=NULL,
+           note=NULL, claim_ip=NULL, purged_at=NOW()
+       WHERE purged_at IS NULL AND purge_at IS NOT NULL AND purge_at < NOW()`);
+    anonymized.draw_claims_contact = cl.rowCount;
+
+    // Meldefrist verstrichen und nichts eingetragen → Anspruch verfallen.
+    const ex = await pg.query(
+      `UPDATE draw_claims SET status='expired'
+       WHERE status='pending' AND deadline_at < NOW()`);
+    anonymized.draw_claims_expired = ex.rowCount;
+
+    const totalDel = Object.values(deleted).reduce((a, b) => a + b, 0);
+    const totalAnon = Object.values(anonymized).reduce((a, b) => a + b, 0);
+    if (totalDel)  log('Retention', `geloescht: ${JSON.stringify(deleted)}`);
+    if (totalAnon) log('Retention', `anonymisiert: ${JSON.stringify(anonymized)}`);
+    return { deleted, anonymized };
+  } catch(e) { logErr('Retention', e.message); return { deleted, anonymized: {} }; }
 }
 
 function startRetentionJob() {
@@ -1430,7 +1721,9 @@ function startRetentionJob() {
   // danach einmal taeglich.
   setTimeout(runRetention, 60000);
   setInterval(runRetention, 24 * 60 * 60 * 1000);
-  log('Retention', `aktiv: Teilnahmedaten ${RETENTION.participationDays} Tage nach Session-Ende, Protokolle ${RETENTION.protocolDays} Tage`);
+  log('Retention', `aktiv: Teilnahmedaten ${RETENTION.participationDays} Tage nach Session-Ende, `
+    + `Protokolle nach ${RETENTION.protocolDays} Tagen anonymisiert (nicht geloescht), `
+    + `Gewinner-Kontaktdaten ${RETENTION.claimDays} Tage`);
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

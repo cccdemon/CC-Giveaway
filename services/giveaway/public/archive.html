@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chaos Crew – Vergangene Giveaways</title>
+<link rel="stylesheet" href="chaos-crew-admin.css">
+<style>
+  .ar-wrap { padding:14px 18px 40px; max-width:1240px; margin:0 auto; }
+  .ar-title { font-size:13px; letter-spacing:2px; color:var(--cyan); margin:8px 0 4px; }
+  .ar-note { font-size:11px; color:var(--dim); margin-bottom:16px; line-height:1.6; }
+
+  .ar-cols { display:grid; grid-template-columns:340px 1fr; gap:16px; align-items:start; }
+  @media(max-width:900px){ .ar-cols { grid-template-columns:1fr; } }
+
+  .ar-item { border:1px solid rgba(0,212,255,.12); border-radius:8px; padding:9px 11px;
+             margin-bottom:7px; cursor:pointer; }
+  .ar-item:hover  { border-color:rgba(0,212,255,.34); }
+  .ar-item.active { border-color:var(--cyan); background:rgba(0,212,255,.05); }
+  .ar-item h4 { margin:0 0 3px; font-size:12px; color:var(--text); font-weight:600; }
+  .ar-item .sub { font-size:10px; color:var(--dim); line-height:1.5; }
+  .ar-item .badge { font-size:9px; letter-spacing:1px; border-radius:20px; padding:1px 7px;
+                    border:1px solid currentColor; margin-left:5px; }
+  .ar-item .badge.open   { color:var(--gold); }
+  .ar-item .badge.closed { color:#22e07a; }
+
+  .ar-detail { border:1px solid rgba(0,212,255,.14); border-radius:10px; padding:14px 16px; min-height:220px; }
+  .ar-sec { margin-bottom:18px; }
+  .ar-sec h3 { font-size:11px; letter-spacing:1.6px; color:var(--cyan); margin:0 0 7px;
+               border-bottom:1px solid rgba(0,212,255,.12); padding-bottom:4px; }
+  .ar-kv { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:7px; }
+  .ar-kv div { font-size:11px; color:var(--text); }
+  .ar-kv label { display:block; font-size:9px; letter-spacing:1.1px; color:var(--dim); }
+  table.ar-tbl { width:100%; border-collapse:collapse; font-size:11px; }
+  table.ar-tbl th { text-align:left; font-size:9px; letter-spacing:1px; color:var(--dim);
+                    border-bottom:1px solid rgba(255,255,255,.08); padding:4px 6px; font-weight:400; }
+  table.ar-tbl td { padding:4px 6px; border-bottom:1px solid rgba(255,255,255,.04); color:var(--text); }
+  .ar-scroll { overflow-x:auto; max-height:340px; overflow-y:auto; }
+  .ar-pii { border:1px solid rgba(240,165,0,.3); border-radius:8px; padding:10px 12px; }
+  .ar-pii .warn { font-size:10px; color:var(--gold); margin-bottom:7px; letter-spacing:.5px; }
+  .ar-foot { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+</style>
+</head>
+<body>
+<script src="giveaway-shared.js"></script>
+
+<div class="gw-app">
+  <div class="cmdbar">
+    <div class="cb-left">
+      <select id="team-select" onchange="onTeamChange()" title="Team"><option>— lädt —</option></select>
+      <div class="state-chip idle">ARCHIV</div>
+    </div>
+  </div>
+
+  <div class="ar-wrap">
+    <div class="ar-title">VERGANGENE GIVEAWAYS</div>
+    <div class="ar-note">
+      Jedes Giveaway mit allem, was dazugehört: Sitzung, Kanäle, Teilnehmerstand, jede Ziehung
+      mit reproduzierbarem Snapshot, das Audit-Log des Zeitraums und die Gewinnermeldung.
+      Der Export als <code>.tar.gz</code> enthält dieselben Daten als CSV und JSON.
+    </div>
+
+    <div class="ar-cols">
+      <div id="ar-list"><div class="wsc-empty">Lade…</div></div>
+      <div class="ar-detail" id="ar-detail">
+        <div class="wsc-empty">Links ein Giveaway wählen.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="archive.js"></script>
+</body>
+</html>

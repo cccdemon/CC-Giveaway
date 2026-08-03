@@ -83,9 +83,26 @@ in seinen Teilnahmebedingungen angeben.
 Garantien nach Art. 44 ff. DSGVO ergänzen.]**
 
 ### 3.5 Gewinnabwicklung
-Zur Zustellung eines Gewinns erhebt der **Veranstalter** die dafür nötigen Daten
-(z.B. Name, Anschrift, E-Mail oder Discord). Diese Erhebung erfolgt außerhalb
-dieser Plattform und liegt in der Verantwortung des Veranstalters.
+Wirst du gezogen, kannst du deinen Gewinn über die Seite **„Gewinn melden"**
+selbst anmelden. Dort trägst du die zur Zustellung nötigen Daten ein:
+**Name, E-Mail-Adresse** und, sofern der Gewinn versandt wird, **Anschrift**
+sowie eine freiwillige Anmerkung. Gespeichert werden außerdem der Zeitpunkt
+deiner Meldung, deine IP-Adresse und die Version der Teilnahmebedingungen, die
+du dabei bestätigt hast.
+
+Diese Daten trägst **ausschließlich du selbst** ein — der Veranstalter kann sie
+nicht für dich hinterlegen. Sie sind nur für den Veranstalter des betreffenden
+Giveaways sichtbar und werden **12 Monate nach deiner Meldung automatisch
+gelöscht**; der Ziehungsnachweis bleibt davon unberührt. Meldest du dich nicht
+innerhalb der in den Teilnahmebedingungen genannten Frist, verfällt der Anspruch
+und es werden keine Kontaktdaten gespeichert.
+
+**Rechtsgrundlage:** Art. 6 Abs. 1 lit. b DSGVO (Durchführung des
+Gewinnspielverhältnisses). Ohne diese Angaben kann der Gewinn nicht zugestellt
+werden; die Angabe ist freiwillig, aber Voraussetzung für die Übergabe.
+
+Wickelt ein Veranstalter die Übergabe zusätzlich außerhalb dieser Plattform ab
+(z.B. per Discord), liegt das in seiner Verantwortung.
 
 ### 3.6 Protokollierung von Verwaltungshandlungen
 Jede Aktion, die den Stand eines Giveaways verändert, wird protokolliert
@@ -118,13 +135,23 @@ Die Löschung erfolgt automatisch; sie muss nicht beantragt werden.
 | Zugriffe auf die Website | werden nicht gespeichert |
 | Teilnahmedaten (Zuschauzeit, Nachrichtenzahl, Follow-Status, Anmeldung) | **90 Tage** nach Abschluss des jeweiligen Giveaways |
 | Spam-Markierungen samt Nachrichtenauszug | **90 Tage** |
-| Ziehungsprotokolle (Gewinner, Losanteile, Zufallswert) | **12 Monate** |
-| Verwaltungsprotokoll (Audit-Log) | **12 Monate** |
+| Kontaktdaten des Gewinners (Name, E-Mail, Anschrift) | **12 Monate** ab Meldung, dann automatisch gelöscht |
+| Ziehungsprotokolle (Gewinner, Losanteile, Zufallswert) | dauerhaft, nach **12 Monaten** anonymisiert |
+| Verwaltungsprotokoll (Audit-Log) | dauerhaft, nach **12 Monaten** anonymisiert |
 | Sicherungskopien der Datenbank | **30 Tage** |
 
 Solange ein Giveaway läuft, werden seine Daten nicht gelöscht — die Frist
 beginnt mit dem Abschluss. Aus Sicherungskopien verschwinden gelöschte Daten
 spätestens nach weiteren 30 Tagen.
+
+**Protokolle werden nicht gelöscht, sondern anonymisiert.** Ziehungs- und
+Verwaltungsprotokoll belegen, dass ein Giveaway korrekt durchgeführt wurde, und
+müssen dafür dauerhaft nachvollziehbar bleiben (Art. 17 Abs. 3 lit. e DSGVO).
+Nach zwölf Monaten fallen deshalb die personenbezogenen Anteile weg: die
+IP-Adresse wird entfernt, betroffene Benutzernamen werden durch ein Pseudonym
+ersetzt. Was passiert ist, wann und mit welchem Ergebnis, bleibt erhalten —
+wer es war, nicht mehr. Verlangst du vorher die Löschung deiner Daten, wird dein
+Name sofort pseudonymisiert (siehe 6).
 
 Eine gesetzliche **Mindest**aufbewahrungspflicht besteht für diese Daten nicht.
 Verarbeitet der Veranstalter im Rahmen der Gewinnabwicklung Daten außerhalb

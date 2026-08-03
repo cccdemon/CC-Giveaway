@@ -72,10 +72,17 @@ Bereits erworbene Gewinnchancen können vollständig entfallen.
 ## § 7 Gewinne
 Gewinne ergeben sich aus der jeweiligen Ankündigung. Barauszahlung, Umtausch und Übertragung sind ausgeschlossen.
 
-## § 8 Gewinnermittlung
-Auslosung live auf **[Haupt-Kanal]** per Zufallsprinzip aus allen gültigen Teilnahmen. Meldet sich
-ein Gewinner nicht innerhalb von **[Meldefrist, z.B. 14 Kalendertagen]** nach Bekanntgabe, verfällt
-der Gewinn; der Veranstalter darf einen Ersatzgewinner ziehen.
+## § 8 Gewinnermittlung und Meldung
+Auslosung live auf **[Haupt-Kanal]** per Zufallsprinzip aus allen gültigen Teilnahmen, gewichtet
+nach der Zahl der Lose.
+
+Der Gewinner wird im Chat der teilnehmenden Kanäle bekanntgegeben und meldet sich **selbst** über
+die Seite **„Gewinn melden"** (Anmeldung mit dem eigenen Twitch-Konto). Dort trägt er die zur
+Zustellung nötigen Daten ein. Der Veranstalter kann diese Daten nicht für den Gewinner eintragen.
+
+Meldet sich ein Gewinner nicht innerhalb von **14 Kalendertagen** nach Bekanntgabe, verfällt der
+Gewinn; der Veranstalter darf einen Ersatzgewinner ziehen. Die Frist ist in der Meldeseite
+tagesgenau ausgewiesen.
 
 ## § 9 Versand
 Versand an die vom Gewinner angegebene Adresse/den Account. Der Veranstalter haftet nicht für
@@ -83,10 +90,19 @@ fehlerhafte Adressangaben, Verlust außerhalb seines Einflussbereichs, Zoll-, Ei
 Steuerkosten — diese trägt ggf. der Gewinner.
 
 ## § 10 Datenschutz
-Verarbeitet werden nur die zur Durchführung erforderlichen Daten (Twitch-Benutzername; bei
-Gewinnern zusätzlich ggf. Name, Anschrift, E-Mail, Discord). Verwendung ausschließlich zur
-Durchführung, Kontaktaufnahme und Gewinnzustellung. Nach Abschluss werden personenbezogene Daten
-gelöscht, soweit keine gesetzliche Aufbewahrungspflicht besteht. Näheres in der Datenschutzerklärung des Veranstalters.
+Verarbeitet werden nur die zur Durchführung erforderlichen Daten. Für alle Teilnehmer ist das der
+**Twitch-Benutzername** nebst Zuschauzeit, Nachrichtenzahl und Follow-Status.
+
+Bei Gewinnern kommen die selbst gemeldeten Angaben hinzu: **Name, E-Mail-Adresse** und, sofern der
+Gewinn versandt wird, **Anschrift**. Verwendung ausschließlich zur Kontaktaufnahme und
+Gewinnzustellung. Diese Kontaktdaten werden **12 Monate nach der Meldung automatisch gelöscht**.
+
+Der **Ziehungsnachweis** (Benutzername des Gewinners, Losanteile, Zufallswert) und das
+**Verwaltungsprotokoll** bleiben dauerhaft erhalten — sie belegen, dass korrekt gezogen wurde
+(Art. 17 Abs. 3 lit. e DSGVO). Nach zwölf Monaten werden sie anonymisiert: IP-Adressen entfallen,
+Benutzernamen werden durch ein Pseudonym ersetzt.
+
+Näheres in der Datenschutzerklärung.
 
 Chatnachrichten werden **nicht inhaltlich gespeichert**; für den Zuschauzeit-Bonus zählt nur,
 ob eine Nachricht als sinnvoll gewertet wurde. Wird eine Nachricht als Spam auffällig, wird ein
