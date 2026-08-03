@@ -268,6 +268,8 @@
     { href:'/admin/datenschutz-admin.html', label:'Betroffenenrechte', ic:'🛡' },
     { href:'/viewer/help',      label:'Anleitung', ic:'📖' },
     { href:'/admin/setup.html', label:'Setup-Guide', ic:'⚙' },
+    { href:'/admin/changelog.html', label:'Änderungsprotokoll', ic:'📋' },
+    { href:'/admin/roadmap.html', label:'Roadmap', ic:'🧭' },
     { head:'Diagnose' },
     { href:'/admin/giveaway-test.html',     label:'Test Console', ic:'▶', sub:'DEV' },
     { href:'/admin/tests/test-runner.html', label:'Test Suite',   ic:'✓', sub:'DEV' }

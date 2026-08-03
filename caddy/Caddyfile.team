@@ -25,7 +25,7 @@
         # 302 → /admin/login.html.
         # /admin/og-preview.png muss offen bleiben: Link-Vorschau-Crawler
         # (Discord, WhatsApp, X) haben keine Session und wuerden sonst 302 bekommen.
-        @needsauth not path / /admin/home.html /admin/login.html /admin/join.html /admin/setup.html /admin/impressum.html /admin/datenschutz.html /admin/nutzungsbedingungen.html /admin/haftungsausschluss.html /admin/og-preview.png /admin/auth/* /admin/pub/* /viewer/* /healthz /sitemap.xml /robots.txt /ingest* /giveaway/overlay-ws /giveaway/giveaway-overlay* /giveaway/giveaway-join*
+        @needsauth not path / /admin/home.html /admin/login.html /admin/join.html /admin/setup.html /admin/impressum.html /admin/datenschutz.html /admin/nutzungsbedingungen.html /admin/haftungsausschluss.html /admin/roadmap.html /admin/changelog.html /admin/pub-doc.js /admin/pub-doc.css /admin/og-preview.png /admin/auth/* /admin/pub/* /viewer/* /healthz /sitemap.xml /robots.txt /ingest* /giveaway/overlay-ws /giveaway/giveaway-overlay* /giveaway/giveaway-join*
         # method GET ist PFLICHT: ohne das schickt Caddy Methode UND Body der
         # Originalanfrage an /auth/verify. Der Body ist danach verbraucht und
         # kommt beim eigentlichen Dienst leer an — jedes POST hinter dem Gate

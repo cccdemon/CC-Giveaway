@@ -750,7 +750,8 @@ app.post('/api/gdpr/subject/:username/delete', async (req, res) => {
 // ── Public (kein Login): statische Anleitungen (md) ───────
 const PUB_DOCS = { help: 'help.md', setup: 'setup.md', impressum: 'impressum.md',
                    datenschutz: 'datenschutz.md', nutzungsbedingungen: 'nutzungsbedingungen.md',
-                   haftungsausschluss: 'haftungsausschluss.md' };
+                   haftungsausschluss: 'haftungsausschluss.md',
+                   roadmap: 'roadmap.md', changelog: 'changelog.md' };
 app.get('/pub/doc/:name', (req, res) => {
   const file = PUB_DOCS[String(req.params.name || '')];
   if (!file) return res.status(404).json({ error: 'not_found' });
@@ -768,6 +769,8 @@ const SITEMAP = [
   { loc: '/',                             prio: '1.0', freq: 'weekly'  },
   { loc: '/viewer/help',                  prio: '0.8', freq: 'monthly' },
   { loc: '/admin/setup.html',             prio: '0.6', freq: 'monthly' },
+  { loc: '/admin/changelog.html',         prio: '0.6', freq: 'weekly'  },
+  { loc: '/admin/roadmap.html',           prio: '0.5', freq: 'monthly' },
   { loc: '/admin/nutzungsbedingungen.html', prio: '0.4', freq: 'yearly' },
   { loc: '/admin/datenschutz.html',       prio: '0.4', freq: 'yearly'  },
   { loc: '/admin/impressum.html',         prio: '0.3', freq: 'yearly'  },
