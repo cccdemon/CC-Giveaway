@@ -4,8 +4,15 @@
 // Simuliert viewer_tick + chat_msg Events
 // ════════════════════════════════════════════════════════
 
-var SECS_PER_COIN = 7200;
-var CHAT_BONUS    = 0.5;
+// Die Coin-Basis ist pro Team einstellbar. Hier stand frueher eine eigene
+// Konstante 7200 samt nachgebauter Coin-Formel — die Konsole rechnete damit
+// falsch, sobald ein Team etwas anderes eingestellt hatte. Der Wert kommt
+// jetzt ausschliesslich vom Server (gw_get_stream_settings) und wird nirgends
+// dupliziert. Null = noch nicht geladen.
+var coinBaseSec = null;
+var currentTeam = null;
+// Ohne teamId lehnt der Server jedes gw_cmd mit "forbidden" ab.
+var TEAM_EVENTS = { gw_cmd:1, gw_get_all:1, gw_overlay:1, viewer_tick:1, chat_msg:1, time_cmd:1 };
 var ws = null;
 var wsRetry = 2000;
 var wsRetryTimer = null;
@@ -23,7 +30,12 @@ function connectWS() {
       setStatus(true);
       log('Verbunden: ' + url, 'info');
       ws.send(JSON.stringify({ event: 'cc_identify', role: 'giveaway-test' }));
-      send({ event: 'gw_get_all' });
+      // Beim ersten Laden ist die Teamliste evtl. noch nicht da; onTeamChange()
+      // holt die Einstellungen dann nach. Hier der Fall nach einem Reconnect.
+      if (currentTeam) {
+        send({ event: 'gw_get_all' });
+        send({ event: 'gw_cmd', cmd: 'gw_get_stream_settings' });
+      }
     };
     ws.onmessage = function(e) {
       var msg;
@@ -54,8 +66,42 @@ function disconnect() {
 
 function send(obj) {
   if (!ws || ws.readyState !== 1) { log('Nicht verbunden!', 'err'); return; }
+  if (TEAM_EVENTS[obj.event]) {
+    if (!currentTeam) { log('Kein Team gewählt', 'err'); return; }
+    obj.teamId = currentTeam;
+  }
   ws.send(JSON.stringify(obj));
   log('-> ' + pretty(JSON.stringify(obj)), 'send');
+}
+
+// ── Team ──────────────────────────────────────────────────
+function loadTeams() {
+  fetch('/admin/api/teams/mine').then(function(r){ return r.json(); }).then(function(teams){
+    var sel = document.getElementById('test-team');
+    if (!sel) return;
+    if (!Array.isArray(teams) || !teams.length) {
+      sel.innerHTML = '<option value="">— kein Team —</option>';
+      log('Du bist in keinem Team — Befehle werden abgelehnt.', 'err');
+      return;
+    }
+    sel.innerHTML = teams.map(function(t){
+      return '<option value="' + t.id + '">' + t.name + (t.role === 'owner' ? ' ★' : '') + '</option>';
+    }).join('');
+    currentTeam = teams[0].id;
+    sel.value = currentTeam;
+    onTeamChange();
+  }).catch(function(e){ log('Teams laden fehlgeschlagen: ' + e.message, 'err'); });
+}
+
+function onTeamChange() {
+  var sel = document.getElementById('test-team');
+  currentTeam = sel ? sel.value : null;
+  coinBaseSec = null;
+  renderCalc();
+  if (currentTeam && ws && ws.readyState === 1) {
+    send({ event: 'gw_get_all' });
+    send({ event: 'gw_cmd', cmd: 'gw_get_stream_settings' });
+  }
 }
 
 function handleMsg(msg) {
@@ -72,6 +118,22 @@ function handleMsg(msg) {
   // Ohne diesen Hinweis sieht die Konsole nur "nichts passiert" aus.
   if (msg.event === 'gw_ack' && msg.type === 'sim_disabled') {
     simBlocked();
+  }
+  // Coin-Basis kommt vom Server, nicht aus einer Konstante in dieser Datei.
+  if (msg.event === 'gw_ack' && msg.type === 'stream_settings') {
+    coinBaseSec = Math.round((parseFloat(msg.drawMinHours) || 0) * 3600) || null;
+    renderCalc();
+    // Der Hinweis nannte frueher feste Werte (7200s, +5s, 5 Woerter, 10s), die
+    // mit keiner Einstellung uebereinstimmten. Jetzt steht da, was gilt.
+    var hint = document.getElementById('calc-hint');
+    if (hint) {
+      hint.textContent = coinBaseSec + 's = 1 Coin  |  Chat-Bonus: +' + msg.chatBonusSec
+        + 's/Msg (min. ' + msg.chatMinWords + ' Wörter, ' + msg.chatCooldown + 's CD)'
+        + '  |  Lostopf ab ' + msg.followMin + ' gefolgten Kanälen';
+    }
+  }
+  if (msg.event === 'gw_ack' && msg.type === 'forbidden') {
+    log('Abgelehnt: kein Recht auf diesen Befehl in diesem Team.', 'err');
   }
 }
 
@@ -141,13 +203,24 @@ function sendCmd(cmd, inputId) {
 }
 
 // ── Coin-Rechner ──────────────────────────────────────────
-function calcCoins() {
-  var sec   = parseInt(document.getElementById('calc-sec').value) || 0;
-  var coins = Math.round((sec / SECS_PER_COIN) * 10000) / 10000;
-  var h = Math.floor(sec / 3600);
-  var m = Math.floor((sec % 3600) / 60);
-  document.getElementById('calc-result').textContent =
-    coins + ' Coins (' + h + 'h ' + m + 'm)';
+// Rechnet mit der echten Coin-Basis des gewaehlten Teams. Ist sie noch nicht
+// da, wird das gesagt statt mit einem Standardwert danebenzuliegen.
+function calcCoins() { renderCalc(); }
+
+function renderCalc() {
+  var out = document.getElementById('calc-result');
+  if (!out) return;
+  var el = document.getElementById('calc-sec');
+  var sec = parseInt(el ? el.value : 0) || 0;
+  var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+  if (!coinBaseSec) {
+    out.textContent = (currentTeam ? 'Coin-Basis wird geladen…' : 'Kein Team gewählt')
+                    + ' (' + h + 'h ' + m + 'm)';
+    return;
+  }
+  var coins = Math.round((sec / coinBaseSec) * 10000) / 10000;
+  out.textContent = coins + ' Coins (' + h + 'h ' + m + 'm · 1 Coin = '
+                  + (Math.round((coinBaseSec / 3600) * 100) / 100) + 'h)';
 }
 
 // ── Overlays ──────────────────────────────────────────────
@@ -312,3 +385,4 @@ function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'
 function pad2(n) { return n < 10 ? '0' + n : String(n); }
 
 connectWS();
+loadTeams();

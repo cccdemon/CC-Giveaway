@@ -4,9 +4,11 @@
 // TEAM GIVEAWAY – Watchtime / Ticket Engine (multi-tenant)
 // Alles pro (team, user, channel). Redis-Keys mit t:{teamId}: Prefix.
 // Kanäle eines Teams = dessen team_members (PG, kurz gecacht).
-// 7200s = 1 Ticket. Chat (>3 Wörter) = +0.5s. Viewtime-Multiplier
-// (time-boxed) gilt Tick+Chat. Opt-in via Keyword ab ≥1 Coin.
-// Eligibility: valide Coins auf ≥2 Kanälen. Gewicht = Summe Coins.
+// Coin-Basis ist PRO TEAM einstellbar (getCoinBaseSec, Default 7200s = 2h);
+// die Konstanten hier sind nur Fallback. Chat (>3 Wörter) = +CHAT_BONUS_SEC.
+// Viewtime-Multiplier (time-boxed) gilt Tick+Chat. Opt-in via Keyword.
+// Eligibility: Keyword + ≥followMin gefolgte Kanäle + ≥1 Coin (getUserAggregate).
+// Gewicht der Ziehung = Summe Coins.
 // ════════════════════════════════════════════════════════
 
 const { randomInt, createHash } = require('crypto');
