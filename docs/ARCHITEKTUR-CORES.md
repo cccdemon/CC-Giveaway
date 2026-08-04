@@ -1,6 +1,7 @@
 # Architektur: austauschbare Giveaway-Systeme („Cores")
 
-Entwurf, Stand 3. August 2026. Noch nicht umgesetzt — dieses Dokument legt fest,
+Entwurf, Stand 4. August 2026 (gegen den Code geprüft, Abhängigkeitskarte
+vervollständigt). Noch nicht umgesetzt — dieses Dokument legt fest,
 **was** gebaut wird und **in welcher Reihenfolge**, bevor Code entsteht.
 
 ---
@@ -57,6 +58,10 @@ Tabelle `abuse_flags`).
 | Redis-Schlüssel (`K` in watchtime.js:34-64) | 19 generisch, 10 mechanikbezogen — darunter `chWatch` (die eigentliche Währung), `cfgDrawMinSec`, `cfgChatBonus/Words/Cool`, `gwMult`, `chFollows`. |
 | Datenbank | `watchtime_events` ist als reines Viewtime-Journal gebaut (`delta_sec`, `event_type`). `campaign_participation` und `giveaway_draws` tragen `coins`/`watch_sec` fest im Schema. |
 | `chat-ai.js` | Existiert ausschließlich wegen des Chat-Bonus. Gehört damit fachlich zu `CORE_WatchtimeChatActivity`, nicht in die Engine. |
+| **DSGVO-Pfade** ([admin/server.js](../services/admin/server.js)) | `collectSubjectData()` (:572) und `eraseSubject()` (:607) lesen `campaign_participation` (`watch_sec`, `msgs`, `coins`, `follows`) und `giveaway_draws.winner_coins`; die Feld-Labels stehen in [meine-daten.html:88-92](../services/admin/public/meine-daten.html). Jede neue core-eigene personenbezogene Spalte (z.B. `prize_wagers`) muss hier mitgezogen werden, sonst ist die Auskunft unvollständig und die Löschung wirkungslos. |
+| **Anzeigepfade ausserhalb des Panels** | [giveaway-overlay.js:29](../services/giveaway/public/giveaway-overlay.js) (OBS-Overlay zeigt `msg.coins`; lädt die Shared-Lib **bewusst nicht** — generisches Panel-Rendering hilft hier nicht), [claim.js:57](../services/giveaway/public/claim.js) (`winner_coins` als „Punkte"), [archive.js](../services/giveaway/public/archive.js) (Dossier + tar.gz-Export mit `total_coins`/`winner_coins`/`watch_sec`/`msgs`/`follows`-Spalten), [status.html:164](../services/admin/public/status.html) (Zuschauer-Status rechnet mit `drawMinSec`/`watchSec`), [giveaway-shared.js:191](../services/giveaway/public/giveaway-shared.js) (`auditSummary()` formuliert `coinsAtBan`). |
+| **Test-Console-Sim** ([giveaway-test.js](../services/admin/public/giveaway-test.js) + `public/tests/test-suite.js`) | Zweiter zustandsändernder Pfad **an `handleAdminCmd` vorbei**, erzeugt echte `watchtime_events` (`ALLOW_SIM` + eigener `audit()`). Muss künftig wissen, an welches Giveaway ein Sim-Event geht, und durch dieselbe Verteilfunktion laufen wie der echte Ingest. |
+| **Redis-Backup** (`exportTeam`/`importTeam` in watchtime.js) | Sichert die mechanikbezogenen Schlüssel (`chWatch`, `chMsgs`, `chFollows`) direkt und muss die Giveaway-Dimension sowie core-eigene Schlüssel mitnehmen — sonst stellt ein Restore nur das Kampagnen-Giveaway wieder her. |
 
 ### Dubletten, die vor dem Umbau weg müssen
 
@@ -94,6 +99,14 @@ und wird **nicht** pro Core neu implementiert:
   Ein Core, der Bits, Subs oder Geld in Gewichtung umrechnet, wird nicht gebaut
   und ist über die Engine auch nicht möglich: Gewicht darf ausschließlich aus
   erspielter Zuschauzeit und Aktivität entstehen.
+
+**Klärung zum Follow-Check** (löst den scheinbaren Widerspruch zu `followMin`
+in der Core-Konfiguration): die Engine **beschafft** die Follow-Fakten —
+Streamerbot-Live-Gate, Helix-Reconcile vor der Ziehung, `chFollows`-Cache.
+Der Core **wertet** sie: `followMin` ist Core-Konfiguration und fließt nur in
+`getParticipant().eligible` und `buildPool()` ein. Der Reconcile läuft vor
+`buildPool`; der Core sieht ausschließlich das Ergebnis im Kontext und spricht
+nie selbst mit Helix.
 
 Ein Core entscheidet ausschließlich: **wie aus Ereignissen ein Gewicht wird und
 wer teilnahmeberechtigt ist.**
@@ -152,6 +165,31 @@ module.exports = {
   // ── Texte für den Chat ──────────────────────────────────
   async statusText(ctx, username) { return '…'; },   // !los
   async infoText  (ctx)           { return '…'; },   // !giveaway
+
+  // ── Oberfläche ──────────────────────────────────────────
+  // Das Panel rendert generisch: Spalten und Statistik-Kacheln kommen vom
+  // Core statt hartcodierter Coin-Spalten. Felder mit Zuschauernamen tragen
+  // mask:true — der Streamermodus maskiert sie, ohne den Core zu kennen.
+  display: {
+    columns: [ { key:'coins', label:'Coins', mask:false } ],
+    tiles:   [ 'totalWeight', 'eligibleCount' ],
+  },
+
+  // ── Core-eigene Kommandos ───────────────────────────────
+  // Von der Engine unter gw_cmd registriert → laufen automatisch durch
+  // handleAdminCmd() und damit durchs Audit-Log. Nur-Lese-Kommandos
+  // deklariert der Core als readonly:true (→ AUDIT_SKIP, Deny-Drossel).
+  // Die Whitelist ALLOWED_CMDS/ALLOWED_EVENTS wird aus diesen Deklarationen
+  // erzeugt, nicht mehr von Hand gepflegt (setzt Phase 0 voraus).
+  commands: {
+    // 'wager_set': { readonly:false, handler: async (ctx, msg) => ({ … }) },
+  },
+
+  // ── Audit-Texte ─────────────────────────────────────────
+  // auditSummary() in den Shared-Libs formuliert heute coin-spezifisch
+  // („gebannt, hatte X Coins"). Core-eigene Audit-Einträge liefern ihre
+  // Kurzform selbst; die generische Fallback-Darstellung bleibt Engine.
+  auditText(entry) { return null; },
 };
 ```
 
@@ -208,8 +246,32 @@ einen Preis gesetzt** wird.
 > einem Los. Barwert, Umtausch und Übertragung von Guthaben bleiben
 > ausgeschlossen. Guthaben ist kein Zahlungsmittel und darf nie käuflich sein.
 
-Offen und vor dem Bau zu klären: verfällt ungenutztes Guthaben am Kampagnenende,
-oder wandert es ins nächste Giveaway?
+**Entschieden (4. August 2026): Guthaben wandert ins nächste Giveaway.**
+Das hat eine Architekturfolge: Guthaben ist damit **keine Giveaway-Größe,
+sondern eine Team-Größe** — es lebt ausserhalb der `g:<id>`-Kapselung und
+überlebt das Schließen eines Giveaways. Konsequenzen:
+
+- Neue append-only Tabelle `credit_ledger` (Abschnitt 7): jede Bewegung
+  (Verdienen, Setzen, Rücknahme, Abbuchung, Verfall) als Ereignis, Kontostand
+  ist die Summe. Persistenz in Postgres, nicht nur Redis — Guthaben, das
+  Kampagnen überlebt, darf keinen Volume-Verlust sterben.
+- Der Core verdient Guthaben (aus Zuschauzeit), aber **die Engine führt das
+  Konto** — wie beim Ziehen: eine Stelle, die buchen kann, eine, die falsch
+  sein kann.
+- **Rechtliche Leitplanken gegen Währungscharakter**, ausdrücklich in den
+  Teilnahmebedingungen: kein Kauf, kein Barwert, kein Umtausch, keine
+  Übertragung zwischen Zuschauern. Zusätzlich **Verfall nach 12 Monaten ohne
+  Aktivität** (Datenminimierung + verhindert unbegrenzt wachsende Konten)
+  und Altvermögen-Deckel je Preis-Ziehung erwägen (siehe Risiken).
+- `credit_ledger` ist personenbezogen → `collectSubjectData()`,
+  `eraseSubject()`, `meine-daten.html`, `runRetention()` von Tag eins.
+
+Setzen läuft über **beide Wege** (entschieden, siehe Abschnitt 10): Web-Seite
+nach `claim.html`-Muster (Twitch-Session, Preisliste, Rücknahme-Button) und
+Chatbefehl (`!setzen <preis> <anzahl>` mit Bestätigungsantwort). Der
+Chat-Pfad ist verkraftbar, weil Einsätze bis zum Einsatz-Ende ohnehin
+zurücknehmbar sind — eine Fehleingabe bindet nichts endgültig. Beide Wege
+laufen durch dieselbe Engine-Buchung und dasselbe Audit.
 
 ### 5.3 CORE_CurrentViewers
 
@@ -244,7 +306,8 @@ wandern darunter:
 t:<team>:g:<giveawayId>:...      ← Zustand eines Giveaways (Core-eigen)
 t:<team>:giveaways               ← Set der aktiven Giveaway-IDs
 t:<team>:...                     ← bleibt team-weit: Kanäle, Ingest-Tokens,
-                                   Keyword-Defaults, Follow-Cache
+                                   Keyword-Defaults, Follow-Cache,
+                                   Guthaben-Cache (Quelle: credit_ledger in PG)
 ```
 
 Team-weit bleibt bewusst alles, was **nicht** zur Mechanik gehört. Der
@@ -262,6 +325,30 @@ Aufwandstreiber: der Ticker läuft heute einmal je Team. Er muss künftig je
 (Team × aktives Giveaway) laufen, ohne dass die Redis-Last mit der Zahl der
 Giveaways multipliziert wird. Gegenmaßnahme: Ereignisse einmal einlesen und an
 die Cores verteilen, statt je Core neu zu lesen.
+
+### Team-weite Reste, die je Giveaway werden müssen
+
+Bei der Durchsicht gefunden, im ersten Entwurf nicht genannt:
+
+- **Der Multiplier.** `gwMult` liegt heute team-weit (`t:<team>:gw:mult`,
+  watchtime.js:43). „Doppelte Viewtime für 15 Minuten" muss künftig ein
+  Giveaway meinen, nicht das Team — sonst boostet die Sofortverlosung die
+  Kampagne mit.
+- **Das Aufräumen.** `resetGiveaway()`/`closeGiveaway()` löschen heute die
+  team-weiten Schlüssel en bloc. Künftig räumt das Schließen eines Giveaways
+  genau `t:<team>:g:<id>:*` — vollständig, sonst überleben Stände
+  geschlossener Giveaways als Redis-Leichen und tauchen im nächsten mit
+  gleicher ID wieder auf.
+- **Der Alt-Schlüssel `cfgDrawMinSec`.** Er ist heute zugleich Coin-Basis und
+  Lostopf-Schwelle und heißt schon jetzt nur aus Abwärtskompatibilität so
+  (watchtime.js:163). Die Migration nach `core_config` muss den alten
+  Redis-Wert **lesen und übernehmen** — sonst kippen alle Teams mit
+  angepasster Basis kommentarlos auf den Default 7200.
+- **Die Test-Console.** Sim-Events brauchen eine Giveaway-Auswahl und laufen
+  durch dieselbe Verteilfunktion wie der echte Ingest (siehe Ist-Zustand,
+  Abschnitt 2).
+- **Das Redis-Backup.** `exportTeam()`/`importTeam()` müssen die
+  `g:<id>`-Ebene mitsichern.
 
 ### Abgrenzung nach aussen
 
@@ -284,9 +371,23 @@ die Cores verteilen, statt je Core neu zu lesen.
 | `giveaway_draws` | neu `prize_id BIGINT NULL` (für `CORE_TicketBuy`), `core TEXT` zur Nachvollziehbarkeit, welche Mechanik gezogen hat. |
 | `giveaway_prizes` | **neu**, nur für `CORE_TicketBuy`: Titel, Beschreibung, Einsatz-Ende, Status. |
 | `prize_wagers` | **neu**: wer wie viele Lose auf welchen Preis gesetzt hat, mit Zeitpunkt. Append-only, damit Rücknahmen nachvollziehbar bleiben. |
+| `credit_ledger` | **neu**, team-weit (überlebt Giveaways — Entscheidung Abschnitt 10): append-only Bewegungsjournal des Guthabens (`earn`/`wager`/`refund`/`debit`/`expire`), Kontostand = Summe. Von der Engine geführt, nie vom Core direkt beschrieben. Personenbezogen → DSGVO-Pfade. |
 
 Bestehende Sitzungen bekommen per Default den heutigen Core — sie laufen
 unverändert weiter, ohne Datenmigration.
+
+Verbindliche Regeln für alle Schemaänderungen dieses Umbaus:
+
+- **Neue Tabellen/Spalten ausschließlich in `ensureSchema()`** (giveaway
+  server.js), nicht in `postgres/init.sql` — die läuft nur bei frischem Volume.
+- **`prize_wagers` ist personenbezogen.** Die Tabelle muss von Tag eins in
+  `collectSubjectData()` **und** `eraseSubject()` (admin/server.js) auftauchen,
+  Labels in `meine-daten.html`, und `runRetention()` braucht eine Regel dafür
+  (Vorschlag: wie `campaign_participation` nach `participationDays` löschen,
+  gebundene Einsätze gezogener Preise bleiben als Teil des
+  Ziehungs-Snapshots pseudonymisiert erhalten).
+- `giveaway_prizes` ist unkritisch (keine Personendaten), `sessions.core_config`
+  darf **nie** Secrets enthalten — KI-Keys bleiben in `app_secrets`.
 
 ---
 
@@ -299,10 +400,8 @@ Jede Phase ist für sich lieferbar und lässt das System lauffähig.
 Klein, aber Voraussetzung. Solange die Coin-Formel und die Kommando-Whitelists
 doppelt gepflegt sind, driftet der Umbau zwangsläufig auseinander.
 
-- Coin-Formel aus `giveaway-test.js` entfernen, stattdessen den echten Wert vom
-  Server holen. Die dortige `SECS_PER_COIN = 7200` widerspricht heute schon der
-  per Team konfigurierbaren Basis — die Test-Console rechnet also falsch, sobald
-  ein Team etwas anderes eingestellt hat.
+- ~~Coin-Formel aus `giveaway-test.js` entfernen, stattdessen den echten Wert
+  vom Server holen.~~ **Erledigt** (Commit `7f31cfb`).
 - `ALLOWED_EVENTS`/`ALLOWED_CMDS` und `auditSummary()` in **eine** Datei, von
   beiden Shared-Libs geladen.
 - Die C#-Actions liegen byte-identisch in zwei Verzeichnissen. Eines wird zur
@@ -330,6 +429,12 @@ Reihenfolge innerhalb der Phase, vom Kern nach aussen:
 5. Die hartcodierten Regeltexte für `!los` und `!giveaway` in `statusText`/
    `infoText` des Cores verschieben.
 
+Die Anzeigepfade ausserhalb des Panels (OBS-Overlay, `claim.js`, `archive.js`,
+`status.html`, `auditSummary()`) bleiben in Phase 1 bewusst unverändert
+coin-geprägt — sie wandern erst mit der generischen Anzeige (Phase 2/3) auf
+`display`/`auditText`. Sie hier schon anzufassen, verletzte das
+„keine Verhaltensänderung"-Kriterium.
+
 **Abnahmekriterium:** die bestehenden 45 Tests laufen unverändert durch, und ein
 neuer Test spielt dieselbe Ereignisfolge gegen alte und neue Implementierung und
 vergleicht Coins, Berechtigung und Pool-Gewichte auf exakte Gleichheit.
@@ -348,9 +453,16 @@ Betroffen sind nur die zehn mechanikbezogenen Schlüssel; die neunzehn
 generischen bleiben team-weit. Streamerbot bleibt unangetastet, weil die
 Zuordnung Ereignis → Giveaway serverseitig aus der Kanalliste entsteht.
 
+Gehört ebenfalls in diese Phase (siehe „Team-weite Reste", Abschnitt 6):
+Multiplier unter `g:<id>`, Aufräumen je Giveaway bei Close/Reset,
+Alt-Schlüssel-Migration `cfgDrawMinSec` → `core_config`, Giveaway-Auswahl in
+der Test-Console-Sim, `exportTeam()`/`importTeam()` giveaway-fähig.
+
 **Abnahmekriterium:** zwei Giveaways desselben Teams laufen gleichzeitig mit
 getrennten Ständen; ein `viewer_tick` erhöht beide. Ein vor dem Deploy
-geöffnetes Giveaway läuft ohne Datenverlust weiter.
+geöffnetes Giveaway läuft ohne Datenverlust weiter — inklusive der vom Team
+angepassten Coin-Basis. Nach dem Schließen eines Giveaways existiert kein
+`t:<team>:g:<id>:*`-Schlüssel mehr.
 
 ### Phase 3 — CORE_CurrentViewers
 
@@ -363,12 +475,30 @@ Parallelität aus Phase 2 wirklich braucht.
 Preis-Entität, Einsatz-Oberfläche, Abbuchung. Der aufwendigste Core, weil er als
 einziger neue Zuschauer-Interaktion braucht.
 
+Pflichtpunkte über den Core hinaus:
+
+- **DSGVO:** `prize_wagers` **und** `credit_ledger` in `collectSubjectData()`,
+  `eraseSubject()`, `meine-daten.html` und `runRetention()` (Abschnitt 7).
+  Abnahme: die Selbstauskunft eines Setzers enthält Einsätze und
+  Guthabenbewegungen, die Löschung entfernt beides.
+- **Caddy:** die öffentliche Einsatz-Seite in die `@needsauth not path`-Liste
+  in `caddy/Caddyfile.team` — sonst verlangt sie Login. (Die Einsatz-Aktion
+  selbst bleibt hinter der Twitch-Session, wie `claim.html`.)
+- **Whitelist/Audit:** Einsatz setzen/zurücknehmen als Core-Kommandos über die
+  `commands`-Deklaration (Abschnitt 4) — damit automatisch `handleAdminCmd`,
+  Audit-Log und Deny-Drossel.
+
 ### Phase 5 — Recht und Texte je Core
 
 Teilnahmebedingungen und Datenschutzerklärung nennen die Mechanik. Jeder Core
 braucht seinen Textbaustein — insbesondere `CORE_TicketBuy` (Einsatz verfällt)
 und `CORE_CurrentViewers` (keine Vorleistung, reine Anwesenheit).
 `TOS_VERSION` an beiden Stellen erhöhen.
+
+Ausserdem: `FEATURES.md` bekommt je Core einen Abschnitt (Defaults +
+Wertebereiche aus der `config`-Deklaration), nutzerrelevante Schritte gehören
+ins öffentliche `changelog.md`, `docs/ANLEITUNG-TEILNEHMER.md` erklärt die
+neuen Mechaniken aus Zuschauersicht.
 
 ---
 
@@ -381,18 +511,37 @@ und `CORE_CurrentViewers` (keine Vorleistung, reine Anwesenheit).
 | Redis-Last vervielfacht sich mit der Zahl paralleler Giveaways. | Ereignisse einmal lesen, an alle Cores verteilen. Obergrenze für gleichzeitige Giveaways je Team. |
 | Zuschauer verstehen nicht mehr, an welchem Giveaway sie teilnehmen. | Jede Chat-Ansage nennt das Giveaway; `!los` zeigt alle laufenden mit eigenem Stand. |
 | `CORE_TicketBuy` wird als Verkauf gelesen. | Einsatz ausschließlich aus erspielter Zeit, Gewinn per gewichtetem Zufall, kein Höchstgebot. Ausdrücklich in den Teilnahmebedingungen. |
+| Übertragbares Guthaben bekommt Währungscharakter und wächst unbegrenzt. | Kein Kauf/Barwert/Umtausch/Übertragung (Teilnahmebedingungen), Verfall nach 12 Monaten Inaktivität, Konto ausschließlich von der Engine geführt (`credit_ledger`). Altvermögen-Deckel je Preis-Ziehung prüfen, falls frühe Konten spätere Pools dominieren. |
 | Sofortverlosung zieht leer, weil der Ingest hängt. | Core prüft, ob überhaupt Anwesenheitsmeldungen ankommen, und bricht mit klarer Meldung ab. |
 | Das Admin-Panel bleibt auf Coins verdrahtet und passt zu keinem neuen Core. | Ein Core liefert seine Anzeigespalten und Konfigurationsfelder aus `config` und `getParticipant().detail` mit; das Panel rendert generisch, statt Coin-Spalten hartzucodieren. |
 | Die Zerlegung wird währenddessen von neuen Funktionen überholt. | Phasen 0 und 1 ändern kein Verhalten und sind in Tagen, nicht Wochen fertig. Erst danach neue Cores. |
+| Neue personenbezogene Daten (`prize_wagers`) fehlen in Auskunft und Löschung. | Pflichtpunkt in Phase 4 mit eigenem Abnahmekriterium; Regel in Abschnitt 7. |
+| Die Test-Console-Sim umgeht die neue Ingest-Verteilung und schreibt am Giveaway vorbei. | Sim-Events tragen die Giveaway-ID und laufen durch dieselbe Verteilfunktion wie der echte Ingest; `ALLOW_SIM` + `sim_*`-Audit bleiben. |
+| Geschlossene Giveaways hinterlassen Redis-Leichen unter `g:<id>`. | Close/Reset räumt `t:<team>:g:<id>:*` vollständig; Abnahmekriterium in Phase 2. |
+| Das OBS-Overlay lädt keine Shared-Lib und bleibt coin-verdrahtet. | Ziehungs-Events an das Overlay werden core-neutral (`weight` + `weightLabel` statt `coins`); Umstellung zusammen mit der generischen Anzeige. |
+| Bei der Migration der Coin-Basis fällt ein Team still auf den Default 7200 zurück. | Alt-Schlüssel `cfgDrawMinSec` wird beim Anlegen der `core_config` gelesen und übernommen; Abnahmekriterium in Phase 2. |
 
 ---
 
-## 10 Offene Punkte
+## 10 Entschiedene Punkte
 
-Vor Beginn von Phase 4 zu entscheiden:
+Am 4. August 2026 entschieden:
 
-1. Verfällt ungenutztes Guthaben bei `CORE_TicketBuy` am Kampagnenende?
-2. Obergrenze für gleichzeitig laufende Giveaways je Team?
-3. Setzen bei `CORE_TicketBuy` über eine Webseite, über Chatbefehl, oder beides?
-4. Darf ein Zuschauer bei mehreren parallelen Giveaways desselben Teams
-   gleichzeitig gewinnen, oder schließt ein Gewinn die anderen aus?
+1. **Guthaben bei `CORE_TicketBuy` wandert ins nächste Giveaway.** Guthaben
+   wird damit team-weit statt giveaway-gebunden — Konsequenzen (Tabelle
+   `credit_ledger`, Engine führt das Konto, rechtliche Leitplanken, Verfall
+   nach 12 Monaten Inaktivität) in Abschnitt 5.2 und 7.
+2. **Obergrenze: 3 langlaufende Giveaways + 1 Sofortverlosung je Team.**
+   Konstante im Code, per ENV überschreibbar, bewusst nicht im Admin-Panel
+   einstellbar. Begründung: Redis-/Ticker-Last wächst je Giveaway, `!los`
+   muss alle laufenden nennen (Twitch-Limit 500 Zeichen), und mehr als ein
+   gleichzeitiges Keyword-Fenster im selben Chat ist nicht unterscheidbar.
+3. **Setzen über beide Wege:** Web-Seite (`claim.html`-Muster, Twitch-Session,
+   Rücknahme-Button) **und** Chatbefehl (`!setzen <preis> <anzahl>` mit
+   Bestätigungsantwort). Vertretbar, weil Einsätze bis zum Einsatz-Ende
+   zurücknehmbar sind. Beide Wege buchen über die Engine, beide im Audit.
+4. **Mehrfachgewinn über parallele Giveaways ist erlaubt.** Die Mechaniken
+   sind unabhängig; die Ersatzziehung innerhalb eines Giveaways schließt
+   dessen Gewinner weiterhin aus. Optional später als Engine-Feature:
+   „Gewinner der letzten X Tage ausschließen" je Giveaway, Default aus —
+   kein Phase-4-Blocker.
