@@ -92,38 +92,29 @@
     return Object.freeze(obj);
   }
 
-  var ALLOWED_EVENTS = [
-    'gw_get_all', 'gw_cmd', 'gw_overlay', 'gw_join',
-    'gw_ack', 'gw_data', 'gw_status', 'gw_keyword',
-    'gw_multiplier', 'wt_update',
-    'chat_msg', 'viewer_tick',
-    'cc_identify',
-    'ws:connect', 'ws:close', 'http:GET', 'http:POST', 'http:PUT', 'http:DELETE', 'http:PATCH'
-  ];
-
-  var ALLOWED_CMDS = [
-    'gw_open', 'gw_close', 'gw_reset', 'gw_pause', 'gw_resume',
-    'gw_draw_winner',
-    'gw_add_ticket', 'gw_sub_ticket',
-    'gw_ban', 'gw_unban',
-    'gw_set_keyword', 'gw_get_keyword',
-    'gw_set_multiplier', 'gw_get_multiplier',
-    'gw_set_stream_settings', 'gw_get_stream_settings',
-    'gw_get_ai_settings', 'gw_set_ai_settings', 'gw_test_ai', 'gw_rotate_ai_secret', 'gw_list_ai_models',
-    'gw_get_channels', 'gw_verify_follows',
-    'gw_gen_ingest_token', 'gw_get_ingest_tokens'
-  ];
+  // Die Event-/Cmd-Whitelists liegen seit Phase 0 des Core-Umbaus NUR noch in
+  // cc-defs.js beim giveaway-Service (über Caddy: /giveaway/cc-defs.js).
+  // Die Seite muss cc-defs.js VOR dieser Datei einbinden. Fehlt CC.defs, wird
+  // fail-closed jedes Payload blockiert statt still alles durchzulassen.
+  function wsDefs() {
+    return (global.CC && global.CC.defs) || null;
+  }
 
   function validateWsPayload(obj) {
     if (!obj || typeof obj !== 'object') return false;
+    var defs = wsDefs();
+    if (!defs) {
+      console.error('[validate] cc-defs.js nicht geladen – WS Payload blockiert');
+      return false;
+    }
     var evt = obj.event;
     if (!evt || typeof evt !== 'string') return false;
-    if (ALLOWED_EVENTS.indexOf(evt) === -1) {
+    if (defs.ALLOWED_EVENTS.indexOf(evt) === -1) {
       console.warn('[validate] Unbekanntes WS Event blockiert:', evt);
       return false;
     }
     if (evt === 'gw_cmd') {
-      if (!obj.cmd || ALLOWED_CMDS.indexOf(obj.cmd) === -1) {
+      if (!obj.cmd || defs.ALLOWED_CMDS.indexOf(obj.cmd) === -1) {
         console.warn('[validate] Unbekanntes cmd blockiert:', obj.cmd);
         return false;
       }

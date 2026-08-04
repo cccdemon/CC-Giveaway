@@ -96,7 +96,10 @@ Altbestand aus der CC-StreamSuite, von diesem Code nicht benutzt (`docs/PROJEKTH
 - **Ablehnungen von `AUDIT_SKIP`-Cmds sind gedrosselt** (`shouldLogDeny`, 5-min-Fenster je Team/Actor/Cmd). Ohne das flutet ein pollendes Panel den Log — genau so entstanden schon einmal 4,5 Mio Zeilen.
 - **Zweiter zustandsändernder Pfad:** die Test-Console-Sim (`viewer_tick`/`chat_msg`/`time_cmd` über die Admin-WS) geht NICHT durch `handleAdminCmd`, erzeugt aber echte `watchtime_events`. Darum `ALLOW_SIM` (Default `false`, Prod also aus) + eigener `audit()`-Aufruf (`sim_*`, auch `denied`). Wer hier weitere Events ergänzt, muss beides mitnehmen.
 
-## Streamerbot C# (`streamerbot/`) — inverted ingest client (Phase 6)
+## Streamerbot C# (`services/admin/actions/`) — inverted ingest client (Phase 6)
+**Einzige Quelle für die C#-Actions ist `services/admin/actions/`** (der
+admin-Container liefert sie über `GET /pub/actions` zum Kopieren aus).
+`streamerbot/` enthält nur noch `CAMPAIGN_SETUP.md`.
 Streamerbot verbindet sich als **WebSocket-Client** zu `wss://team.raumdock.org/ingest`
 und authentifiziert mit Per-Kanal-Token (`ingest_auth`). Kanal kommt serverseitig aus
 dem Token (nie im Payload). Actions: `CC_IngestConnect` (Auth on connect), `CC_ChatReply`

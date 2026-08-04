@@ -72,9 +72,9 @@ Kopien:
 | Was | Wo |
 |---|---|
 | Die Coin-Formel | `watchtime.js:104-107` **und** `admin/public/giveaway-test.js:144-150` (dort zusätzlich eine eigene hartcodierte `SECS_PER_COIN = 7200` in :7) |
-| `ALLOWED_EVENTS` / `ALLOWED_CMDS` | `giveaway-shared.js:95-115` ≙ `admin-shared.js:95-115` |
-| `auditSummary()` | `giveaway-shared.js:186-224` ≙ `admin-shared.js:186-224` (in dieser Sitzung erst aus `giveaway-admin.js` herausgezogen, jetzt aber in beiden Libs) |
-| Die C#-Actions | `streamerbot/*.cs` ≙ `services/admin/actions/*.cs`, byte-identisch |
+| `ALLOWED_EVENTS` / `ALLOWED_CMDS` | ~~`giveaway-shared.js` ≙ `admin-shared.js`~~ **zusammengeführt** in `services/giveaway/public/cc-defs.js` (Phase 0) |
+| `auditSummary()` | Korrektur nach Code-Prüfung: liegt **nur** in `giveaway-shared.js` — war nie dupliziert, kein Handlungsbedarf |
+| Die C#-Actions | ~~`streamerbot/*.cs` ≙ `services/admin/actions/*.cs`~~ **einzige Quelle jetzt `services/admin/actions/`** (Phase 0; der admin-Container liefert sie über `/pub/actions` aus) |
 
 ---
 
@@ -402,12 +402,18 @@ doppelt gepflegt sind, driftet der Umbau zwangsläufig auseinander.
 
 - ~~Coin-Formel aus `giveaway-test.js` entfernen, stattdessen den echten Wert
   vom Server holen.~~ **Erledigt** (Commit `7f31cfb`).
-- `ALLOWED_EVENTS`/`ALLOWED_CMDS` und `auditSummary()` in **eine** Datei, von
-  beiden Shared-Libs geladen.
-- Die C#-Actions liegen byte-identisch in zwei Verzeichnissen. Eines wird zur
-  Quelle, das andere entfällt oder wird beim Bauen kopiert.
+- ~~`ALLOWED_EVENTS`/`ALLOWED_CMDS` in **eine** Datei, von beiden Shared-Libs
+  geladen.~~ **Erledigt:** `services/giveaway/public/cc-defs.js` (über Caddy
+  `/giveaway/cc-defs.js`), beide Shared-Libs lesen `CC.defs` **fail-closed** —
+  ohne geladene Defs blockiert `validateWsPayload()` alles. `auditSummary()`
+  war entgegen dem ersten Entwurf nie dupliziert (nur `giveaway-shared.js`).
+- ~~Die C#-Actions liegen byte-identisch in zwei Verzeichnissen.~~ **Erledigt:**
+  Quelle ist `services/admin/actions/` (Laufzeit-Quelle für `/pub/actions`;
+  der Build-Context des admin-Containers endet an `services/admin/`, darum
+  nicht `streamerbot/`). `streamerbot/` enthält nur noch das Setup-Dokument.
 
 **Abnahmekriterium:** jede dieser Definitionen existiert genau einmal im Repo.
+**Phase 0 ist damit abgeschlossen.**
 
 ### Phase 1 — Core-Vertrag, ohne Verhaltensänderung
 
