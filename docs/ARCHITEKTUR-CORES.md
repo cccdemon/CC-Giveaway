@@ -456,6 +456,17 @@ und gehört deshalb nicht ins Änderungsprotokoll.
 
 ### Phase 2 — Giveaway-Dimension
 
+> **Stand 4. August 2026:** Schritte (a)–(c) umgesetzt: Datenmodell
+> (`sessions.core/core_config/status`, `giveaway_draws.core/prize_id`,
+> Core-Registry), Accrual-Zustand je Giveaway unter `t:<team>:g:<sid>:*`
+> mit Lazy-Migration des Altbestands, und die Ingest-Verteilung
+> (`_activeGiveaways`, Sekundär-Instanzen via `openGiveawayInstance` mit
+> eigenem Keyword/Kanalliste/Pause/Multiplier; Tick und Chat verteilen an
+> alle aktiven Giveaways, Ziehung zieht je Giveaway). Der Server spricht
+> weiter nur das Primary an. **Offen (2d):** Panel-Auswahl, Server-Cmds für
+> Instanzen, Sim-Console-Giveaway-Auswahl, `cfgDrawMinSec` → `core_config`,
+> Obergrenze 3+1 durchsetzen, Chat-Ansagen je Giveaway.
+
 Schlüssel um `g:<giveawayId>` erweitern, Ingest-Verteilung auf n Empfänger,
 Giveaway-Auswahl im Panel. Altbestand über Fallback auf die alten Schlüssel,
 damit ein laufendes Giveaway den Deploy übersteht.

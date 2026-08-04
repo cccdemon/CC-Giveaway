@@ -75,6 +75,14 @@ const K = {
   gMsgs:     (t, g, ch, u) => `${K.GP(t, g)}ch:${ch}:msgs:${u}`,
   gReg:      (t, g, u)     => `${K.GP(t, g)}registered:${u}`,
   gMult:     (t, g)        => `${K.GP(t, g)}mult`,
+  // Phase 2c: Parallelbetrieb — Set aktiver Giveaways + Zustand je Instanz.
+  // Der Legacy-Single-Pfad (gwOpen/gwSessionId/gwKeyword) bleibt das
+  // "Primary"-Giveaway; Sekundär-Instanzen leben ausschließlich hier.
+  gwSet:     (t) => `${TP(t)}giveaways`,
+  gOpen:     (t, g) => `${K.GP(t, g)}open`,
+  gPaused:   (t, g) => `${K.GP(t, g)}paused`,
+  gKw:       (t, g) => `${K.GP(t, g)}keyword`,
+  gChanList: (t, g) => `${K.GP(t, g)}channels`,
   abuseHist:  (t, u) => `${TP(t)}gw:abuse:hist:${u}`,     // letzte Msg-Hashes
   abuseTimes: (t, u) => `${TP(t)}gw:abuse:times:${u}`,    // letzte Timestamps (Rate)
 };
@@ -145,12 +153,17 @@ class WatchtimeEngine {
     return (await this.getChannels(teamId))[0] || '';
   }
 
-  // ── Multiplier (per Giveaway, Legacy-Fallback) ──────────
-  async getMultiplier(teamId) {
+  // ── Multiplier (per Giveaway, Legacy-Fallback nur Primary) ──
+  // Sekundär-Instanzen lesen strikt ihren eigenen Schlüssel — ein Alt-Boost
+  // darf nie in ein fremdes Giveaway leaken.
+  async getMultiplier(teamId, gid = undefined) {
     const t = sanitizeTeamId(teamId);
-    const gid = await this._gid(t);
-    const raw = gid ? await this._readMech(K.gMult(t, gid), K.gwMult(t))
-                    : await this.redis.get(K.gwMult(t));
+    const primary = await this.redis.get(K.gwSessionId(t));
+    const g = gid === undefined ? primary : gid;
+    let raw;
+    if (!g)                   raw = await this.redis.get(K.gwMult(t));
+    else if (!primary || g === primary) raw = await this._readMech(K.gMult(t, g), K.gwMult(t));
+    else                      raw = await this.redis.get(K.gMult(t, g));
     const f = parseFloat(raw || '1');
     return (isFinite(f) && f > 0) ? f : 1;
   }
@@ -214,9 +227,9 @@ class WatchtimeEngine {
     await put(K.cfgChatCool,  cfg.cooldown, cc.chatCooldown.min, cc.chatCooldown.max, true);
     return this.getChatConfig(t);
   }
-  async setMultiplier(teamId, factor, seconds) {
+  async setMultiplier(teamId, factor, seconds, explicitGid = undefined) {
     const t = sanitizeTeamId(teamId);
-    const gid = await this._gid(t);
+    const gid = explicitGid === undefined ? await this._gid(t) : explicitGid;
     const key = gid ? K.gMult(t, gid) : K.gwMult(t);
     const f = Math.max(1, Math.min(10, parseFloat(factor) || 1));
     const s = Math.max(1, Math.min(86400, parseInt(seconds) || 0));
@@ -229,12 +242,12 @@ class WatchtimeEngine {
     if (gid) await this.redis.del(K.gwMult(t));
     return { factor: f, seconds: s };
   }
-  async multiplierState(teamId) {
+  async multiplierState(teamId, gid = undefined) {
     const t = sanitizeTeamId(teamId);
-    const f = await this.getMultiplier(t);
+    const f = await this.getMultiplier(t, gid);
     if (f <= 1) return { factor: f, secondsLeft: 0 };
-    const gid = await this._gid(t);
-    let ttl = gid ? await this.redis.ttl(K.gMult(t, gid)) : -2;
+    const g = gid === undefined ? await this._gid(t) : gid;
+    let ttl = g ? await this.redis.ttl(K.gMult(t, g)) : -2;
     if (ttl < 0) ttl = await this.redis.ttl(K.gwMult(t));
     return { factor: f, secondsLeft: ttl > 0 ? ttl : 0 };
   }
@@ -263,13 +276,60 @@ class WatchtimeEngine {
     }
   }
 
-  async isOpen(teamId)      { return await this.redis.get(K.gwOpen(sanitizeTeamId(teamId))) === 'true'; }
-  async isPaused(teamId)    { return await this.redis.get(K.gwPaused(sanitizeTeamId(teamId))) === 'true'; }
-  // Aktiv = offen UND nicht pausiert → nur dann läuft Accrual.
-  async isActive(teamId)    { const t = sanitizeTeamId(teamId);
-    return await this.redis.get(K.gwOpen(t)) === 'true' && await this.redis.get(K.gwPaused(t)) !== 'true'; }
-  async setPaused(teamId, paused) {
+  // ── Phase 2c: aktive Giveaways eines Teams ──────────────
+  // Primary = Legacy-Zustand (auch ohne Session-ID, Altbestand/Tests);
+  // Sekundär-Instanzen aus dem gwSet mit eigenem open/paused/Kanalliste.
+  // channels null = alle Team-Kanäle.
+  async _activeGiveaways(teamId) {
     const t = sanitizeTeamId(teamId);
+    const out = [];
+    const legacySid = await this.redis.get(K.gwSessionId(t));
+    if (await this.redis.get(K.gwOpen(t)) === 'true' && await this.redis.get(K.gwPaused(t)) !== 'true') {
+      out.push({ gid: legacySid || null, primary: true, channels: null });
+    }
+    for (const g of await this.redis.smembers(K.gwSet(t))) {
+      if (g === legacySid) continue;   // Primary ist schon drin
+      if (await this.redis.get(K.gOpen(t, g)) !== 'true') continue;
+      if (await this.redis.get(K.gPaused(t, g)) === 'true') continue;
+      let chans = null;
+      try { const raw = await this.redis.get(K.gChanList(t, g)); if (raw) chans = JSON.parse(raw); } catch { /* alle */ }
+      out.push({ gid: g, primary: false, channels: Array.isArray(chans) && chans.length ? chans.map(sanitizeChannel).filter(Boolean) : null });
+    }
+    return out;
+  }
+
+  // Schlüsselwahl: gid null = Legacy (kein Giveaway-Kontext).
+  _kWatch(t, g, ch, u)  { return g ? K.gWatch(t, g, ch, u)  : K.chWatch(t, ch, u); }
+  _kMsgs(t, g, ch, u)   { return g ? K.gMsgs(t, g, ch, u)   : K.chMsgs(t, ch, u); }
+  _kChatTs(t, g, ch, u) { return g ? K.gChatTs(t, g, ch, u) : K.chChatTs(t, ch, u); }
+  _kReg(t, g, u)        { return g ? K.gReg(t, g, u)        : K.gwRegistered(t, u); }
+
+  // Nachricht zählt je Giveaway; Migration nur für das Primary (nur dort
+  // kann Altbestand existieren).
+  async _bumpMsgs(t, gid, ch, u, primaryGid) {
+    const key = this._kMsgs(t, gid, ch, u);
+    if (gid && gid === primaryGid) await this._migrateKey(key, K.chMsgs(t, ch, u));
+    await this.redis.incr(key);
+  }
+
+  // gid optional (Phase 2c): ohne gid gilt der Legacy-/Primary-Zustand.
+  async isOpen(teamId, gid = undefined)   { const t = sanitizeTeamId(teamId);
+    if (gid && gid !== await this.redis.get(K.gwSessionId(t))) return await this.redis.get(K.gOpen(t, gid)) === 'true';
+    return await this.redis.get(K.gwOpen(t)) === 'true'; }
+  async isPaused(teamId, gid = undefined) { const t = sanitizeTeamId(teamId);
+    if (gid && gid !== await this.redis.get(K.gwSessionId(t))) return await this.redis.get(K.gPaused(t, gid)) === 'true';
+    return await this.redis.get(K.gwPaused(t)) === 'true'; }
+  // Aktiv = offen UND nicht pausiert → nur dann läuft Accrual.
+  async isActive(teamId, gid = undefined) {
+    return await this.isOpen(teamId, gid) && !await this.isPaused(teamId, gid); }
+  async setPaused(teamId, paused, gid = undefined) {
+    const t = sanitizeTeamId(teamId);
+    const primary = await this.redis.get(K.gwSessionId(t));
+    if (gid && gid !== primary) {   // Sekundär-Instanz: nur deren Zustand
+      if (paused) await this.redis.set(K.gPaused(t, gid), 'true');
+      else await this.redis.del(K.gPaused(t, gid));
+      return;
+    }
     if (paused) await this.redis.set(K.gwPaused(t), 'true');
     else await this.redis.del(K.gwPaused(t));
   }
@@ -303,24 +363,37 @@ class WatchtimeEngine {
     const teams = await this.listOpenTeams();
     const updates = [];
     for (const t of teams) {
-      if (await this.redis.get(K.gwOpen(t)) !== 'true') { await this.redis.srem(K.openTeams(), t); continue; }
-      if (await this.redis.get(K.gwPaused(t)) === 'true') continue;   // pausiert: kein Accrual, bleibt offen
-      const sid = await this.redis.get(K.gwSessionId(t));
+      // Phase 2c: ein Tick geht an JEDES aktive Giveaway des Teams, dessen
+      // Kanalliste den Kanal enthält. Zustand (Presence/Bann/Follow) wird
+      // einmal gelesen und verteilt — Redis-Last wächst nicht mit n (§6).
+      const active = await this._activeGiveaways(t);
+      if (!active.length) {
+        const stillThere = await this.redis.get(K.gwOpen(t)) === 'true'
+                        || (await this.redis.smembers(K.gwSet(t))).length > 0;
+        if (!stillThere) await this.redis.srem(K.openTeams(), t);
+        continue;   // pausiert: kein Accrual, bleibt offen
+      }
       const channels = await this.getChannels(t);
-      const mult = await this.getMultiplier(t);
       const base = await this.getCoinBaseSec(t);
-      const inc  = CORE.tickDelta({ tickSec: TICK_SEC, multiplier: mult });
+      const multByGid = new Map();   // je Giveaway einmal lesen
+      for (const g of active) multByGid.set(g.gid, await this.getMultiplier(t, g.gid));
       for (const ch of channels) {
+        const targets = active.filter(g => !g.channels || g.channels.includes(ch));
+        if (!targets.length) continue;
         const users = await this.redis.smembers(K.chIndex(t, ch));
         for (const u of users) {
           if (await this.redis.get(K.gwBanned(t, u)) === '1') continue;
           if (!await this.redis.get(K.chPresent(t, ch, u))) continue;
           if (!this._followAllowed(await this.redis.get(K.chFollows(t, ch, u)))) continue;
-          const wKey = sid ? K.gWatch(t, sid, ch, u) : K.chWatch(t, ch, u);
-          if (sid) await this._migrateKey(wKey, K.chWatch(t, ch, u));
-          const newSec = parseFloat(await this.redis.incrbyfloat(wKey, inc));
-          await this._logEvent(t, u, 'tick', inc, sid, ch);
-          updates.push({ teamId: t, username: u, channel: ch, watchSec: newSec, coins: coinsFromSec(newSec, base) });
+          for (const g of targets) {
+            const inc  = CORE.tickDelta({ tickSec: TICK_SEC, multiplier: multByGid.get(g.gid) });
+            const wKey = this._kWatch(t, g.gid, ch, u);
+            if (g.primary && g.gid) await this._migrateKey(wKey, K.chWatch(t, ch, u));
+            const newSec = parseFloat(await this.redis.incrbyfloat(wKey, inc));
+            await this._logEvent(t, u, 'tick', inc, g.gid, ch);
+            updates.push({ teamId: t, giveawayId: g.gid, primary: g.primary, username: u,
+                           channel: ch, watchSec: newSec, coins: coinsFromSec(newSec, base) });
+          }
         }
       }
     }
@@ -332,31 +405,42 @@ class WatchtimeEngine {
     const t = sanitizeTeamId(teamId);
     const u = sanitizeUsername(username);
     if (!t || !u) return null;
-    // Nur bei aktivem (offen + nicht pausiert) Giveaway zählt Chat.
-    if (await this.redis.get(K.gwOpen(t)) !== 'true' || await this.redis.get(K.gwPaused(t)) === 'true') return null;
+    // Phase 2c: die Nachricht zählt für JEDES aktive Giveaway, dessen
+    // Kanalliste den Kanal enthält. Rückgabe bleibt der Primary-Kontrakt
+    // (Join-Reply/wt_update im Server); Sekundär-Instanzen buchen still.
+    const active = await this._activeGiveaways(t);
+    if (!active.length) return null;
+    const primaryGid = await this.redis.get(K.gwSessionId(t));
 
     const ch = await this.resolveChannel(t, channel);
     if (!ch) return null;
     const cleanMsg = sanitizeStr(message, 500).trim();
-    const sid = await this.redis.get(K.gwSessionId(t));
 
     await this.redis.set(K.chPresent(t, ch, u), '1', 'EX', PRESENCE_TTL);
     if (follows !== undefined) await this.redis.set(K.chFollows(t, ch, u), follows ? '1' : '0');
     await this._touchUser(t, u);
     await this.redis.sadd(K.chIndex(t, ch), u);
 
-    const mKey = sid ? K.gMsgs(t, sid, ch, u) : K.chMsgs(t, ch, u);
-    if (sid) await this._migrateKey(mKey, K.chMsgs(t, ch, u));
+    const targets = active.filter(g => !g.channels || g.channels.includes(ch));
+    if (!targets.length) return null;
 
-    const keyword = await this.redis.get(K.gwKeyword(t));
-    if (matchesKeyword(cleanMsg, keyword)) {
-      await this.redis.incr(mKey);
-      return this._tryRegister(t, u, username);
+    // Keyword-Anmeldung je Giveaway (Keyword kann je Instanz abweichen;
+    // Primary nutzt den Legacy-Schlüssel).
+    let regResult = null, matchedAny = false;
+    for (const g of targets) {
+      const kw = g.primary ? await this.redis.get(K.gwKeyword(t))
+                           : await this.redis.get(K.gKw(t, g.gid));
+      if (!matchesKeyword(cleanMsg, kw)) continue;
+      matchedAny = true;
+      await this._bumpMsgs(t, g.gid, ch, u, primaryGid);
+      const r = await this._tryRegister(t, u, username, g.gid);
+      if (g.primary) regResult = r;
     }
+    if (matchedAny) return regResult;
 
     if (await this.redis.get(K.gwBanned(t, u)) === '1') return null;
-    await this.redis.incr(mKey);
-    await this._detectAbuse(t, u, cleanMsg);   // Spam-Signale (flaggt, bannt nicht)
+    for (const g of targets) await this._bumpMsgs(t, g.gid, ch, u, primaryGid);
+    await this._detectAbuse(t, u, cleanMsg);   // Spam-Signale (flaggt, bannt nicht) — einmal je Nachricht
 
     if (!this._followAllowed(await this.redis.get(K.chFollows(t, ch, u)))) return { channel: ch, followed: false };
 
@@ -364,37 +448,43 @@ class WatchtimeEngine {
     if (!chatCfg.bonusSec) return null;                      // Bonus abgeschaltet
 
     // Sinnhaftigkeit entscheidet der Core: KI-Urteil wenn konfiguriert,
-    // sonst (und bei jedem KI-Fehler) Wortzählung.
+    // sonst (und bei jedem KI-Fehler) Wortzählung. Einmal je Nachricht.
     const aiVerdict = this.aiJudge ? await this.aiJudge(t, cleanMsg) : null;
     const { meaningful, judgedBy } = CORE.chatMeaningful({
       message: cleanMsg, minWords: chatCfg.minWords, aiVerdict });
     if (!meaningful) return null;
 
-    const chatKey = sid ? K.gChatTs(t, sid, ch, u) : K.chChatTs(t, ch, u);
-    if (sid) await this._migrateKey(chatKey, K.chChatTs(t, ch, u));   // Cooldown läuft weiter
     const now = Math.floor(Date.now() / 1000);
-    const lastTs = await this.redis.get(chatKey);
-    if (lastTs && (now - parseInt(lastTs)) < chatCfg.cooldown) return null;
+    let primaryResult = null;
+    for (const g of targets) {
+      const chatKey = this._kChatTs(t, g.gid, ch, u);
+      if (g.primary && g.gid) await this._migrateKey(chatKey, K.chChatTs(t, ch, u));   // Cooldown läuft weiter
+      const lastTs = await this.redis.get(chatKey);
+      if (lastTs && (now - parseInt(lastTs)) < chatCfg.cooldown) continue;   // Cooldown je Giveaway
 
-    const mult = await this.getMultiplier(t);
-    const inc  = CORE.chatDelta({ bonusSec: chatCfg.bonusSec, multiplier: mult });
-    await this.redis.set(chatKey, String(now), 'EX', 86400);
-    const wKey = sid ? K.gWatch(t, sid, ch, u) : K.chWatch(t, ch, u);
-    if (sid) await this._migrateKey(wKey, K.chWatch(t, ch, u));
-    const newSec = parseFloat(await this.redis.incrbyfloat(wKey, inc));
-    await this._logEvent(t, u, 'chat_bonus', inc, sid, ch);
-
-    return { added: inc, channel: ch, watchSec: newSec, judgedBy,
-             coins: coinsFromSec(newSec, await this.getCoinBaseSec(t)) };
+      const mult = await this.getMultiplier(t, g.gid);
+      const inc  = CORE.chatDelta({ bonusSec: chatCfg.bonusSec, multiplier: mult });
+      await this.redis.set(chatKey, String(now), 'EX', 86400);
+      const wKey = this._kWatch(t, g.gid, ch, u);
+      if (g.primary && g.gid) await this._migrateKey(wKey, K.chWatch(t, ch, u));
+      const newSec = parseFloat(await this.redis.incrbyfloat(wKey, inc));
+      await this._logEvent(t, u, 'chat_bonus', inc, g.gid, ch);
+      if (g.primary) {
+        primaryResult = { added: inc, channel: ch, watchSec: newSec, judgedBy,
+                          coins: coinsFromSec(newSec, await this.getCoinBaseSec(t)) };
+      }
+    }
+    return primaryResult;
   }
 
-  async _tryRegister(teamId, username, displayName) {
+  async _tryRegister(teamId, username, displayName, explicitGid = undefined) {
     // Opt-in per Keyword: JEDER kann sich anmelden (= Zustimmung Regeln).
     // Für den Lostopf zählt separat die Berechtigung (Follows + ≥2h Viewtime),
     // siehe getUserAggregate.eligible.
-    const gid = await this._gid(teamId);
-    const regKey = gid ? K.gReg(teamId, gid, username) : K.gwRegistered(teamId, username);
-    if (gid) await this._migrateKey(regKey, K.gwRegistered(teamId, username));
+    const primary = await this._gid(teamId);
+    const gid = explicitGid === undefined ? primary : explicitGid;
+    const regKey = this._kReg(teamId, gid, username);
+    if (gid && gid === primary) await this._migrateKey(regKey, K.gwRegistered(teamId, username));
     const already = await this.redis.get(regKey);
     await this.redis.set(regKey, '1');
     await this._touchUser(teamId, username);
@@ -402,7 +492,7 @@ class WatchtimeEngine {
       INSERT INTO users (username, display) VALUES ($1, $2)
       ON CONFLICT (username) DO UPDATE SET display = EXCLUDED.display, last_seen = NOW()
     `, [username, sanitizeStr(displayName, 50) || username]);
-    const agg = await this.getUserAggregate(teamId, username);
+    const agg = await this.getUserAggregate(teamId, username, gid);
     return { ...agg, registered: true, isNew: !already };
   }
 
@@ -444,18 +534,24 @@ class WatchtimeEngine {
   // ── Aggregation ─────────────────────────────────────────
   // Engine sammelt Rohdaten aus Redis, der Core rechnet die Regeln
   // (Coins, Eligibility) — CORE.aggregate ist die zentrale Regelfunktion.
-  async getUserAggregate(teamId, username) {
+  // explicitGid: Stand eines bestimmten Giveaways; Default = Primary.
+  // Legacy-Fallback nur für das Primary — Sekundär-Instanzen lesen strikt
+  // ihren eigenen Namespace (kein Altbestand leakt hinein).
+  async getUserAggregate(teamId, username, explicitGid = undefined) {
     const t = sanitizeTeamId(teamId);
     const u = sanitizeUsername(username);
     const channels = await this.getChannels(t);
-    const gid = await this._gid(t);
+    const primary = await this._gid(t);
+    const gid = explicitGid === undefined ? primary : explicitGid;
+    const strict = !!(gid && primary && gid !== primary);
+    const rd = (gKey, lKey) => !gid ? this.redis.get(lKey)
+                             : strict ? this.redis.get(gKey)
+                             : this._readMech(gKey, lKey);
     const perChannelRaw = {};
     for (const ch of channels) {
       perChannelRaw[ch] = {
-        watchSec: parseFloat((gid ? await this._readMech(K.gWatch(t, gid, ch, u), K.chWatch(t, ch, u))
-                                  : await this.redis.get(K.chWatch(t, ch, u))) || '0'),
-        msgs:     parseInt((gid ? await this._readMech(K.gMsgs(t, gid, ch, u), K.chMsgs(t, ch, u))
-                                : await this.redis.get(K.chMsgs(t, ch, u))) || '0'),
+        watchSec: parseFloat((await rd(K.gWatch(t, gid, ch, u), K.chWatch(t, ch, u))) || '0'),
+        msgs:     parseInt((await rd(K.gMsgs(t, gid, ch, u), K.chMsgs(t, ch, u))) || '0'),
         // Follow-Gate STRIKT: nur bestätigte Follows (Live-Event '1' oder Helix) zählen.
         // (Viewtime-Accrual bleibt permissiv, siehe tickPresentUsers.)
         // Follows bleiben team-weit — Eigenschaft des Zuschauers, nicht des Giveaways.
@@ -465,8 +561,7 @@ class WatchtimeEngine {
     return CORE.aggregate({
       username: u,
       perChannelRaw,
-      registered: (gid ? await this._readMech(K.gReg(t, gid, u), K.gwRegistered(t, u))
-                       : await this.redis.get(K.gwRegistered(t, u))) === '1',
+      registered: (await rd(K.gReg(t, gid, u), K.gwRegistered(t, u))) === '1',
       banned:     await this.redis.get(K.gwBanned(t, u)) === '1',
       cfg: {
         coinBaseSec: await this.getCoinBaseSec(t),
@@ -476,11 +571,11 @@ class WatchtimeEngine {
   }
   async getUserState(teamId, username) { return this.getUserAggregate(teamId, username); }
 
-  async getAllParticipants(teamId) {
+  async getAllParticipants(teamId, explicitGid = undefined) {
     const t = sanitizeTeamId(teamId);
     const users = await this.redis.smembers(K.gwUsers(t));
     const result = [];
-    for (const u of users) result.push(await this.getUserAggregate(t, u));
+    for (const u of users) result.push(await this.getUserAggregate(t, u, explicitGid));
     const flags = await this.getFlagsMap(t);
     for (const p of result) p.flags = flags[p.username] || [];
     return result.sort((a, b) => b.totalCoins - a.totalCoins);
@@ -566,8 +661,41 @@ class WatchtimeEngine {
     // Restart). Ändern jederzeit über gw_set_keyword (auch bei laufendem GW).
     if (keyword) await this.redis.set(K.gwKeyword(t), keyword);
     await this.redis.set(K.gwSessionId(t), sessionId);
+    // Phase 2c: das Primary steht auch im Giveaway-Set (Spiegel), damit
+    // die Verteilung nur eine Quelle für "aktive Giveaways" kennt.
+    await this.redis.sadd(K.gwSet(t), sessionId);
+    await this.redis.set(K.gOpen(t, sessionId), 'true');
+    await this.redis.del(K.gPaused(t, sessionId));
     await this.redis.del(K.gwChannels(t)); // Kanal-Cache invalidieren
     console.log(`[WTE] [${t}] opened, keyword="${keyword}", session=${sessionId}`);
+  }
+
+  // ── Phase 2c: Sekundär-Instanz (z.B. Sofortverlosung neben der Kampagne) ──
+  // Läuft ausschließlich im g:-Namespace; channels = Teilmenge der
+  // Team-Kanäle (leer/null = alle).
+  async openGiveawayInstance(teamId, gid, { keyword = '', channels = null } = {}) {
+    const t = sanitizeTeamId(teamId);
+    this.validateSessionId(gid);
+    if (!t) throw new Error('Invalid teamId');
+    await this.redis.sadd(K.gwSet(t), gid);
+    await this.redis.set(K.gOpen(t, gid), 'true');
+    await this.redis.del(K.gPaused(t, gid));
+    if (keyword) await this.redis.set(K.gKw(t, gid), sanitizeStr(keyword, 100));
+    if (Array.isArray(channels) && channels.length) {
+      await this.redis.set(K.gChanList(t, gid), JSON.stringify(channels.map(sanitizeChannel).filter(Boolean)));
+    }
+    await this.redis.sadd(K.openTeams(), t);
+    console.log(`[WTE] [${t}] instance ${gid} opened, keyword="${keyword}"`);
+  }
+
+  async closeGiveawayInstance(teamId, gid) {
+    const t = sanitizeTeamId(teamId);
+    await this.redis.set(K.gOpen(t, gid), 'false');
+    await this.redis.srem(K.gwSet(t), gid);
+    if (!(await this._activeGiveaways(t)).length && await this.redis.get(K.gwOpen(t)) !== 'true') {
+      await this.redis.srem(K.openTeams(), t);
+    }
+    console.log(`[WTE] [${t}] instance ${gid} closed`);
   }
 
   async drawWinner(teamId, sessionId, opts = {}) {
@@ -576,7 +704,8 @@ class WatchtimeEngine {
     const prize  = opts.prize ? sanitizeStr(opts.prize, 100) : null;
     // Pool-Bildung (Filter + Gewicht) macht der Core; Zufall, Snapshot und
     // Persistenz bleiben hier — genau EINE Stelle, die reproduzierbar zieht.
-    const participants = await this.getAllParticipants(t);
+    // Gezogen wird der Stand DIESES Giveaways (sessionId = Giveaway-ID).
+    const participants = await this.getAllParticipants(t, sessionId || undefined);
     const pool = CORE.buildPool(participants);
     if (!pool.length) return null;
     const eligible = pool.map(e => e.meta);
@@ -638,9 +767,14 @@ class WatchtimeEngine {
   async closeGiveaway(teamId, sessionId) {
     const t = sanitizeTeamId(teamId);
     await this.redis.set(K.gwOpen(t), 'false');
-    await this.redis.srem(K.openTeams(), t);
+    if (sessionId) {
+      await this.redis.set(K.gOpen(t, sessionId), 'false');
+      await this.redis.srem(K.gwSet(t), sessionId);
+    }
+    // Team bleibt im Scan-Set, solange noch eine Sekundär-Instanz läuft.
+    if (!(await this._activeGiveaways(t)).length) await this.redis.srem(K.openTeams(), t);
     if (!sessionId) return;
-    const participants = await this.getAllParticipants(t);
+    const participants = await this.getAllParticipants(t, sessionId);
     const active = participants.filter(p => !p.banned);
     const totalCoins = active.reduce((s, p) => s + p.totalCoins, 0);
     const channels = await this.getChannels(t);

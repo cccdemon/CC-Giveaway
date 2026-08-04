@@ -1631,7 +1631,13 @@ function startWatchtimeTicker() {
   setInterval(async () => {
     try {
       const updates = await wte.tickPresentUsers();
-      for (const u of updates) broadcastTeam(u.teamId, { event: 'wt_update', user: u.username, channel: u.channel, watchSec: u.watchSec, coins: u.coins });
+      // Das Panel zeigt die Primary-Ansicht — nur deren Stände broadcasten.
+      // Sekundär-Instanzen buchen still und bekommen ihre Anzeige in Phase 2d.
+      for (const u of updates) {
+        if (!u.primary) continue;
+        broadcastTeam(u.teamId, { event: 'wt_update', user: u.username, channel: u.channel,
+                                  watchSec: u.watchSec, coins: u.coins });
+      }
       await watchBoostExpiry();
     } catch(e) { logErr('Tick', e.message); }
   }, TICK_SEC * 1000);

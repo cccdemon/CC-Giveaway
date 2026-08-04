@@ -419,3 +419,86 @@ test('phase2b: backup roundtrip ueber die Giveaway-Dimension', async () => {
   const a = await e.getUserAggregate(TEAM, 'bob');
   assert.equal(a.totalWatchSec, 60);
 });
+
+// ── Phase 2c: Parallelbetrieb (Abnahme §8 Phase 2) ────────
+
+test('phase2c: ein viewer_tick erhoeht beide Giveaways, Staende getrennt', async () => {
+  const e = engine();
+  await e.openGiveaway(TEAM, 'join', 'sess_1');                       // Kampagne (Primary)
+  await e.openGiveawayInstance(TEAM, 'sess_2', { keyword: 'blitz' }); // Sofortverlosung
+  await e.handleViewerTick(TEAM, 'justcallmedeimos', 'bob', true);
+  const updates = await e.tickPresentUsers();
+  assert.equal(updates.length, 2);                                    // beide bedient
+  const a1 = await e.getUserAggregate(TEAM, 'bob');                   // Primary
+  const a2 = await e.getUserAggregate(TEAM, 'bob', 'sess_2');
+  assert.equal(a1.totalWatchSec, 60);
+  assert.equal(a2.totalWatchSec, 60);
+  // getrennte Schlüssel:
+  assert.equal(parseFloat(await e.redis.get(K.gWatch(TEAM, 'sess_1', 'justcallmedeimos', 'bob'))), 60);
+  assert.equal(parseFloat(await e.redis.get(K.gWatch(TEAM, 'sess_2', 'justcallmedeimos', 'bob'))), 60);
+});
+
+test('phase2c: Keyword je Giveaway, Anmeldung landet nur dort', async () => {
+  const e = engine();
+  await e.openGiveaway(TEAM, 'join', 'sess_1');
+  await e.openGiveawayInstance(TEAM, 'sess_2', { keyword: 'blitz' });
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'blitz', true);
+  assert.equal((await e.getUserAggregate(TEAM, 'bob')).registered, false);           // Primary nicht
+  assert.equal((await e.getUserAggregate(TEAM, 'bob', 'sess_2')).registered, true);  // Instanz ja
+  const r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'join', true);
+  assert.equal(r.registered, true);                                                  // Primary-Kontrakt
+  assert.equal((await e.getUserAggregate(TEAM, 'bob')).registered, true);
+});
+
+test('phase2c: Pause einer Instanz stoppt nur deren Accrual', async () => {
+  const e = engine();
+  await e.openGiveaway(TEAM, 'join', 'sess_1');
+  await e.openGiveawayInstance(TEAM, 'sess_2', {});
+  await e.setPaused(TEAM, true, 'sess_2');
+  await e.handleViewerTick(TEAM, 'justcallmedeimos', 'bob', true);
+  await e.tickPresentUsers();
+  assert.equal((await e.getUserAggregate(TEAM, 'bob')).totalWatchSec, 60);
+  assert.equal((await e.getUserAggregate(TEAM, 'bob', 'sess_2')).totalWatchSec, 0);
+  await e.setPaused(TEAM, false, 'sess_2');
+  await e.tickPresentUsers();
+  assert.equal((await e.getUserAggregate(TEAM, 'bob', 'sess_2')).totalWatchSec, 60);
+});
+
+test('phase2c: Instanz mit Kanal-Teilmenge bekommt nur diese Ticks', async () => {
+  const e = engine();
+  await e.openGiveaway(TEAM, 'join', 'sess_1');
+  await e.openGiveawayInstance(TEAM, 'sess_2', { channels: ['jerichoramirez'] });
+  await e.handleViewerTick(TEAM, 'justcallmedeimos', 'bob', true);   // nicht in sess_2-Liste
+  await e.tickPresentUsers();
+  assert.equal((await e.getUserAggregate(TEAM, 'bob')).totalWatchSec, 60);
+  assert.equal((await e.getUserAggregate(TEAM, 'bob', 'sess_2')).totalWatchSec, 0);
+  await e.handleViewerTick(TEAM, 'jerichoramirez', 'bob', true);     // in beiden
+  await e.tickPresentUsers();
+  assert.equal((await e.getUserAggregate(TEAM, 'bob', 'sess_2')).totalWatchSec, 60);
+});
+
+test('phase2c: Ziehung je Giveaway zieht nur dessen Stand', async () => {
+  const e = engine();
+  await e.openGiveaway(TEAM, 'join', 'sess_1');
+  await e.openGiveawayInstance(TEAM, 'sess_2', { keyword: 'blitz' });
+  // bob nur in sess_2 berechtigt: Anmeldung dort + Viewtime + Follows
+  await e.redis.set(K.chFollows(TEAM, 'justcallmedeimos', 'bob'), '1');
+  await e.redis.set(K.chFollows(TEAM, 'jerichoramirez', 'bob'), '1');
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'blitz', true);
+  await e.redis.set(K.gWatch(TEAM, 'sess_2', 'justcallmedeimos', 'bob'), String(SECS_PER_COIN));
+  await e.redis.sadd(K.gwUsers(TEAM), 'bob');
+  const r2 = await e.drawWinner(TEAM, 'sess_2', {});
+  assert.equal(r2.winner, 'bob');
+  const r1 = await e.drawWinner(TEAM, 'sess_1', {});
+  assert.equal(r1, null);                            // Primary: niemand berechtigt
+});
+
+test('phase2c: close der Instanz laesst Kampagne im Scan-Set, und umgekehrt', async () => {
+  const e = engine();
+  await e.openGiveaway(TEAM, 'join', 'sess_1');
+  await e.openGiveawayInstance(TEAM, 'sess_2', {});
+  await e.closeGiveawayInstance(TEAM, 'sess_2');
+  assert.deepEqual(await e.listOpenTeams(), [TEAM]);  // Kampagne läuft weiter
+  await e.closeGiveaway(TEAM, 'sess_1');
+  assert.deepEqual(await e.listOpenTeams(), []);
+});
