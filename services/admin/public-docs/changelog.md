@@ -7,6 +7,16 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 4. August 2026
 
+### Mehrere Giveaways gleichzeitig
+
+Ein Team kann jetzt **neben der laufenden Kampagne zusätzliche Giveaways**
+starten — etwa eine spontane Verlosung mit eigenem Keyword, auch nur auf
+einzelnen Kanälen. Im Dashboard gibt es dafür eine Giveaway-Auswahl neben der
+Team-Auswahl (＋ startet eine Zusatz-Instanz, ✕ schließt sie). Boost, Pause
+und Ziehung wirken auf das jeweils gewählte Giveaway. Zuschauzeit zählt
+gleichzeitig für alle laufenden Giveaways, deren Kanäle man schaut.
+Obergrenze: 4 gleichzeitige Giveaways je Team.
+
 ### Jedes Giveaway hat jetzt seinen eigenen Stand
 
 Punktestände, Anmeldungen und Boosts gehören ab jetzt zum **einzelnen

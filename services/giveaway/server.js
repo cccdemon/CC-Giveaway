@@ -550,15 +550,17 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => { clients.delete(clientId); log('WS', `Disconnected: ${clientId}`); });
 });
 
-async function sendTeamData(meta) {
+// gid optional (Phase 2d): Panel kann den Stand einer Sekundär-Instanz
+// abfragen; ohne gid gilt wie bisher das Primary.
+async function sendTeamData(meta, gid = null) {
   const send = (o) => meta.ws.readyState === WebSocket.OPEN && meta.ws.send(JSON.stringify(o));
   const teamId = meta.teamId;
-  const participants = await wte.getAllParticipants(teamId);
-  const open = await wte.isOpen(teamId);
-  const paused = await wte.isPaused(teamId);
-  const session = await wte.getSessionId(teamId);
+  const participants = await wte.getAllParticipants(teamId, gid || undefined);
+  const open = await wte.isOpen(teamId, gid || undefined);
+  const paused = await wte.isPaused(teamId, gid || undefined);
+  const session = gid || await wte.getSessionId(teamId);
   const channels = await wte.getChannels(teamId);
-  send({ event: 'gw_data', teamId, open, paused, session, participants, channels });
+  send({ event: 'gw_data', teamId, giveawayId: gid, open, paused, session, participants, channels });
 }
 
 async function handleClientMessage(meta, msg) {
@@ -581,7 +583,7 @@ async function handleClientMessage(meta, msg) {
       const teamId = sanitizeTeamId(msg.teamId);
       if (!await isMember(meta.authUser, teamId)) { send({ event: 'gw_ack', type: 'forbidden' }); return; }
       meta.teamId = teamId;
-      await sendTeamData(meta);
+      await sendTeamData(meta, validGid(msg.giveawayId));
       break;
     }
     case 'gw_cmd':
@@ -968,7 +970,7 @@ async function runAdminCmd(send, msg, meta, ctx) {
       break;
     }
     case 'gw_get_multiplier': {
-      const st = await wte.multiplierState(teamId);
+      const st = await wte.multiplierState(teamId, validGid(msg.giveawayId) || undefined);
       send({ event: 'gw_multiplier', factor: st.factor, secondsLeft: st.secondsLeft });
       break;
     }
