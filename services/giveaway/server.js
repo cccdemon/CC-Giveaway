@@ -308,7 +308,7 @@ const IMPRINT_HINT = 'Kein Impressum hinterlegt. Trage unter MEINE TEAMS das Imp
 // Der Glueckspiel-Ausschluss der Nutzungsbedingungen bindet nur, wenn der
 // Veranstalter ihm zugestimmt hat. Ohne Zustimmung laeuft hier kein Giveaway.
 // Muss mit TOS_VERSION in services/admin/server.js uebereinstimmen.
-const TOS_VERSION = 1;
+const TOS_VERSION = 2;
 async function ownerAcceptedTos(teamId) {
   try {
     const r = await pg.query(

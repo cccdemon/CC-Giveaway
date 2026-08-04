@@ -266,7 +266,7 @@ app.get('/auth/twitch/callback', async (req, res) => {
 // welcher Fassung zugestimmt hat - deshalb Fassungsnummer + Zeitstempel.
 // WICHTIG: Bei jeder inhaltlichen Aenderung von nutzungsbedingungen.md muss
 // TOS_VERSION erhoeht werden, sonst gilt die alte Zustimmung weiter.
-const TOS_VERSION = 1;
+const TOS_VERSION = 2;
 
 async function tosAcceptedVersion(login) {
   const r = await pg.query(

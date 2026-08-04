@@ -568,6 +568,16 @@ Pflichtpunkte über den Core hinaus:
 
 ### Phase 5 — Recht und Texte je Core
 
+> **Stand 4. August 2026: umgesetzt.** Nutzungsbedingungen Fassung 2
+> (§ 4 Abs. 8: plattforminternes Los-Guthaben ist kein Zahlungsmittel;
+> Sofortverlosung ohne Vorleistung), `TOS_VERSION = 2` in **beiden**
+> server.js — bestehende Veranstalter müssen vor dem nächsten Öffnen neu
+> zustimmen. Teilnahmebedingungen (Doc **und** `terms-template.md`):
+> neue § 4b Sofortverlosung / § 4c Los-Giveaway. Datenschutzerklärung:
+> Guthaben-Journal, Einsätze, Anwesenheit als Datenkategorien +
+> Speicherfristen. FEATURES.md: Mechanik-Tabelle; ANLEITUNG-TEILNEHMER:
+> Abschnitte ⚡/🎟.
+
 Teilnahmebedingungen und Datenschutzerklärung nennen die Mechanik. Jeder Core
 braucht seinen Textbaustein — insbesondere `CORE_TicketBuy` (Einsatz verfällt)
 und `CORE_CurrentViewers` (keine Vorleistung, reine Anwesenheit).
