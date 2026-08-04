@@ -50,6 +50,68 @@ function chatMeaningful({ message, minWords, aiVerdict }) {
   return { meaningful, judgedBy };
 }
 
+// ── Deltas (vorher inline in tickPresentUsers/handleChatMessage) ──
+// Wie viel Viewtime ein Ereignis wert ist, ist Mechanik — der Multiplier
+// (time-boxed Boost) wirkt auf beide Wege.
+function tickDelta({ tickSec, multiplier }) { return tickSec * multiplier; }
+function chatDelta({ bonusSec, multiplier }) { return bonusSec * multiplier; }
+
+// ── Chat-Texte (vorher hartcodiert in server.js) ──────────
+// Grammatik-/Format-Helfer gehören zu den Texten und damit zum Core.
+const kw2 = (n) => (n === 1 ? 'Kanal' : 'Kanälen');
+const fmtDur = (sec) => {                              // 7200→"2 Std", 1800→"30 Min"
+  sec = Math.max(0, Math.round(sec || 0));
+  if (sec % 3600 === 0) return `${sec / 3600} Std`;
+  if (sec >= 3600)      return `${(sec / 3600).toFixed(1)} Std`;
+  return `${Math.round(sec / 60)} Min`;
+};
+
+// !giveaway und die Eröffnungsansage — ein Text, eine Stelle zum Pflegen.
+function infoText({ keyword, followMin, drawMinSec, host, teamId }) {
+  const kwTxt = keyword ? `"${keyword}"` : 'das Keyword';
+  const dmTxt = drawMinSec > 0 ? ` + mind. 1 Punkt (${fmtDur(drawMinSec)} Zuschauzeit)` : '';
+  return `🎁 Team-Giveaway: schau auf EINEM der Team-Kanäle zu — die Zuschauzeit zählt zusammen (${fmtDur(drawMinSec)} = 1 Punkt), sinnvoller Chat (>3 Wörter) gibt Bonus. Mitmachen: schreib ${kwTxt} im Chat (= anmelden). Für den Lostopf: folge ≥${followMin} ${kw2(followMin)}${dmTxt}. Befehle: !los = dein Status & Chance · !giveaway = diese Info. Regeln: ${host}/viewer/terms?team=${teamId} | Status: ${host}/viewer/status`;
+}
+
+// !los — Status & Chance. agg = getParticipant/getUserAggregate-Ergebnis,
+// poolTotal = Summe der Gewichte aller Berechtigten.
+function statusText({ username, open, agg, keyword, poolTotal, host, teamId }) {
+  const u = username;
+  let reply;
+  if (!open) reply = `@${u} Kein Giveaway aktiv.`;
+  else {
+    const a = agg;
+    const kw = keyword || '';
+    if (a.eligible) {
+      const chance = poolTotal > 0 ? (a.totalCoins / poolTotal * 100) : 0;
+      reply = `@${u} 🎟 ${a.totalCoins.toFixed(2)} Punkte | folgt ${a.channelsQualified}/${a.followMin} ✓ | Chance ${chance.toFixed(1)}% | im Lostopf ✅`;
+    } else if (!a.registered) {
+      reply = `@${u} 🎟 ${a.totalCoins.toFixed(2)} Punkte – schreib "${kw || 'das Keyword'}" um dich anzumelden. Für den Lostopf: folge ≥${a.followMin} ${kw2(a.followMin)}${a.drawMinSec > 0 ? ` + ${fmtDur(a.drawMinSec)} Viewtime` : ''}.`;
+    } else if (a.channelsQualified < a.followMin) {
+      reply = `@${u} 🎟 ${a.totalCoins.toFixed(2)} Punkte – du folgst erst ${a.channelsQualified}/${a.followMin} ${kw2(a.followMin)}. Folge mind. ${a.followMin} zum Mitmachen!`;
+    } else if (a.totalWatchSec < a.drawMinSec) {
+      reply = `@${u} 🎟 ${a.totalCoins.toFixed(2)} Punkte, folgst ${a.channelsQualified}/${a.followMin} ✓ – für den Lostopf noch ${fmtDur(a.drawMinSec - a.totalWatchSec)} Viewtime sammeln (zuschauen + sinnvoll chatten).`;
+    } else {
+      reply = `@${u} 🎟 ${a.totalCoins.toFixed(2)} Punkte – schau zu (egal welcher Kanal) & folge ≥${a.followMin} ${kw2(a.followMin)}.`;
+    }
+  }
+  return reply + ` | Status: ${host}/viewer/status | Regeln: ${host}/viewer/terms?team=${teamId}`;
+}
+
+// Antwort auf die Keyword-Anmeldung (gw_join im Chat).
+function joinReply({ username, agg }) {
+  const u = username, result = agg;
+  if (result.eligible) {
+    return `@${u} Du bist dabei & im Lostopf ✅ (${result.coins.toFixed(2)} Punkte). Weiter zuschauen + sinnvoll chatten erhöht deine Chance!`;
+  }
+  const need = [];
+  if (result.channelsFollowed < result.followMin) need.push(`folge mind. ${result.followMin} ${kw2(result.followMin)}`);
+  if ((result.totalWatchSec || 0) < result.drawMinSec) need.push(`sammle ${fmtDur(result.drawMinSec)} Zuschauzeit (zuschauen + sinnvoll chatten)`);
+  return need.length
+    ? `@${u} Angemeldet ✅ — für den Lostopf noch nötig: ${need.join(' + ')}. Stand: !los`
+    : `@${u} Du bist dabei & im Lostopf ✅`;
+}
+
 // ── Die zentrale Regelfunktion (vorher getUserAggregate) ──
 // input: { username, perChannelRaw: {ch: {watchSec, msgs, follows(bool)}},
 //          registered, banned, cfg: {coinBaseSec, followMin} }
@@ -109,6 +171,15 @@ module.exports = {
   chatMeaningful,
   aggregate,
   buildPool,
+  tickDelta,
+  chatDelta,
+
+  // Chat-Texte (!los, !giveaway, Anmelde-Antwort) + Format-Helfer
+  infoText,
+  statusText,
+  joinReply,
+  fmtDur,
+  kw2,
 
   // Defaults für die Engine (Re-Export erhält die alte watchtime.js-API)
   defaults: { SECS_PER_COIN, CHAT_BONUS_SEC, CHAT_COOLDOWN, CHAT_MIN_WORDS, MIN_CHANNELS, JOIN_MIN_COINS },

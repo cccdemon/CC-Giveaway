@@ -16,15 +16,12 @@ const http      = require('http');
 const crypto    = require('crypto');
 const { Pool }  = require('pg');
 const { WatchtimeEngine, K, sanitizeUsername, sanitizeStr, sanitizeTeamId, sanitizeChannel, TICK_SEC, ABUSE, MIN_CHANNELS } = require('./watchtime.js');
-const kw2 = (n) => (n === 1 ? 'Kanal' : 'Kanälen');   // Grammatik-Helfer für Chat-Texte
-const fmtDur = (sec) => {                              // 7200→"2 Std", 1800→"30 Min"
-  sec = Math.max(0, Math.round(sec || 0));
-  if (sec % 3600 === 0) return `${sec / 3600} Std`;
-  if (sec >= 3600)      return `${(sec / 3600).toFixed(1)} Std`;
-  return `${Math.round(sec / 60)} Min`;
-};
+// Chat-Texte (!los/!giveaway/Anmelde-Antwort) und Format-Helfer kommen aus
+// dem Core — die Regeltexte gehören zur Mechanik (Phase 1, ARCHITEKTUR-CORES).
+const CORE = require('./cores/watchtime-chat.js');
+const { fmtDur, kw2 } = CORE;
 const { Helix } = require('./helix.js');
-const { judgeMessage, listModels, encryptKey, decryptKey, PROVIDERS } = require('./chat-ai.js');
+const { judgeMessage, listModels, encryptKey, decryptKey, PROVIDERS } = require('./cores/chat-ai.js');
 const { targz } = require('./targz.js');
 
 function log(tag, ...args)    { console.log( `[${tag}]`, ...args); }
@@ -313,15 +310,17 @@ const TOS_HINT = 'Den Nutzungsbedingungen wurde noch nicht zugestimmt. Melde dic
 
 
 // Die Erklaerung, wie man mitmacht — identisch fuer !giveaway und die
-// Eroeffnungsansage. Ein Text, eine Stelle zum Pflegen.
+// Eroeffnungsansage. Text liegt im Core (infoText); hier nur Datensammlung.
+// Ohne Schema — Chat-Texte zeigen nur den Host (anders als publicHost()).
+const chatHost = () =>
+  (process.env.PUBLIC_URL || 'https://team.raumdock.org').replace(/^https?:\/\//, '').replace(/\/+$/, '');
 async function giveawayInfoText(teamId) {
-  const kw    = await redis.get(K.gwKeyword(teamId)) || '';
-  const host  = (process.env.PUBLIC_URL || 'https://team.raumdock.org').replace(/^https?:\/\//, '').replace(/\/+$/, '');
-  const kwTxt = kw ? `"${kw}"` : 'das Keyword';
-  const fm    = await wte.getFollowMin(teamId);
-  const dmSec = await wte.getDrawMinSec(teamId);
-  const dmTxt = dmSec > 0 ? ` + mind. 1 Punkt (${fmtDur(dmSec)} Zuschauzeit)` : '';
-  return `🎁 Team-Giveaway: schau auf EINEM der Team-Kanäle zu — die Zuschauzeit zählt zusammen (${fmtDur(dmSec)} = 1 Punkt), sinnvoller Chat (>3 Wörter) gibt Bonus. Mitmachen: schreib ${kwTxt} im Chat (= anmelden). Für den Lostopf: folge ≥${fm} ${kw2(fm)}${dmTxt}. Befehle: !los = dein Status & Chance · !giveaway = diese Info. Regeln: ${host}/viewer/terms?team=${teamId} | Status: ${host}/viewer/status`;
+  return CORE.infoText({
+    keyword:    await redis.get(K.gwKeyword(teamId)) || '',
+    followMin:  await wte.getFollowMin(teamId),
+    drawMinSec: await wte.getDrawMinSec(teamId),
+    host: chatHost(), teamId,
+  });
 }
 
 // Jeder Statuswechsel wird im Chat angesagt. Die Ansagen sitzen in diesen
@@ -921,46 +920,26 @@ function subscribeToGiveaway() {
         const u = sanitizeUsername(msg.user);
         if (result && result.isNew) {
           broadcastTeam(teamId, { event: 'gw_join', user: u });
-          let reply;
-          if (result.eligible) {
-            reply = `@${u} Du bist dabei & im Lostopf ✅ (${result.coins.toFixed(2)} Punkte). Weiter zuschauen + sinnvoll chatten erhöht deine Chance!`;
-          } else {
-            const need = [];
-            if (result.channelsFollowed < result.followMin) need.push(`folge mind. ${result.followMin} ${kw2(result.followMin)}`);
-            if ((result.totalWatchSec || 0) < result.drawMinSec) need.push(`sammle ${fmtDur(result.drawMinSec)} Zuschauzeit (zuschauen + sinnvoll chatten)`);
-            reply = need.length
-              ? `@${u} Angemeldet ✅ — für den Lostopf noch nötig: ${need.join(' + ')}. Stand: !los`
-              : `@${u} Du bist dabei & im Lostopf ✅`;
-          }
+          const reply = CORE.joinReply({ username: u, agg: result });
           redisPub.publish('ch:chat_reply', JSON.stringify({ event: 'chat_reply', channel: msg.channel, message: reply }));
         }
         if (result && result.added) broadcastTeam(teamId, { event: 'wt_update', user: u, channel: result.channel, watchSec: result.watchSec, coins: result.coins });
         break;
       }
       case 'time_cmd': {
+        // Text liegt im Core (statusText); hier nur Datensammlung.
         const u = sanitizeUsername(msg.user);
-        let reply;
-        if (!await wte.isOpen(teamId)) reply = `@${u} Kein Giveaway aktiv.`;
-        else {
-          const a = await wte.getUserAggregate(teamId, u);
-          const kw = await redis.get(K.gwKeyword(teamId)) || '';
-          if (a.eligible) {
+        const open = await wte.isOpen(teamId);
+        let agg = null, poolTotal = 0, keyword = '';
+        if (open) {
+          agg = await wte.getUserAggregate(teamId, u);
+          keyword = await redis.get(K.gwKeyword(teamId)) || '';
+          if (agg.eligible) {
             const all = await wte.getAllParticipants(teamId);
-            const pool = all.filter(p => p.eligible).reduce((s, p) => s + p.totalCoins, 0);
-            const chance = pool > 0 ? (a.totalCoins / pool * 100) : 0;
-            reply = `@${u} 🎟 ${a.totalCoins.toFixed(2)} Punkte | folgt ${a.channelsQualified}/${a.followMin} ✓ | Chance ${chance.toFixed(1)}% | im Lostopf ✅`;
-          } else if (!a.registered) {
-            reply = `@${u} 🎟 ${a.totalCoins.toFixed(2)} Punkte – schreib "${kw || 'das Keyword'}" um dich anzumelden. Für den Lostopf: folge ≥${a.followMin} ${kw2(a.followMin)}${a.drawMinSec > 0 ? ` + ${fmtDur(a.drawMinSec)} Viewtime` : ''}.`;
-          } else if (a.channelsQualified < a.followMin) {
-            reply = `@${u} 🎟 ${a.totalCoins.toFixed(2)} Punkte – du folgst erst ${a.channelsQualified}/${a.followMin} ${kw2(a.followMin)}. Folge mind. ${a.followMin} zum Mitmachen!`;
-          } else if (a.totalWatchSec < a.drawMinSec) {
-            reply = `@${u} 🎟 ${a.totalCoins.toFixed(2)} Punkte, folgst ${a.channelsQualified}/${a.followMin} ✓ – für den Lostopf noch ${fmtDur(a.drawMinSec - a.totalWatchSec)} Viewtime sammeln (zuschauen + sinnvoll chatten).`;
-          } else {
-            reply = `@${u} 🎟 ${a.totalCoins.toFixed(2)} Punkte – schau zu (egal welcher Kanal) & folge ≥${a.followMin} ${kw2(a.followMin)}.`;
+            poolTotal = all.filter(p => p.eligible).reduce((s, p) => s + p.totalCoins, 0);
           }
         }
-        const host = (process.env.PUBLIC_URL || 'https://team.raumdock.org').replace(/^https?:\/\//, '').replace(/\/+$/, '');
-        reply += ` | Status: ${host}/viewer/status | Regeln: ${host}/viewer/terms?team=${teamId}`;
+        const reply = CORE.statusText({ username: u, open, agg, keyword, poolTotal, host: chatHost(), teamId });
         redisPub.publish('ch:chat_reply', JSON.stringify({ event: 'chat_reply', channel: msg.channel, message: reply }));
         break;
       }

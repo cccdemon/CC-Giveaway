@@ -423,17 +423,22 @@ Oberflächenänderung.
 
 Reihenfolge innerhalb der Phase, vom Kern nach aussen:
 
-1. `coinsFromSec`, `countWords`, `getUserAggregate` und die zwölf
-   Konfigurations-Methoden in den Core verschieben. `getUserAggregate` ist der
-   Dreh- und Angelpunkt — sie definiert in `watchtime.js:414`, was `eligible`
-   bedeutet, und wird von Panel, `!los`, Statusseite und Ziehung gelesen.
-2. `drawWinner` aufteilen: Pool-Bildung (Filter + Gewicht) geht in den Core,
-   Zufall, Snapshot und Persistenz bleiben in der Engine.
-3. `tickPresentUsers` und `handleChatMessage` auf `delta`-Rückgaben umstellen,
-   das Schreiben von `watchtime_events` zentralisieren.
-4. `chat-ai.js` dem Core zuordnen.
-5. Die hartcodierten Regeltexte für `!los` und `!giveaway` in `statusText`/
-   `infoText` des Cores verschieben.
+1. ✅ `coinsFromSec`, `countWords` und die Regel-Logik von `getUserAggregate`
+   (`CORE.aggregate` — definiert `eligible`) in den Core. Die zwölf
+   Konfigurations-Accessoren bleiben als Redis-Zugriffe in der Engine,
+   beziehen aber Defaults und Grenzen aus `CORE.config` (eine Quelle);
+   sie wandern erst mit `ctx.kv` in Phase 2 vollständig.
+2. ✅ `drawWinner` aufgeteilt: Pool-Bildung (`CORE.buildPool`) im Core,
+   Zufall, Snapshot und Persistenz in der Engine.
+3. ✅ (Teil) Die Delta-Formeln (`CORE.tickDelta`/`chatDelta`, Multiplier) und
+   das Chat-Urteil (`CORE.chatMeaningful`) liegen im Core; das Schreiben von
+   `watchtime_events` war bereits zentral (`_logEvent`). Die volle
+   beschreibende Rückgabe (Engine wendet Deltas an) folgt mit der
+   Ingest-Verteilung in Phase 2, wo sie gebraucht wird.
+4. ✅ `chat-ai.js` → `cores/chat-ai.js`.
+5. ✅ Regeltexte `!los`/`!giveaway`/Anmelde-Antwort in `statusText`/
+   `infoText`/`joinReply` des Cores (inkl. `fmtDur`/`kw2`); server.js
+   sammelt nur noch Daten.
 
 Die Anzeigepfade ausserhalb des Panels (OBS-Overlay, `claim.js`, `archive.js`,
 `status.html`, `auditSummary()`) bleiben in Phase 1 bewusst unverändert

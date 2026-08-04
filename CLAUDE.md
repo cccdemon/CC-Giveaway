@@ -13,7 +13,7 @@ keine Abhängigkeit zu Spacefight, Alerts, HUD-Chat, Gamescenes, Stats oder Haul
 ## Mechanik (Spec)
 - **Viewtime pro Zuschauer.** **Coin-Basis ist per-Team konfigurierbar** (Admin: „1 Coin = X Std Viewtime", Redis `cfgDrawMinSec`, Default 7200s = 2h, `SECS_PER_COIN` nur noch Fallback). Derselbe Wert ist auch die Lostopf-Schwelle: **im Lostopf ab ≥1 Coin**. `coinsFromSec(sec, baseSec)`, `getCoinBaseSec(teamId)`.
 - **Chat = selber Pott wie Viewtime.** Jede sinnvolle Nachricht mit **>3 Wörtern** = **+2s** Viewtime (`CHAT_BONUS_SEC=2`, `CHAT_MIN_WORDS=4`), Cooldown gegen Spam. Viewtime-Multiplier gilt auch hier (×2 → +4s).
-- **KI-Bewertung (optional, per Team):** `services/giveaway/chat-ai.js` ersetzt NUR die Wortzählung — Provider `anthropic|openai|gemini`, Modell + eigener API-Key pro Team (verschlüsselt in `app_secrets`, `encryptKey`/`decryptKey`). **fail-open**: Timeout (`TIMEOUT_MS=4000`) oder Fehler → zurück auf Wortregel, Chat blockiert nie. Antwort ist ein Wort (JA/NEIN), Cache pro (Provider, Modell, Nachricht). Keys nie loggen, nie exportieren, nie ins Audit.
+- **KI-Bewertung (optional, per Team):** `services/giveaway/cores/chat-ai.js` ersetzt NUR die Wortzählung — Provider `anthropic|openai|gemini`, Modell + eigener API-Key pro Team (verschlüsselt in `app_secrets`, `encryptKey`/`decryptKey`). **fail-open**: Timeout (`TIMEOUT_MS=4000`) oder Fehler → zurück auf Wortregel, Chat blockiert nie. Antwort ist ein Wort (JA/NEIN), Cache pro (Provider, Modell, Nachricht). Keys nie loggen, nie exportieren, nie ins Audit.
 - **Viewtime-Multiplier:** Admin kann zeitlich begrenzt beschleunigen („nächste 15 min doppelte Viewtime", gilt auch für Chat) — time-boxed Faktor auf Tick + Chat-Bonus.
 - **Teilnahme:** Folge ≥2 der teilnehmenden Kanäle (konfigurierbar) + Viewtime + sinnvoller Chat. Lurken allein = keine Lose. Ab ≥1 Ticket per Keyword im Chat opt-in (= Zustimmung Teilnahmebedingungen).
 - **Ziehung:** Zufall gewichtet nach Ticketzahl. Gewinner 14 Tage Meldefrist, sonst Ersatz.
@@ -53,7 +53,8 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 - `services/bridge/server.js` — Streamerbot-Ingest + Redis-Router
 - `services/giveaway/server.js` — Giveaway REST + WS + Ticker
 - `services/giveaway/watchtime.js` — Coin/Ticket-Engine (testbar, ohne WS/HTTP)
-- `services/giveaway/chat-ai.js` — optionale KI-Chatbewertung + Key-Krypto
+- `services/giveaway/cores/watchtime-chat.js` — CORE_WatchtimeChatActivity: Regeln (Coins, Eligibility, Pool), Chat-Texte, config-Deklaration
+- `services/giveaway/cores/chat-ai.js` — optionale KI-Chatbewertung + Key-Krypto (gehört zum Core)
 - `services/giveaway/helix.js` — Twitch-Helix-Follow-Reconcile, Follower/User-ID-Cache, Token-Refresh
 - `services/admin/auth.js` — pure Auth-Helper (HMAC-signierte Cookie-Sessions, bcrypt), ohne express/pg/redis
 - `services/giveaway/public/giveaway-shared.js` — Shared-Lib (`CC.validate`, `CC.audit.summary`, Nav)

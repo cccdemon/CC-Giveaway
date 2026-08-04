@@ -145,7 +145,8 @@ class WatchtimeEngine {
   }
   async setFollowMin(teamId, n) {
     const t = sanitizeTeamId(teamId);
-    const v = Math.max(0, Math.min(10, parseInt(n, 10) || 0));
+    const c = CORE.config.followMin;   // Grenzen aus der Core-Deklaration
+    const v = Math.max(c.min, Math.min(c.max, parseInt(n, 10) || 0));
     await this.redis.set(K.cfgFollowMin(t), String(v));
     return v;
   }
@@ -159,7 +160,8 @@ class WatchtimeEngine {
   }
   async setCoinBaseSec(teamId, sec) {
     const t = sanitizeTeamId(teamId);
-    const v = Math.max(60, Math.min(360000, Math.round(parseFloat(sec) || 0)));  // 1min..100h
+    const c = CORE.config.coinBaseSec;   // 1min..100h, aus der Core-Deklaration
+    const v = Math.max(c.min, Math.min(c.max, Math.round(parseFloat(sec) || 0)));
     await this.redis.set(K.cfgDrawMinSec(t), String(v));
     return v;
   }
@@ -174,10 +176,11 @@ class WatchtimeEngine {
       const v = parseFloat(await this.redis.get(key(t)));
       return (Number.isFinite(v) && v >= min && v <= max) ? v : def;
     };
+    const cc = CORE.config;   // Defaults + Grenzen aus der Core-Deklaration
     return {
-      bonusSec: await num(K.cfgChatBonus, CHAT_BONUS_SEC, 0, 300),
-      minWords: await num(K.cfgChatWords, CHAT_MIN_WORDS, 1, 50),
-      cooldown: await num(K.cfgChatCool,  CHAT_COOLDOWN,  0, 3600),
+      bonusSec: await num(K.cfgChatBonus, cc.chatBonusSec.def, cc.chatBonusSec.min, cc.chatBonusSec.max),
+      minWords: await num(K.cfgChatWords, cc.chatMinWords.def, cc.chatMinWords.min, cc.chatMinWords.max),
+      cooldown: await num(K.cfgChatCool,  cc.chatCooldown.def, cc.chatCooldown.min, cc.chatCooldown.max),
     };
   }
   async setChatConfig(teamId, cfg = {}) {
@@ -189,9 +192,10 @@ class WatchtimeEngine {
       v = Math.max(min, Math.min(max, round ? Math.round(v) : v));
       await this.redis.set(key(t), String(v));
     };
-    await put(K.cfgChatBonus, cfg.bonusSec, 0, 300, false);
-    await put(K.cfgChatWords, cfg.minWords, 1, 50, true);
-    await put(K.cfgChatCool,  cfg.cooldown, 0, 3600, true);
+    const cc = CORE.config;
+    await put(K.cfgChatBonus, cfg.bonusSec, cc.chatBonusSec.min, cc.chatBonusSec.max, false);
+    await put(K.cfgChatWords, cfg.minWords, cc.chatMinWords.min, cc.chatMinWords.max, true);
+    await put(K.cfgChatCool,  cfg.cooldown, cc.chatCooldown.min, cc.chatCooldown.max, true);
     return this.getChatConfig(t);
   }
   async setMultiplier(teamId, factor, seconds) {
@@ -257,7 +261,7 @@ class WatchtimeEngine {
       const channels = await this.getChannels(t);
       const mult = await this.getMultiplier(t);
       const base = await this.getCoinBaseSec(t);
-      const inc  = TICK_SEC * mult;
+      const inc  = CORE.tickDelta({ tickSec: TICK_SEC, multiplier: mult });
       for (const ch of channels) {
         const users = await this.redis.smembers(K.chIndex(t, ch));
         for (const u of users) {
@@ -319,7 +323,7 @@ class WatchtimeEngine {
     if (lastTs && (now - parseInt(lastTs)) < chatCfg.cooldown) return null;
 
     const mult = await this.getMultiplier(t);
-    const inc  = chatCfg.bonusSec * mult;
+    const inc  = CORE.chatDelta({ bonusSec: chatCfg.bonusSec, multiplier: mult });
     await this.redis.set(chatKey, String(now), 'EX', 86400);
     const newSec = parseFloat(await this.redis.incrbyfloat(K.chWatch(t, ch, u), inc));
     await this._logEvent(t, u, 'chat_bonus', inc, sid, ch);

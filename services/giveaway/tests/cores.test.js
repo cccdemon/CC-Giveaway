@@ -149,6 +149,56 @@ test('Phase 1: config-Deklaration trägt die alten Defaults', () => {
   assert.strictEqual(CORE.config.followMin.max, 10);
 });
 
+test('Phase 1: Chat-Texte byte-gleich zum alten server.js-Stand', () => {
+  const host = 'team.raumdock.org', teamId = 'chaoscrew';
+
+  // !giveaway (vorher giveawayInfoText in server.js)
+  assert.strictEqual(
+    CORE.infoText({ keyword: '!basher', followMin: 2, drawMinSec: 7200, host, teamId }),
+    '🎁 Team-Giveaway: schau auf EINEM der Team-Kanäle zu — die Zuschauzeit zählt zusammen (2 Std = 1 Punkt), '
+    + 'sinnvoller Chat (>3 Wörter) gibt Bonus. Mitmachen: schreib "!basher" im Chat (= anmelden). '
+    + 'Für den Lostopf: folge ≥2 Kanälen + mind. 1 Punkt (2 Std Zuschauzeit). '
+    + 'Befehle: !los = dein Status & Chance · !giveaway = diese Info. '
+    + 'Regeln: team.raumdock.org/viewer/terms?team=chaoscrew | Status: team.raumdock.org/viewer/status');
+
+  // !los: geschlossen / berechtigt / nicht angemeldet (vorher time_cmd in server.js)
+  const suffix = ' | Status: team.raumdock.org/viewer/status | Regeln: team.raumdock.org/viewer/terms?team=chaoscrew';
+  assert.strictEqual(
+    CORE.statusText({ username: 'bob', open: false, agg: null, keyword: '', poolTotal: 0, host, teamId }),
+    '@bob Kein Giveaway aktiv.' + suffix);
+
+  const eligibleAgg = { eligible: true, registered: true, totalCoins: 2.5, totalWatchSec: 18000,
+                        channelsQualified: 2, followMin: 2, drawMinSec: 7200 };
+  assert.strictEqual(
+    CORE.statusText({ username: 'bob', open: true, agg: eligibleAgg, keyword: '!basher', poolTotal: 10, host, teamId }),
+    '@bob 🎟 2.50 Punkte | folgt 2/2 ✓ | Chance 25.0% | im Lostopf ✅' + suffix);
+
+  const unregAgg = { eligible: false, registered: false, totalCoins: 0.5, totalWatchSec: 3600,
+                     channelsQualified: 1, followMin: 2, drawMinSec: 7200 };
+  assert.strictEqual(
+    CORE.statusText({ username: 'bob', open: true, agg: unregAgg, keyword: '!basher', poolTotal: 0, host, teamId }),
+    '@bob 🎟 0.50 Punkte – schreib "!basher" um dich anzumelden. Für den Lostopf: folge ≥2 Kanälen + 2 Std Viewtime.' + suffix);
+
+  // Anmelde-Antwort (vorher chat_msg/gw_join in server.js)
+  assert.strictEqual(
+    CORE.joinReply({ username: 'bob', agg: { eligible: true, coins: 1.25 } }),
+    '@bob Du bist dabei & im Lostopf ✅ (1.25 Punkte). Weiter zuschauen + sinnvoll chatten erhöht deine Chance!');
+  assert.strictEqual(
+    CORE.joinReply({ username: 'bob', agg: { eligible: false, channelsFollowed: 1, followMin: 2,
+                                             totalWatchSec: 0, drawMinSec: 7200 } }),
+    '@bob Angemeldet ✅ — für den Lostopf noch nötig: folge mind. 2 Kanälen + sammle 2 Std Zuschauzeit (zuschauen + sinnvoll chatten). Stand: !los');
+});
+
+test('Phase 1: fmtDur/tickDelta/chatDelta unverändert', () => {
+  assert.strictEqual(CORE.fmtDur(7200), '2 Std');
+  assert.strictEqual(CORE.fmtDur(1800), '30 Min');
+  assert.strictEqual(CORE.fmtDur(5400), '1.5 Std');
+  assert.strictEqual(CORE.kw2(1), 'Kanal');
+  assert.strictEqual(CORE.kw2(2), 'Kanälen');
+  assert.strictEqual(CORE.tickDelta({ tickSec: 60, multiplier: 2 }), 120);
+  assert.strictEqual(CORE.chatDelta({ bonusSec: 2, multiplier: 1.5 }), 3);
+});
+
 test('Phase 1: coinsFromSec Fallback bei fehlender Basis unverändert', () => {
   for (const sec of [0, 1, 3599, 3600, 7200, 10800, 123456]) {
     assert.strictEqual(CORE.coinsFromSec(sec), refCoinsFromSec(sec));
