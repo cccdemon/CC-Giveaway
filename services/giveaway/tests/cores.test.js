@@ -208,6 +208,7 @@ test('Phase 2a: Registry löst Core-IDs auf, Fallback = heutiger Core', () => {
   assert.deepStrictEqual(reg.listCores(), [
     { id: 'CORE_WatchtimeChatActivity', label: 'Zuschauzeit & Chat' },
     { id: 'CORE_CurrentViewers',        label: 'Sofortverlosung' },
+    { id: 'CORE_TicketBuy',             label: 'Los-Einsatz' },
   ]);
 });
 

@@ -523,11 +523,24 @@ einziger neue Zuschauer-Interaktion braucht.
 > (Gegenbuchung, kein DELETE), DSGVO komplett: Auskunft
 > (`collectSubjectData` + Abschnitt in `meine-daten.html`) und Löschung
 > (`eraseSubject`: Restsaldo ausbuchen + pseudonymisieren — dokumentierte
-> Ausnahme vom Engine-bucht-Prinzip). **Offen (4b/4c):** `giveaway_prizes` +
-> `prize_wagers`, earn-Hook (TicketBuy-Instanz-Close → Ledger), Core-Modul
-> `cores/ticket-buy.js` mit `buildPool` je Preis + `afterDraw`-Abbuchung
-> aller Setzer, Setz-Web-Seite (claim-Muster, Caddy-Whitelist!) + `!setzen`,
-> Chat-Texte.
+> Ausnahme vom Engine-bucht-Prinzip).
+>
+> **Teilschritt 4b umgesetzt:** `giveaway_prizes` + `prize_wagers`
+> (append-only, Rücknahme = negative Zeile, DSGVO-Pfade mitgezogen),
+> `cores/ticket-buy.js` (accrual 'watchtime', `parseWager`, `buildPool` je
+> Preis, Texte), Engine: `placeWager`/`prizeStake`/`getPrizeStakes`/
+> `availableCredit` (Ledger + Live-Anteil laufender Instanzen),
+> `settleTicketBuyInstance` (Close → earn ins Ledger → Instanz abräumen,
+> „Guthaben wandert"). Ziehung je Preis über den normalen Engine-Pfad
+> (`drawWinner` + `prizeId`, Core-/Preis-Stempel in `giveaway_draws`);
+> danach setzt `status='drawn'` **in derselben Transaktion** — Einsätze
+> aller Setzer sind gebunden (afterDraw, §5.2). Setz-Befehl je Instanz
+> **per WebUI konfigurierbar** (Panel-Feld beim Start + `gw_set_wager_cmd`,
+> Redis `gWagerCmd`, Default `!setzen`); Chat: `<cmd> <preis> <anzahl>`,
+> `<cmd> <preis> 0` = Rücknahme, `<cmd>` = Hilfe mit Preisliste. Panel:
+> Instanz-Typauswahl (Kampagne/Sofort/Los), 🎁 Preis anlegen, ⌨ Befehl
+> ändern. **Offen (4c):** öffentliche Setz-/Guthaben-Seite
+> (claim-Muster, Caddy-Whitelist), Preisbild, `!los`-Integration.
 
 Pflichtpunkte über den Core hinaus:
 

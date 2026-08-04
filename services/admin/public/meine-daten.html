@@ -152,6 +152,8 @@ function render(d) {
       + sec('Gewinne', d.draws)
       + sec('Guthaben-Bewegungen', d.creditLedger,
             'Erspielte Lose und Einsätze (nur bei Los-Giveaways). Guthaben verfällt nach 12 Monaten ohne Bewegung.')
+      + sec('Einsätze auf Preise', d.prizeWagers,
+            'Gesetzte und zurückgenommene Lose je Preis (negative Beträge = Rücknahme).')
       + sec('Zustimmung zu den Nutzungsbedingungen', d.tosAcceptances)
       + sec('Protokolleinträge zu dir', d.auditEntries,
             'Verwaltungshandlungen, bei denen du das Ziel warst — etwa eine manuelle Coin-Gutschrift.')

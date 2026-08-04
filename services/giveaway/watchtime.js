@@ -20,6 +20,7 @@ const { randomInt, createHash } = require('crypto');
 // CORE bleibt der Default (Primary + Bestand).
 const CORE = require('./cores/watchtime-chat');
 const { getCore } = require('./cores/index.js');
+const { CreditLedger } = require('./credit.js');
 
 // ── Anti-Abuse: deterministische, reproduzierbare Schwellen ──
 const ABUSE = {
@@ -88,6 +89,7 @@ const K = {
   gChanList: (t, g) => `${K.GP(t, g)}channels`,
   gCore:     (t, g) => `${K.GP(t, g)}core`,      // Core-ID der Instanz (Phase 3)
   gWinEnd:   (t, g) => `${K.GP(t, g)}win_end`,   // Fensterende (Unix-Sek., Sofortverlosung)
+  gWagerCmd: (t, g) => `${K.GP(t, g)}wager_cmd`, // Setz-Befehl (Phase 4b, WebUI-konfigurierbar)
   abuseHist:  (t, u) => `${TP(t)}gw:abuse:hist:${u}`,     // letzte Msg-Hashes
   abuseTimes: (t, u) => `${TP(t)}gw:abuse:times:${u}`,    // letzte Timestamps (Rate)
 };
@@ -136,6 +138,7 @@ class WatchtimeEngine {
     this.redis   = redis;
     this.pg      = pg;
     this.aiJudge = aiJudge;
+    this.credit  = new CreditLedger(pg);   // Guthaben-Konto (CORE_TicketBuy)
   }
 
   // ── Team-Kanäle (aus team_members, gecacht) ─────────────
@@ -442,6 +445,27 @@ class WatchtimeEngine {
     const targets = active.filter(g => !g.channels || g.channels.includes(ch));
     if (!targets.length) return null;
 
+    // Phase 4b: Setz-Befehl (per Instanz konfigurierbar — WebUI/gWagerCmd).
+    // Ein Kommando ist keine Chat-Aktivität: zählt weder als Nachricht noch
+    // für den Bonus; es wird gebucht und direkt beantwortet.
+    for (const g of targets) {
+      if (!g.gid || getCore(g.core).id !== 'CORE_TicketBuy') continue;
+      const TB = getCore(g.core);
+      const cmd = (await this.redis.get(K.gWagerCmd(t, g.gid))) || TB.config.wagerCmd.def;
+      const w = TB.parseWager(cleanMsg, cmd);
+      if (!w) continue;
+      if (await this.redis.get(K.gwBanned(t, u)) === '1') return null;
+      if (w.help) return { chatReply: TB.helpText(cmd, await this.listPrizes(t)), channel: ch };
+      const res = await this.placeWager(t, g.gid, u, w.prizeId, w.amount);
+      if (res.error) return { chatReply: TB.wagerErrText(u, res.error), channel: ch };
+      if (res.refunded !== undefined) {
+        return { chatReply: TB.retractOkText({ username: u, prizeTitle: res.prizeTitle,
+                 refunded: res.refunded, balance: res.balance }), channel: ch };
+      }
+      return { chatReply: TB.wagerOkText({ username: u, prizeTitle: res.prizeTitle,
+               amount: res.amount, stake: res.stake, balance: res.balance }), channel: ch };
+    }
+
     // Keyword-Anmeldung je Giveaway (Keyword kann je Instanz abweichen;
     // Primary nutzt den Legacy-Schlüssel).
     let regResult = null, matchedAny = false;
@@ -694,7 +718,7 @@ class WatchtimeEngine {
   // ── Phase 2c: Sekundär-Instanz (z.B. Sofortverlosung neben der Kampagne) ──
   // Läuft ausschließlich im g:-Namespace; channels = Teilmenge der
   // Team-Kanäle (leer/null = alle).
-  async openGiveawayInstance(teamId, gid, { keyword = '', channels = null, core = null, windowSec = 0 } = {}) {
+  async openGiveawayInstance(teamId, gid, { keyword = '', channels = null, core = null, windowSec = 0, wagerCmd = '' } = {}) {
     const t = sanitizeTeamId(teamId);
     this.validateSessionId(gid);
     if (!t) throw new Error('Invalid teamId');
@@ -712,6 +736,7 @@ class WatchtimeEngine {
     if (Number.isFinite(win) && win > 0) {
       await this.redis.set(K.gWinEnd(t, gid), String(Math.floor(Date.now() / 1000) + win));
     }
+    if (wagerCmd) await this.redis.set(K.gWagerCmd(t, gid), sanitizeStr(wagerCmd, 30).toLowerCase());
     await this.redis.sadd(K.openTeams(), t);
     console.log(`[WTE] [${t}] instance ${gid} opened, core=${core || CORE.id}, keyword="${keyword}"`);
   }
@@ -782,6 +807,114 @@ class WatchtimeEngine {
     console.log(`[WTE] [${t}] instance ${gid} closed`);
   }
 
+  // ── Phase 4b: CORE_TicketBuy — Preise, Einsätze, Guthaben ──
+  async addPrize(teamId, gid, { title, description = '', wagerEndTs = null } = {}) {
+    const t = sanitizeTeamId(teamId);
+    const r = await this.pg.query(
+      `INSERT INTO giveaway_prizes (team_id, session_id, title, description, wager_end)
+       VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+      [t, gid || null, sanitizeStr(title, 100), sanitizeStr(description, 500),
+       wagerEndTs ? new Date(wagerEndTs * 1000) : null]);
+    return r.rows[0].id;
+  }
+
+  async listPrizes(teamId, { openOnly = true } = {}) {
+    const t = sanitizeTeamId(teamId);
+    const r = await this.pg.query(
+      `SELECT p.id, p.session_id, p.title, p.description, p.wager_end, p.status,
+              COALESCE((SELECT SUM(w.amount) FROM prize_wagers w WHERE w.prize_id = p.id), 0) AS total_stake
+       FROM giveaway_prizes p WHERE p.team_id=$1` + (openOnly ? ` AND p.status='open'` : '') +
+      ` ORDER BY p.id`, [t]);
+    return r.rows;
+  }
+
+  async prizeStake(prizeId, username) {
+    const r = await this.pg.query(
+      `SELECT COALESCE(SUM(amount),0) AS stake FROM prize_wagers WHERE prize_id=$1 AND username=$2`,
+      [prizeId, username]);
+    return Math.round((parseFloat(r.rows[0].stake) || 0) * 10000) / 10000;
+  }
+
+  // Verfügbares Guthaben = Ledger-Saldo + live erspielter Stand laufender
+  // TicketBuy-Instanzen. Der Live-Anteil wird beim Close als earn gebucht
+  // (settleTicketBuyInstance) — bis dahin darf der Ledger-Saldo durch
+  // Einsätze entsprechend ins Minus gehen, die Summe bleibt ≥ 0.
+  async availableCredit(teamId, username) {
+    const t = sanitizeTeamId(teamId), u = sanitizeUsername(username);
+    let avail = await this.credit.balance(t, u);
+    const base = await this.getCoinBaseSec(t);
+    for (const g of await this._activeGiveaways(t)) {
+      if (getCore(g.core).id !== 'CORE_TicketBuy' || !g.gid) continue;
+      const channels = g.channels || await this.getChannels(t);
+      let sec = 0;
+      for (const ch of channels) sec += parseFloat(await this.redis.get(K.gWatch(t, g.gid, ch, u)) || '0');
+      avail += coinsFromSec(sec, base);
+    }
+    return Math.round(avail * 10000) / 10000;
+  }
+
+  // Einsatz setzen (amount ≥ 1) oder komplett zurücknehmen (amount === 0).
+  // Bucht Ledger UND prize_wagers — beides append-only, eine Stelle.
+  async placeWager(teamId, gid, username, prizeId, amount) {
+    const t = sanitizeTeamId(teamId), u = sanitizeUsername(username);
+    const pr = await this.pg.query(
+      `SELECT id, title, status, wager_end FROM giveaway_prizes WHERE id=$1 AND team_id=$2`, [prizeId, t]);
+    if (!pr.rowCount || pr.rows[0].status !== 'open') return { error: 'no_prize' };
+    const prize = pr.rows[0];
+    if (prize.wager_end && new Date(prize.wager_end).getTime() < Date.now()) return { error: 'wager_closed' };
+
+    if (amount === 0) {   // Rücknahme: kompletter Einsatz zurück (bis Einsatz-Ende)
+      const stake = await this.prizeStake(prizeId, u);
+      if (stake <= 0) return { error: 'nothing_to_refund' };
+      await this.pg.query(`INSERT INTO prize_wagers (prize_id, team_id, username, amount) VALUES ($1,$2,$3,$4)`,
+        [prizeId, t, u, -stake]);
+      await this.credit.book(t, u, 'refund', stake, { refPrize: prizeId });
+      return { refunded: stake, prizeTitle: prize.title, balance: await this.availableCredit(t, u) };
+    }
+
+    const amt = Math.floor(amount);
+    if (!Number.isFinite(amt) || amt <= 0) return { error: 'no_prize' };
+    if (await this.availableCredit(t, u) < amt) return { error: 'no_credit' };
+    await this.pg.query(`INSERT INTO prize_wagers (prize_id, team_id, username, amount) VALUES ($1,$2,$3,$4)`,
+      [prizeId, t, u, amt]);
+    await this.credit.book(t, u, 'wager', amt, { refPrize: prizeId });
+    await this._touchUser(t, u);
+    return { amount: amt, stake: await this.prizeStake(prizeId, u), prizeTitle: prize.title,
+             balance: await this.availableCredit(t, u) };
+  }
+
+  // Pool je Preis: Einsatzsumme je User (> 0). Gewicht = Einsatz (§5.2).
+  async getPrizeStakes(teamId, prizeId) {
+    const t = sanitizeTeamId(teamId);
+    const r = await this.pg.query(
+      `SELECT username, SUM(amount) AS stake FROM prize_wagers
+       WHERE prize_id=$1 AND team_id=$2 GROUP BY username HAVING SUM(amount) > 0`, [prizeId, t]);
+    return r.rows.map(x => ({ username: x.username, stake: Math.round(parseFloat(x.stake) * 10000) / 10000 }));
+  }
+
+  // Close einer TicketBuy-Instanz: erspielten Stand als earn ins Ledger
+  // („Guthaben wandert", §10.1), danach Instanz-Keys vollständig abräumen —
+  // der Zustand lebt ab jetzt ausschließlich im Journal.
+  async settleTicketBuyInstance(teamId, gid) {
+    const t = sanitizeTeamId(teamId);
+    const base = await this.getCoinBaseSec(t);
+    let channels = null;
+    try { const raw = await this.redis.get(K.gChanList(t, gid)); if (raw) channels = JSON.parse(raw); } catch { /* alle */ }
+    if (!Array.isArray(channels) || !channels.length) channels = await this.getChannels(t);
+    let users = 0, total = 0;
+    for (const u of await this.redis.smembers(K.gwUsers(t))) {
+      let sec = 0;
+      for (const ch of channels) sec += parseFloat(await this.redis.get(K.gWatch(t, gid, ch, u)) || '0');
+      const coins = coinsFromSec(sec, base);
+      if (coins <= 0) continue;
+      await this.credit.book(t, u, 'earn', coins, { refSession: gid });
+      users++; total += coins;
+    }
+    await this.cleanupGiveawayInstance(t, gid);
+    console.log(`[WTE] [${t}] ticketbuy ${gid} settled: ${users} Konten, +${total.toFixed(2)} Lose`);
+    return { users, total: Math.round(total * 10000) / 10000 };
+  }
+
   // Räumt eine (gezogene/geschlossene) Instanz vollständig aus Redis —
   // keine g:-Leichen (§6). Nach der Auto-Ziehung der Sofortverlosung
   // aufgerufen; für manuell geschlossene Instanzen erst nach der Ziehung.
@@ -797,7 +930,7 @@ class WatchtimeEngine {
       }
     }
     pipeline.del(K.gOpen(t, gid), K.gPaused(t, gid), K.gKw(t, gid), K.gChanList(t, gid),
-                 K.gCore(t, gid), K.gWinEnd(t, gid), K.gMult(t, gid));
+                 K.gCore(t, gid), K.gWinEnd(t, gid), K.gMult(t, gid), K.gWagerCmd(t, gid));
     pipeline.srem(K.gwSet(t), gid);
     await pipeline.exec();
     console.log(`[WTE] [${t}] instance ${gid} cleaned`);
@@ -813,10 +946,20 @@ class WatchtimeEngine {
     // DESSEN Core (Phase 3: Sofortverlosung hat weder Coins noch Follows).
     const drawCoreId = await this.getCoreId(t, sessionId);
     const drawCore = getCore(drawCoreId);
-    const participants = drawCore.accrual === 'none'
-      ? await this.getInstantParticipants(t, sessionId)
-      : await this.getAllParticipants(t, sessionId || undefined);
-    const pool = drawCore.buildPool(participants);
+    let poolSource, drawPrizeId = null;
+    if (drawCoreId === 'CORE_TicketBuy') {
+      // TicketBuy zieht JE PREIS: Gewicht = gesetzte Lose (§5.2).
+      drawPrizeId = parseInt(opts.prizeId, 10);
+      if (!Number.isFinite(drawPrizeId) || drawPrizeId <= 0) {
+        throw new Error('CORE_TicketBuy zieht je Preis — prizeId fehlt');
+      }
+      poolSource = await this.getPrizeStakes(t, drawPrizeId);
+    } else if (drawCore.accrual === 'none') {
+      poolSource = await this.getInstantParticipants(t, sessionId);
+    } else {
+      poolSource = await this.getAllParticipants(t, sessionId || undefined);
+    }
+    const pool = drawCore.buildPool(poolSource);
     if (!pool.length) return null;
     const eligible = pool.map(e => e.meta);
 
@@ -845,11 +988,11 @@ class WatchtimeEngine {
       const ins = await client.query(`
         INSERT INTO giveaway_draws
           (session_id, winner, winner_coins, winner_watch_sec, total_coins,
-           eligible_count, rand_value, draw_index, is_test, prize, eligible_snapshot, core)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id
-      `, [sessionId || null, winner.username, winner.totalCoins, Math.round(winner.totalWatchSec),
+           eligible_count, rand_value, draw_index, is_test, prize, eligible_snapshot, core, prize_id)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id
+      `, [sessionId || null, winner.username, winner.totalCoins, Math.round(winner.totalWatchSec || 0),
           totalRounded, eligible.length, randRounded, drawIndex, isTest, prize, JSON.stringify(snapshot),
-          drawCoreId]);   // welche Mechanik gezogen hat — Nachvollziehbarkeit (§7)
+          drawCoreId, drawPrizeId]);   // Mechanik + Preis — Nachvollziehbarkeit (§7)
       drawId = ins.rows[0].id;
       if (!isTest) {
         let prevWinner = null;
@@ -861,7 +1004,11 @@ class WatchtimeEngine {
                               [winner.username, winner.username]);
         }
         if (sessionId) await client.query(`UPDATE sessions SET winner=$1, winner_watch_sec=$2, winner_coins=$3 WHERE id=$4`,
-                                           [winner.username, Math.round(winner.totalWatchSec), winner.totalCoins, sessionId]);
+                                           [winner.username, Math.round(winner.totalWatchSec || 0), winner.totalCoins, sessionId]);
+        // afterDraw (§5.2, in DERSELBEN Transaktion): der Preis ist gezogen,
+        // damit sind die Einsätze ALLER Setzer gebunden — keine Rücknahme
+        // mehr möglich (placeWager prüft status='open').
+        if (drawPrizeId) await client.query(`UPDATE giveaway_prizes SET status='drawn' WHERE id=$1`, [drawPrizeId]);
       }
       await client.query('COMMIT');
     } catch (e) {
@@ -869,9 +1016,9 @@ class WatchtimeEngine {
     } finally { client.release(); }
 
     console.log(`[WTE] [${t}] Draw #${drawId}: ${winner.username} won, coins=${winner.totalCoins}, eligible=${eligible.length}, test=${isTest}`);
-    return { winner: winner.username, coins: winner.totalCoins, watchSec: Math.round(winner.totalWatchSec),
+    return { winner: winner.username, coins: winner.totalCoins, watchSec: Math.round(winner.totalWatchSec || 0),
              drawId, drawIndex, sessionId, eligibleCount: eligible.length,
-             total: totalRounded, rand: randRounded, isTest, prize };
+             total: totalRounded, rand: randRounded, isTest, prize, prizeId: drawPrizeId };
   }
 
   async closeGiveaway(teamId, sessionId) {

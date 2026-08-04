@@ -37,13 +37,59 @@ function makeRedis() {
   return api;
 }
 function makePg(channels) {
+  // In-Memory-Tabellen für die TicketBuy-Pfade (Phase 4b) — die übrigen
+  // Queries laufen wie bisher auf die Dummy-Antwort.
+  const prizes = [], wagers = [], ledger = [];
+  let prizeSeq = 1;
+  async function query(sql, p = []) {
+    if (/from team_members/i.test(sql)) return { rows: (channels || []).map(c => ({ channel: c })) };
+    if (/INSERT INTO giveaway_prizes/.test(sql)) {
+      const row = { id: prizeSeq++, team_id: p[0], session_id: p[1], title: p[2],
+                    description: p[3], wager_end: p[4], status: 'open' };
+      prizes.push(row);
+      return { rows: [{ id: row.id }], rowCount: 1 };
+    }
+    if (/SELECT id, title, status, wager_end FROM giveaway_prizes/.test(sql)) {
+      const r = prizes.filter(x => x.id === p[0] && x.team_id === p[1]);
+      return { rows: r, rowCount: r.length };
+    }
+    if (/FROM giveaway_prizes p WHERE/.test(sql)) {
+      return { rows: prizes.filter(x => x.team_id === p[0] && (!/status='open'/.test(sql) || x.status === 'open'))
+        .map(x => ({ ...x, total_stake: wagers.filter(w => w.prize_id === x.id).reduce((s, w) => s + w.amount, 0) })) };
+    }
+    if (/INSERT INTO prize_wagers/.test(sql)) {
+      wagers.push({ prize_id: p[0], team_id: p[1], username: p[2], amount: parseFloat(p[3]) });
+      return { rowCount: 1, rows: [] };
+    }
+    if (/AS stake FROM prize_wagers WHERE prize_id=\$1 AND username=\$2/.test(sql)) {
+      const stake = wagers.filter(w => w.prize_id === p[0] && w.username === p[1]).reduce((s, w) => s + w.amount, 0);
+      return { rows: [{ stake }] };
+    }
+    if (/GROUP BY username HAVING/.test(sql)) {
+      const by = new Map();
+      for (const w of wagers) if (w.prize_id === p[0] && w.team_id === p[1])
+        by.set(w.username, (by.get(w.username) || 0) + w.amount);
+      return { rows: [...by.entries()].filter(([, s]) => s > 0).map(([username, stake]) => ({ username, stake })) };
+    }
+    if (/INSERT INTO credit_ledger/.test(sql)) {
+      ledger.push({ team_id: p[0], username: p[1], entry_type: p[2], amount: parseFloat(p[3]) });
+      return { rowCount: 1, rows: [] };
+    }
+    if (/SELECT COALESCE\(SUM\(amount\),0\) AS bal FROM credit_ledger/.test(sql)) {
+      const bal = ledger.filter(r => r.team_id === p[0] && r.username === p[1]).reduce((s, r) => s + r.amount, 0);
+      return { rows: [{ bal }] };
+    }
+    return { rows: [{ n: 0 }], rowCount: 1 };
+  }
   return {
-    async query(sql) {
-      if (/from team_members/i.test(sql)) return { rows: (channels || []).map(c => ({ channel: c })) };
-      return { rows: [{ n: 0 }], rowCount: 1 };
-    },
+    prizes, wagers, ledger,
+    query,
     async connect() {
-      return { async query(sql) {
+      return { async query(sql, p = []) {
+        if (/UPDATE giveaway_prizes SET status='drawn'/.test(sql)) {
+          const pr = prizes.find(x => x.id === p[0]); if (pr) pr.status = 'drawn';
+          return { rowCount: pr ? 1 : 0, rows: [] };
+        }
         if (/RETURNING id/.test(sql)) return { rows: [{ id: 1 }] };
         if (/COUNT/.test(sql)) return { rows: [{ n: 0 }] };
         if (/SELECT winner/.test(sql)) return { rows: [{}] };
@@ -610,4 +656,94 @@ test('phase3: windowEndsAt steht in listGiveaways', async () => {
   assert.equal(g.core, 'CORE_CurrentViewers');
   assert.ok(g.windowEndsAt > Math.floor(Date.now() / 1000));
   assert.ok(g.windowEndsAt <= Math.floor(Date.now() / 1000) + 61);
+});
+
+// ── Phase 4b: CORE_TicketBuy (Preise, Einsätze, Guthaben) ─
+
+test('phase4b: earn beim Close - Guthaben wandert ins Ledger', async () => {
+  const e = engine();
+  await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy', wagerCmd: '!setzen' });
+  await e.redis.set(K.gWatch(TEAM, 'sess_2', 'justcallmedeimos', 'bob'), String(SECS_PER_COIN * 2));
+  await e.redis.sadd(K.gwUsers(TEAM), 'bob');
+  const s = await e.settleTicketBuyInstance(TEAM, 'sess_2');
+  assert.equal(s.users, 1);
+  assert.equal(s.total, 2);
+  assert.equal(await e.credit.balance(TEAM, 'bob'), 2);
+  assert.equal(await e.redis.get(K.gWatch(TEAM, 'sess_2', 'justcallmedeimos', 'bob')), null);   // aufgeräumt
+});
+
+test('phase4b: setzen/zuruecknehmen bucht Ledger UND wagers, prueft Guthaben', async () => {
+  const e = engine();
+  await e.credit.book(TEAM, 'bob', 'earn', 5);
+  const prizeId = await e.addPrize(TEAM, null, { title: 'Headset' });
+  let r = await e.placeWager(TEAM, null, 'bob', prizeId, 3);
+  assert.equal(r.stake, 3);
+  assert.equal(r.balance, 2);
+  r = await e.placeWager(TEAM, null, 'bob', prizeId, 3);          // mehr als übrig
+  assert.equal(r.error, 'no_credit');
+  r = await e.placeWager(TEAM, null, 'bob', prizeId, 0);          // Rücknahme komplett
+  assert.equal(r.refunded, 3);
+  assert.equal(await e.credit.balance(TEAM, 'bob'), 5);
+  r = await e.placeWager(TEAM, null, 'bob', prizeId, 0);
+  assert.equal(r.error, 'nothing_to_refund');
+});
+
+test('phase4b: Ziehung je Preis, Gewicht = Einsatz, afterDraw bindet Einsaetze', async () => {
+  const e = engine();
+  await e.credit.book(TEAM, 'bob', 'earn', 10);
+  await e.credit.book(TEAM, 'alice', 'earn', 10);
+  const p1 = await e.addPrize(TEAM, null, { title: 'Headset' });
+  const p2 = await e.addPrize(TEAM, null, { title: 'Maus' });
+  await e.placeWager(TEAM, null, 'bob', p1, 4);
+  await e.placeWager(TEAM, null, 'alice', p2, 2);                 // anderer Preis
+  await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy' });
+  const r = await e.drawWinner(TEAM, 'sess_2', { prizeId: p1 });
+  assert.equal(r.winner, 'bob');                                  // alice setzt auf p2, nicht im Pool
+  assert.equal(r.coins, 4);                                       // Gewicht = Einsatz
+  assert.equal(r.prizeId, p1);
+  assert.equal(e.pg.prizes.find(x => x.id === p1).status, 'drawn');   // afterDraw in der TX
+  const late = await e.placeWager(TEAM, null, 'bob', p1, 0);      // Rücknahme nach Ziehung
+  assert.equal(late.error, 'no_prize');                           // gebunden
+});
+
+test('phase4b: Ziehung ohne prizeId wirft (TicketBuy zieht je Preis)', async () => {
+  const e = engine();
+  await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy' });
+  await assert.rejects(() => e.drawWinner(TEAM, 'sess_2', {}), /prizeId/);
+});
+
+test('phase4b: Setz-Befehl per Chat, konfigurierbarer Befehl', async () => {
+  const e = engine();
+  await e.credit.book(TEAM, 'bob', 'earn', 5);
+  await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy', wagerCmd: '!lose' });
+  const prizeId = await e.addPrize(TEAM, 'sess_2', { title: 'Headset' });
+  // konfigurierter Befehl wirkt:
+  let r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', `!lose ${prizeId} 2`, true);
+  assert.ok(r.chatReply.includes('✅'));
+  assert.equal(await e.prizeStake(prizeId, 'bob'), 2);
+  // Default-Befehl wirkt NICHT (Instanz hat !lose konfiguriert):
+  r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', `!setzen ${prizeId} 1`, true);
+  assert.ok(!r || !r.chatReply);
+  // Hilfe ohne Argumente:
+  r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', '!lose', true);
+  assert.ok(r.chatReply.includes('Lose setzen'));
+  // Rücknahme per Chat:
+  r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', `!lose ${prizeId} 0`, true);
+  assert.ok(r.chatReply.includes('↩'));
+  assert.equal(await e.prizeStake(prizeId, 'bob'), 0);
+});
+
+test('phase4b: verfuegbares Guthaben = Ledger + Live-Stand laufender Instanz', async () => {
+  const e = engine();
+  await e.credit.book(TEAM, 'bob', 'earn', 1);
+  await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy' });
+  await e.redis.set(K.gWatch(TEAM, 'sess_2', 'justcallmedeimos', 'bob'), String(SECS_PER_COIN));
+  assert.equal(await e.availableCredit(TEAM, 'bob'), 2);          // 1 Ledger + 1 live
+  const prizeId = await e.addPrize(TEAM, 'sess_2', { title: 'Headset' });
+  const r = await e.placeWager(TEAM, 'sess_2', 'bob', prizeId, 2);   // gegen Live-Anteil
+  assert.equal(r.stake, 2);
+  assert.equal(await e.credit.balance(TEAM, 'bob'), -1);          // interimistisch negativ
+  await e.redis.sadd(K.gwUsers(TEAM), 'bob');
+  await e.settleTicketBuyInstance(TEAM, 'sess_2');                // earn +1 → Summe wieder 0
+  assert.equal(await e.credit.balance(TEAM, 'bob'), 0);
 });

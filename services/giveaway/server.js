@@ -249,7 +249,7 @@ async function memberChannel(login, teamId) {
 const AUDIT_SKIP = new Set([
   'gw_get_channels', 'gw_get_multiplier', 'gw_get_stream_settings',
   'gw_get_keyword', 'gw_get_ingest_tokens', 'gw_get_ai_settings', 'gw_list_ai_models',
-  'gw_list_giveaways',
+  'gw_list_giveaways', 'gw_list_prizes',
 ]);
 
 // Obergrenze gleichzeitiger Giveaways je Team (Entscheidung §10.2:
@@ -633,6 +633,7 @@ const MEMBER_CMDS = new Set([
   'gw_get_channels', 'gw_get_multiplier', 'gw_get_stream_settings', 'gw_get_keyword',
   'gw_get_ingest_tokens', 'gw_gen_ingest_token', 'gw_get_ai_settings',
   'gw_open', 'gw_pause', 'gw_resume', 'gw_set_multiplier',
+  'gw_list_giveaways', 'gw_list_prizes',
 ]);
 
 // Abgelehnte Versuche gehoeren ins Protokoll — aber das Admin-Panel pollt die
@@ -774,24 +775,32 @@ async function runAdminCmd(send, msg, meta, ctx) {
         const wc = coreMod.config.windowSec;
         windowSec = Math.max(wc.min, Math.min(wc.max, parseInt(msg.windowSec, 10) || wc.def));
       }
+      // TicketBuy: Setz-Befehl kommt aus der WebUI (Default aus der Core-Config).
+      let wagerCmd = '';
+      if (coreId === 'CORE_TicketBuy') {
+        wagerCmd = sanitizeStr(msg.wagerCmd || '', 30).trim().toLowerCase() || coreMod.config.wagerCmd.def;
+      }
       const teamChans = await wte.getChannels(teamId);
       const wanted = Array.isArray(msg.channels) ? msg.channels.map(sanitizeChannel).filter(Boolean) : [];
       const channels = wanted.filter(ch => teamChans.includes(ch));   // nur eigene Kanäle
       const gid = `sess_${Date.now()}`;
-      const coreConfig = coreMod.accrual === 'none' ? { windowSec } : await snapshotCoreConfig(teamId);
+      const coreConfig = coreMod.accrual === 'none' ? { windowSec }
+                       : coreId === 'CORE_TicketBuy' ? { ...(await snapshotCoreConfig(teamId)), wagerCmd }
+                       : await snapshotCoreConfig(teamId);
       await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels, core, status, core_config)
                       VALUES ($1,$2,$3,$4,$5,'open',$6) ON CONFLICT (id) DO NOTHING`,
         [gid, teamId, keyword, JSON.stringify(channels.length ? channels : teamChans), coreId, JSON.stringify(coreConfig)]);
       await wte.openGiveawayInstance(teamId, gid, { keyword, channels: channels.length ? channels : null,
-                                                    core: coreId, windowSec });
+                                                    core: coreId, windowSec, wagerCmd });
       Object.assign(outcome, { giveawayId: gid, keyword, core: coreId, windowSec: windowSec || undefined,
-                               channels: channels.length ? channels : 'alle' });
+                               wagerCmd: wagerCmd || undefined, channels: channels.length ? channels : 'alle' });
       await announceChannels(teamId, channels.length ? channels : null,
-        coreMod.accrual === 'none'
-          ? coreMod.infoText({ keyword, windowSec })
-          : '🎁 Zusätzliches Giveaway gestartet!' + (keyword ? ` Mitmachen: schreib "${keyword}" im Chat.` : ''));
+        coreMod.accrual === 'none' ? coreMod.infoText({ keyword, windowSec })
+        : coreId === 'CORE_TicketBuy' ? coreMod.infoText({ cmd: wagerCmd })
+        : '🎁 Zusätzliches Giveaway gestartet!' + (keyword ? ` Mitmachen: schreib "${keyword}" im Chat.` : ''));
       send({ event: 'gw_ack', type: 'instance_opened', giveawayId: gid, keyword, core: coreId,
-             windowSec: windowSec || null, channels: channels.length ? channels : null });
+             windowSec: windowSec || null, wagerCmd: wagerCmd || null,
+             channels: channels.length ? channels : null });
       break;
     }
     case 'gw_close_instance': {
@@ -805,9 +814,65 @@ async function runAdminCmd(send, msg, meta, ctx) {
       await wte.closeGiveawayInstance(teamId, gid);
       await setSessionStatusById(gid, 'closed');
       Object.assign(outcome, { giveawayId: gid });
-      await announceChannels(teamId, known.channels,
-        '🔒 Das zusätzliche Giveaway ist geschlossen — Ziehung folgt.');
+      if (known.core === 'CORE_TicketBuy') {
+        // Erspielten Stand als Guthaben gutschreiben (§10.1) + aufräumen.
+        const settled = await wte.settleTicketBuyInstance(teamId, gid);
+        Object.assign(outcome, { settledUsers: settled.users, settledCredit: settled.total });
+        await announceChannels(teamId, known.channels,
+          `🎟 Los-Giveaway beendet — eure Zuschauzeit ist jetzt Los-Guthaben (${settled.users} Konten gutgeschrieben). `
+          + 'Es bleibt erhalten und zählt beim nächsten Los-Giveaway weiter.');
+      } else {
+        await announceChannels(teamId, known.channels,
+          '🔒 Das zusätzliche Giveaway ist geschlossen — Ziehung folgt.');
+      }
       send({ event: 'gw_ack', type: 'instance_closed', giveawayId: gid });
+      break;
+    }
+    // ── Phase 4b: Preise (CORE_TicketBuy) ──────────────────
+    case 'gw_add_prize': {
+      const gid = validGid(msg.giveawayId);
+      const inst = gid ? (await wte.listGiveaways(teamId)).find(g => g.gid === gid && g.core === 'CORE_TicketBuy') : null;
+      if (!inst) {
+        Object.assign(outcome, { error: 'no_ticketbuy_instance' });
+        send({ event: 'gw_ack', type: 'error', error: 'Preise brauchen eine laufende Los-Giveaway-Instanz.' });
+        break;
+      }
+      const title = sanitizeStr(msg.title || '', 100).trim();
+      if (!title) {
+        Object.assign(outcome, { error: 'no_title' });
+        send({ event: 'gw_ack', type: 'error', error: 'Preis braucht einen Titel.' });
+        break;
+      }
+      const endMin = Math.max(0, parseInt(msg.wagerEndMinutes, 10) || 0);
+      const wagerEndTs = endMin ? Math.floor(Date.now() / 1000) + endMin * 60 : null;
+      const prizeId = await wte.addPrize(teamId, gid, {
+        title, description: sanitizeStr(msg.description || '', 500), wagerEndTs });
+      Object.assign(outcome, { prizeId, title, giveawayId: gid, wagerEndMinutes: endMin || null });
+      const cmd = (await redis.get(K.gWagerCmd(teamId, gid))) || 'setzen-Befehl';
+      await announceChannels(teamId, inst.channels,
+        `🎁 Neuer Preis #${prizeId}: „${title}" — Lose setzen mit dem ${cmd === 'setzen-Befehl' ? cmd : `Befehl „${cmd} ${prizeId} <anzahl>"`}`
+        + (endMin ? ` (Einsatz-Ende in ${endMin} min).` : '.'));
+      send({ event: 'gw_ack', type: 'prize_added', prizeId, title });
+      break;
+    }
+    case 'gw_list_prizes': {
+      send({ event: 'gw_ack', type: 'prizes', prizes: await wte.listPrizes(teamId, { openOnly: !!msg.openOnly }) });
+      break;
+    }
+    case 'gw_set_wager_cmd': {
+      const gid = validGid(msg.giveawayId);
+      const inst = gid ? (await wte.listGiveaways(teamId)).find(g => g.gid === gid && g.core === 'CORE_TicketBuy') : null;
+      const cmd = sanitizeStr(msg.command || '', 30).trim().toLowerCase();
+      if (!inst || !cmd) {
+        Object.assign(outcome, { error: 'bad_request' });
+        send({ event: 'gw_ack', type: 'error', error: 'Instanz oder Befehl fehlt.' });
+        break;
+      }
+      const before = await redis.get(K.gWagerCmd(teamId, gid));
+      await redis.set(K.gWagerCmd(teamId, gid), cmd);
+      Object.assign(outcome, { giveawayId: gid, cmdBefore: before, cmdAfter: cmd });
+      await announceChannels(teamId, inst.channels, `🎟 Lose setzen geht ab jetzt mit „${cmd} <preis-nr> <anzahl>".`);
+      send({ event: 'gw_ack', type: 'wager_cmd_set', giveawayId: gid, command: cmd });
       break;
     }
     case 'gw_set_stream_settings': {
@@ -1028,7 +1093,7 @@ async function runAdminCmd(send, msg, meta, ctx) {
         if (!msg.test) { try { await verifyFollows(teamId); } catch(e) { logErr('Helix', 'pre-draw verify:', e.message); } }
         // Mit giveawayId zieht die Instanz, sonst das Primary.
         const drawGid = validGid(msg.giveawayId) || await sid();
-        const result = await wte.drawWinner(teamId, drawGid, { test: !!msg.test, prize: msg.prize });
+        const result = await wte.drawWinner(teamId, drawGid, { test: !!msg.test, prize: msg.prize, prizeId: msg.prizeId });
         if (!result) { outcome.winner = null; send({ event: 'gw_ack', type: 'no_winner' }); break; }
         Object.assign(outcome, { winner: result.winner, winnerCoins: result.coins, drawId: result.drawId,
                                  eligibleCount: result.eligibleCount, totalCoins: result.total,
@@ -1074,6 +1139,10 @@ function subscribeToGiveaway() {
           redisPub.publish('ch:chat_reply', JSON.stringify({ event: 'chat_reply', channel: msg.channel, message: reply }));
         }
         if (result && result.added) broadcastTeam(teamId, { event: 'wt_update', user: u, channel: result.channel, watchSec: result.watchSec, coins: result.coins });
+        // Phase 4b: Antwort auf Setz-Befehle (Bestätigung, Hilfe, Fehler).
+        if (result && result.chatReply) {
+          redisPub.publish('ch:chat_reply', JSON.stringify({ event: 'chat_reply', channel: msg.channel, message: result.chatReply }));
+        }
         break;
       }
       case 'time_cmd': {
@@ -1659,6 +1728,29 @@ async function ensureSchema() {
       detail      JSONB,
       created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_credit_user ON credit_ledger(team_id, username, created_at DESC)`);
+  // Phase 4b (CORE_TicketBuy): Preise + Einsätze. prize_wagers ist append-only
+  // (Rücknahme = negative Zeile) und personenbezogen → DSGVO-Pfade im
+  // admin-Service sind mitgezogen.
+  await pg.query(`
+    CREATE TABLE IF NOT EXISTS giveaway_prizes (
+      id BIGSERIAL PRIMARY KEY,
+      team_id     TEXT NOT NULL,
+      session_id  TEXT,
+      title       TEXT NOT NULL,
+      description TEXT,
+      wager_end   TIMESTAMPTZ,
+      status      TEXT NOT NULL DEFAULT 'open',
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_prizes_team ON giveaway_prizes(team_id, status)`);
+  await pg.query(`
+    CREATE TABLE IF NOT EXISTS prize_wagers (
+      id BIGSERIAL PRIMARY KEY,
+      prize_id   BIGINT NOT NULL REFERENCES giveaway_prizes(id) ON DELETE CASCADE,
+      team_id    TEXT NOT NULL,
+      username   TEXT NOT NULL,
+      amount     NUMERIC(12,4) NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_wagers_prize ON prize_wagers(prize_id, username)`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_sessions_team ON sessions(team_id)`);
   await pg.query(`ALTER TABLE watchtime_events ADD COLUMN IF NOT EXISTS channel TEXT`);
   await pg.query(`ALTER TABLE watchtime_events ADD COLUMN IF NOT EXISTS team_id TEXT`);

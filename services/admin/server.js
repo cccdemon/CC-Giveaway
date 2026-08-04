@@ -571,7 +571,7 @@ async function auditGdpr(actor, action, target, result, detail) {
 // Alles, was zu einer Person gespeichert ist - Grundlage fuer Art. 15 DSGVO.
 async function collectSubjectData(u) {
   const q = (sql, p) => pg.query(sql, p).then(r => r.rows).catch(() => []);
-  const [user, events, participation, flags, audit, draws, teams, tos, claims, creditRows] = await Promise.all([
+  const [user, events, participation, flags, audit, draws, teams, tos, claims, creditRows, wagerRows] = await Promise.all([
     q('SELECT username, display, last_seen FROM users WHERE username=$1', [u]),
     q(`SELECT team_id, channel, event_type, count(*)::int AS n, min(ts) AS first, max(ts) AS last,
               sum(delta_sec)::int AS total_sec
@@ -594,6 +594,9 @@ async function collectSubjectData(u) {
     // Auskunft nach Art. 15 (Regel aus docs/ARCHITEKTUR-CORES.md §7).
     q(`SELECT team_id, entry_type, amount, ref_session, ref_prize, created_at
        FROM credit_ledger WHERE username=$1 ORDER BY created_at DESC LIMIT 500`, [u]),
+    q(`SELECT w.team_id, w.prize_id, p.title, w.amount, w.created_at
+       FROM prize_wagers w LEFT JOIN giveaway_prizes p ON p.id = w.prize_id
+       WHERE w.username=$1 ORDER BY w.created_at DESC LIMIT 500`, [u]),
   ]);
   return {
     username: u,
@@ -602,7 +605,7 @@ async function collectSubjectData(u) {
     user: user[0] || null, teams: teams.map(t => t.team_id),
     watchtimeEvents: events, participation, abuseFlags: flags,
     auditEntries: audit, draws, tosAcceptances: tos, winnerClaims: claims,
-    creditLedger: creditRows,
+    creditLedger: creditRows, prizeWagers: wagerRows,
   };
 }
 
@@ -658,6 +661,10 @@ async function eraseSubject(u, actor, action) {
       }
       const cr = await client.query('UPDATE credit_ledger SET username=$2 WHERE username=$1', [u, pseudo]);
       done.credit_ledger_pseudonymisiert = cr.rowCount;
+      // Einsätze sind Teil des Ziehungsnachweises (gewichteter Pool) —
+      // pseudonymisieren statt löschen, wie giveaway_draws.
+      const pw = await client.query('UPDATE prize_wagers SET username=$2 WHERE username=$1', [u, pseudo]);
+      done.prize_wagers_pseudonymisiert = pw.rowCount;
     } catch (e) { done.credit_ledger = 'Fehler: ' + e.message; }
     const dr = await client.query('UPDATE giveaway_draws SET winner=$2 WHERE winner=$1', [u, pseudo]);
     done.giveaway_draws_pseudonymisiert = dr.rowCount;

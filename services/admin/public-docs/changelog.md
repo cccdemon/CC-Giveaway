@@ -7,6 +7,22 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 4. August 2026
 
+### Neu: Los-Giveaway — Zuschauzeit wird Guthaben, Einsatz auf Preise
+
+Dritter Giveaway-Typ: beim **Los-Giveaway** wird Zuschauzeit zu
+Los-Guthaben, das beim Ende des Giveaways deinem Konto gutgeschrieben wird
+und **beim nächsten Los-Giveaway erhalten bleibt**. Der Streamer legt
+konkrete Preise an; du setzt deine Lose gezielt darauf — im Chat mit einem
+Befehl (Standard „!setzen", der Streamer kann ihn umbenennen):
+„!setzen 3 2" = 2 Lose auf Preis 3, „!setzen 3 0" = Einsatz zurückholen
+(bis zum Einsatz-Ende). Gezogen wird je Preis, gewichtet nach Einsatz —
+jedes Los kann gewinnen. Nach der Ziehung sind die Einsätze aller
+Teilnehmer dieses Preises verbraucht.
+
+Guthaben entsteht ausschließlich aus Zuschauzeit: es ist nicht kaufbar,
+nicht auszahlbar, nicht übertragbar, und verfällt nach 12 Monaten ohne
+Bewegung. Alle Bewegungen stehen in „Meine Daten".
+
 ### Neu: Sofortverlosung
 
 Neben der langlaufenden Kampagne gibt es jetzt die **Sofortverlosung**: der

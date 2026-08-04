@@ -131,8 +131,17 @@ function onGiveawayChange() {
   participants = {};
   var btn = document.getElementById('gw-close-inst');
   if (btn) btn.style.display = currentGiveaway ? '' : 'none';
+  updateTicketBuyButtons();
   log(currentGiveaway ? 'Instanz gewählt: ' + currentGiveaway : 'Kampagne gewählt', 'cyan');
   requestData();
+}
+
+// Preis-/Befehl-Buttons nur bei gewählter Los-Giveaway-Instanz zeigen.
+function updateTicketBuyButtons() {
+  var g = giveawayList.find(function(x){ return x.gid === currentGiveaway; });
+  var isTb = !!(g && g.core === 'CORE_TicketBuy');
+  var p = document.getElementById('gw-add-prize'); if (p) p.style.display = isTb ? '' : 'none';
+  var w = document.getElementById('gw-wager-cmd'); if (w) w.style.display = isTb ? '' : 'none';
 }
 
 function renderGiveawaySelect() {
@@ -155,22 +164,52 @@ function renderGiveawaySelect() {
     requestData();
   }
   sel.value = currentGiveaway || '';
+  updateTicketBuyButtons();
 }
 
 function openInstance() {
-  var kw = prompt('Keyword für das zusätzliche Giveaway (leer = ohne Chat-Anmeldung):', '');
-  if (kw === null) return;   // abgebrochen
-  // Sofortverlosung: Keyword-Fenster + Präsenz, Engine zieht automatisch.
-  var instant = confirm('Als SOFORTVERLOSUNG starten?\n\nOK = Sofortverlosung (Keyword-Fenster, Ziehung automatisch nach Ablauf)\nAbbrechen = normales Zusatz-Giveaway (Zuschauzeit & Chat)');
-  var payload = { event: 'gw_cmd', cmd: 'gw_open_instance', keyword: kw.trim() };
-  if (instant) {
-    if (!payload.keyword) { log('Sofortverlosung braucht ein Keyword', 'red'); return; }
-    var secs = CC.validate.sanitizeInt(prompt('Fensterdauer in Sekunden (10–3600):', '60') || '60', 10, 3600, 60);
-    payload.core = 'CORE_CurrentViewers';
-    payload.windowSec = secs;
+  var type = prompt('Typ des zusätzlichen Giveaways:\n\n1 = Zusatz-Kampagne (Zuschauzeit & Chat)\n2 = Sofortverlosung (Keyword-Fenster, zieht automatisch)\n3 = Los-Giveaway (Zuschauzeit wird Guthaben, Einsatz auf Preise)', '1');
+  if (type === null) return;
+  type = String(type).trim();
+  var payload = { event: 'gw_cmd', cmd: 'gw_open_instance' };
+
+  if (type === '3') {
+    payload.core = 'CORE_TicketBuy';
+    // Setz-Befehl ist konfigurierbar (landet als gWagerCmd an der Instanz).
+    var cmd = prompt('Chat-Befehl zum Setzen (konfigurierbar):', '!setzen');
+    if (cmd === null) return;
+    payload.wagerCmd = (cmd.trim() || '!setzen').toLowerCase();
+    payload.keyword = '';
+  } else {
+    var kw = prompt('Keyword' + (type === '2' ? ' (Pflicht bei Sofortverlosung)' : ' (leer = ohne Chat-Anmeldung)') + ':', '');
+    if (kw === null) return;
+    payload.keyword = kw.trim();
+    if (type === '2') {
+      if (!payload.keyword) { log('Sofortverlosung braucht ein Keyword', 'red'); return; }
+      var secs = CC.validate.sanitizeInt(prompt('Fensterdauer in Sekunden (10–3600):', '60') || '60', 10, 3600, 60);
+      payload.core = 'CORE_CurrentViewers';
+      payload.windowSec = secs;
+    }
   }
   send(payload);
-  log(instant ? 'Sofortverlosung wird gestartet …' : 'Zusatz-Giveaway wird gestartet …', 'cyan');
+  log('Instanz wird gestartet …', 'cyan');
+}
+
+// ── Phase 4b: Preise (nur für gewählte Los-Giveaway-Instanz) ──
+function addPrize() {
+  if (!currentGiveaway) { log('Erst Los-Giveaway-Instanz wählen', 'red'); return; }
+  var title = prompt('Titel des Preises:', '');
+  if (title === null || !title.trim()) return;
+  var mins = CC.validate.sanitizeInt(prompt('Einsatz-Ende in Minuten (0 = offen bis zur Ziehung):', '0') || '0', 0, 20160, 0);
+  send({ event: 'gw_cmd', cmd: 'gw_add_prize', giveawayId: currentGiveaway,
+         title: title.trim(), wagerEndMinutes: mins });
+}
+
+function setWagerCmd() {
+  if (!currentGiveaway) { log('Erst Los-Giveaway-Instanz wählen', 'red'); return; }
+  var cmd = prompt('Neuer Setz-Befehl:', '!setzen');
+  if (cmd === null || !cmd.trim()) return;
+  send({ event: 'gw_cmd', cmd: 'gw_set_wager_cmd', giveawayId: currentGiveaway, command: cmd.trim().toLowerCase() });
 }
 
 function closeInstance() {
@@ -246,6 +285,11 @@ function handle(msg) {
       log(`ACK: ${msg.type} -> ${msg.user || msg.keyword || msg.winner || msg.channel || ''}`, 'cyan');
       // Read-only Antworten (NIE requestData → sonst Endlosschleife)
       if (msg.type === 'giveaways')     { giveawayList = msg.giveaways || []; renderGiveawaySelect(); break; }
+      if (msg.type === 'prizes')        {
+        (msg.prizes || []).forEach(function(p){ log('Preis #' + p.id + ' „' + p.title + '" [' + p.status + '] Einsatz: ' + p.total_stake, 'cyan'); });
+        if (!(msg.prizes || []).length) log('Keine offenen Preise', 'gold');
+        break;
+      }
       if (msg.type === 'channels')      { ingestChannels = msg.channels || []; renderIngest(); break; }
       if (msg.type === 'ingest_tokens') { ingestTokens = {}; (msg.tokens || []).forEach(t => ingestTokens[t.channel] = t.token); renderIngest(); break; }
       if (msg.type === 'ingest_token')  { ingestTokens[msg.channel] = msg.token; renderIngest(); break; }
@@ -285,7 +329,10 @@ function handle(msg) {
         log('Follows geprüft: ' + (msg.verified||[]).length + ' Kanäle, ' + (msg.mismatches||0) + ' Änderungen' + uv, uv ? 'gold' : 'cyan');
       }
       if (msg.type === 'instance_opened') log('Zusatz-Giveaway gestartet: ' + (msg.giveawayId || '?')
-            + (msg.keyword ? ' (Keyword „' + msg.keyword + '")' : ''), 'gold');
+            + (msg.keyword ? ' (Keyword „' + msg.keyword + '")' : '')
+            + (msg.wagerCmd ? ' (Setzen: „' + msg.wagerCmd + '")' : ''), 'gold');
+      if (msg.type === 'prize_added')   log('Preis #' + msg.prizeId + ' angelegt: „' + (msg.title || '') + '"', 'gold');
+      if (msg.type === 'wager_cmd_set') log('Setz-Befehl geändert: „' + (msg.command || '') + '"', 'gold');
       if (msg.type === 'instance_closed') log('Instanz geschlossen: ' + (msg.giveawayId || '?'), 'gold');
       if (msg.type === 'instance_paused')  log('Instanz pausiert: '   + (msg.giveawayId || '?'), 'gold');
       if (msg.type === 'instance_resumed') log('Instanz läuft weiter: ' + (msg.giveawayId || '?'), 'cyan');
