@@ -10,23 +10,17 @@ Woran gearbeitet wird und was als Nächstes ansteht.
 
 ## In Arbeit
 
-### Auswählbare Giveaway-Systeme
+> ✅ **Auswählbare Giveaway-Systeme sind fertig.** Kampagne, Sofortverlosung
+> und Los-Giveaway laufen — auch mehrere gleichzeitig je Team. Details im
+> [Änderungsprotokoll](/admin/changelog.html). Kein System lässt eine Zahlung
+> als Voraussetzung oder als Vorteil zu — das bleibt ausgeschlossen.
 
-Heute gibt es genau eine Mechanik: Zuschauzeit und Chataktivität ergeben Lose.
-Das passt für Dauerkampagnen über mehrere Streams, aber nicht für jeden Anlass.
+### Feinschliff der neuen Giveaway-Systeme
 
-Künftig soll beim Anlegen eines Giveaways ausgewählt werden, nach welchem System
-es läuft:
-
-| System | Für welchen Fall |
-|---|---|
-| **Zuschauzeit & Chat** | Kampagne über mehrere Streams. Lose durch Zuschauen und sinnvollen Chat. Das heutige Verhalten, unverändert. |
-| **Losverfahren** | Zuschauzeit ergibt ein Guthaben, das gezielt auf einen Preis gesetzt wird. Wer mehr setzt, hat höhere Chancen — bezahlt wird ausschließlich mit erspielter Zuschauzeit, nie mit Geld. |
-| **Anwesenheit** | Einmalige Verlosung unter allen, die gerade zuschauen. Kurzes Keyword im Chat als Anwesenheitsnachweis, dann sofortige Ziehung. Ohne Vorlauf, ohne gesammelte Zuschauzeit. |
-
-Bestehende Giveaways laufen unverändert weiter. Kein System wird jemals eine
-Zahlung als Voraussetzung oder als Vorteil zulassen — das bleibt für alle
-Varianten ausgeschlossen.
+Die Mechaniken laufen; sichtbar werden sie noch runder: das Dashboard soll die
+Spalten je Mechanik passend anzeigen (statt der Coin-Spalten der Kampagne),
+`!los` soll bei parallelen Giveaways alle laufenden nennen, und Preise sollen
+ein Bild bekommen.
 
 ### Vollständiger Mehrkanal-Betrieb
 

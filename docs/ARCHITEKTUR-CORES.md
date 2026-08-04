@@ -1,8 +1,17 @@
 # Architektur: austauschbare Giveaway-Systeme („Cores")
 
-Entwurf, Stand 4. August 2026 (gegen den Code geprüft, Abhängigkeitskarte
-vervollständigt). Noch nicht umgesetzt — dieses Dokument legt fest,
-**was** gebaut wird und **in welcher Reihenfolge**, bevor Code entsteht.
+**Umgesetzt — Stand 4. August 2026, Branch `feature/EngineCores`.** Alle
+Phasen 0–5 sind implementiert (Stand-Blöcke bei den jeweiligen Phasen in
+Abschnitt 8). Das Dokument bleibt die verbindliche Referenz für den
+Core-Vertrag (Abschnitt 4), die Abgrenzung Engine/Core (Abschnitt 3) und
+die getroffenen Entscheidungen (Abschnitt 10). Die Abschnitte 2 und 6–7
+beschreiben Ausgangslage und Zielbild des Umbaus; wo der Ist-Zustand
+abweicht, steht es in den Stand-Blöcken.
+
+Noch offen (Kür, nicht Teil der Phasen): generisches Panel-Rendering aus
+`CORE.display`, `!los` nennt bei parallelen Giveaways nur die Kampagne,
+Preisbild, Redis-Aufräumen für manuell geschlossene Nicht-TicketBuy-Instanzen
+(Ziehung nach Close braucht deren Stand — Cleanup erst nach der Ziehung).
 
 ---
 

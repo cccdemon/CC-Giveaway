@@ -56,6 +56,34 @@ Weiterleitung zum Login:
 /viewer/status · /viewer/terms · /health
 ```
 
+### Deploy-Hinweise Core-Umbau (Branch `feature/EngineCores`)
+
+Der erste Deploy dieses Standes hat gewollte, aber sichtbare Effekte:
+
+1. **Alle Veranstalter müssen den Nutzungsbedingungen neu zustimmen**
+   (`TOS_VERSION = 2`). Bereits **offene** Giveaways laufen weiter — nur das
+   Öffnen (auch Auto-Open) ist bis zur Zustimmung blockiert. Das ist kein
+   Fehlerbild.
+2. **Neu-Öffnen ohne vorheriges Zurücksetzen startet bei null.** Vorher liefen
+   Alt-Stände still weiter; jetzt hat jedes Giveaway seinen eigenen Stand
+   (`t:<team>:g:<sid>:*`). Ein beim Deploy **laufendes** Giveaway übernimmt
+   seinen Bestand automatisch (Lazy-Migration der Legacy-Schlüssel).
+3. **Schema wächst automatisch** über `ensureSchema()` beim Start des
+   giveaway-Containers: `credit_ledger`, `giveaway_prizes`, `prize_wagers`,
+   neue Spalten an `sessions`/`giveaway_draws`. Kein manuelles SQL nötig.
+4. **Sofortverlosungen brauchen `viewer_tick`-Meldungen** in Abständen unter
+   10 Minuten (`PRESENCE_TTL` 600 s) — sonst ist niemand „anwesend" und die
+   Verlosung bricht (mit Ansage) leer ab. Streamerbot-Actions sind unverändert;
+   prüfen, dass `GW_ViewerTick` am Trigger *Present Viewers* hängt und feuert.
+5. **`MAX_PARALLEL_GIVEAWAYS`** (ENV, Default 4) begrenzt gleichzeitige
+   Giveaways je Team.
+6. **Smoke-Test nach dem Deploy** (die neuen Pfade liefen bisher nur gegen
+   Test-Mocks, nicht gegen echtes Redis/Postgres): Dashboard → ＋ →
+   Sofortverlosung mit 60-s-Fenster auf dem eigenen Kanal, Keyword schreiben,
+   Auto-Ziehung abwarten; danach ein Los-Giveaway öffnen, Preis anlegen,
+   `!setzen <nr> 1` und `/giveaway/wager.html` prüfen. Fehler landen im
+   Container-Log (`docker logs team-giveaway-1`) und im Audit-Log.
+
 ---
 
 ## 3. SQL auf der Produktivdatenbank
