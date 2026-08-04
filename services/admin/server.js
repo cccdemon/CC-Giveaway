@@ -571,7 +571,7 @@ async function auditGdpr(actor, action, target, result, detail) {
 // Alles, was zu einer Person gespeichert ist - Grundlage fuer Art. 15 DSGVO.
 async function collectSubjectData(u) {
   const q = (sql, p) => pg.query(sql, p).then(r => r.rows).catch(() => []);
-  const [user, events, participation, flags, audit, draws, teams, tos, claims] = await Promise.all([
+  const [user, events, participation, flags, audit, draws, teams, tos, claims, creditRows] = await Promise.all([
     q('SELECT username, display, last_seen FROM users WHERE username=$1', [u]),
     q(`SELECT team_id, channel, event_type, count(*)::int AS n, min(ts) AS first, max(ts) AS last,
               sum(delta_sec)::int AS total_sec
@@ -590,14 +590,19 @@ async function collectSubjectData(u) {
     q(`SELECT id, team_id, session_id, status, deadline_at, claimed_at, purge_at, purged_at,
               real_name, email, street, zip, city, country, note, terms_version
        FROM draw_claims WHERE winner=$1 ORDER BY created_at DESC`, [u]),
+    // Guthaben-Journal (CORE_TicketBuy) — personenbezogen, gehoert in die
+    // Auskunft nach Art. 15 (Regel aus docs/ARCHITEKTUR-CORES.md §7).
+    q(`SELECT team_id, entry_type, amount, ref_session, ref_prize, created_at
+       FROM credit_ledger WHERE username=$1 ORDER BY created_at DESC LIMIT 500`, [u]),
   ]);
   return {
     username: u,
     found: !!(user.length || events.length || participation.length || audit.length
-              || draws.length || tos.length || claims.length),
+              || draws.length || tos.length || claims.length || creditRows.length),
     user: user[0] || null, teams: teams.map(t => t.team_id),
     watchtimeEvents: events, participation, abuseFlags: flags,
     auditEntries: audit, draws, tosAcceptances: tos, winnerClaims: claims,
+    creditLedger: creditRows,
   };
 }
 
@@ -637,6 +642,23 @@ async function eraseSubject(u, actor, action) {
       done.konto_behalten = 'Person führt ein Team — Login und Zustimmung bleiben';
     }
     const pseudo = 'geloescht_' + crypto.createHash('sha256').update(u).digest('hex').slice(0, 8);
+    // Guthaben (CORE_TicketBuy): Restsaldo je Team ausbuchen (Journal bleibt
+    // in sich schluessig), dann pseudonymisieren. Sonst wuerde die Loeschung
+    // ein herrenloses Konto stehen lassen. Buchung hier statt in der Engine —
+    // dokumentierte Ausnahme, siehe services/giveaway/credit.js.
+    try {
+      const bal = await client.query(
+        `SELECT team_id, SUM(amount) AS bal FROM credit_ledger WHERE username=$1
+         GROUP BY team_id HAVING SUM(amount) > 0`, [u]);
+      for (const row of bal.rows) {
+        await client.query(
+          `INSERT INTO credit_ledger (team_id, username, entry_type, amount, detail)
+           VALUES ($1,$2,'erase',$3,$4)`,
+          [row.team_id, u, -parseFloat(row.bal), JSON.stringify({ reason: 'gdpr_erase' })]);
+      }
+      const cr = await client.query('UPDATE credit_ledger SET username=$2 WHERE username=$1', [u, pseudo]);
+      done.credit_ledger_pseudonymisiert = cr.rowCount;
+    } catch (e) { done.credit_ledger = 'Fehler: ' + e.message; }
     const dr = await client.query('UPDATE giveaway_draws SET winner=$2 WHERE winner=$1', [u, pseudo]);
     done.giveaway_draws_pseudonymisiert = dr.rowCount;
     const sn = await client.query(

@@ -90,7 +90,9 @@ var LABELS = {
   reason:'Grund', occurrences:'Vorkommen', first_seen:'Erstmals', last_seen:'Zuletzt',
   detail:'Details', id:'Nr.', ts:'Zeitpunkt', actor:'Ausgelöst von', action:'Aktion',
   result:'Ergebnis', winner:'Gewinner', winner_coins:'Coins', drawn_at:'Gezogen am',
-  is_test:'Testziehung', version:'Fassung', accepted_at:'Zugestimmt am'
+  is_test:'Testziehung', version:'Fassung', accepted_at:'Zugestimmt am',
+  entry_type:'Vorgang', amount:'Betrag (Lose)', ref_session:'Giveaway',
+  ref_prize:'Preis-Nr.', created_at:'Zeitpunkt'
 };
 
 function tableOf(rows) {
@@ -148,6 +150,8 @@ function render(d) {
       + sec('Auffälligkeiten', d.abuseFlags,
             'Markierungen wegen wiederholter oder sehr schneller Nachrichten.')
       + sec('Gewinne', d.draws)
+      + sec('Guthaben-Bewegungen', d.creditLedger,
+            'Erspielte Lose und Einsätze (nur bei Los-Giveaways). Guthaben verfällt nach 12 Monaten ohne Bewegung.')
       + sec('Zustimmung zu den Nutzungsbedingungen', d.tosAcceptances)
       + sec('Protokolleinträge zu dir', d.auditEntries,
             'Verwaltungshandlungen, bei denen du das Ziel warst — etwa eine manuelle Coin-Gutschrift.')

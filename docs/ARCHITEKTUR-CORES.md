@@ -515,6 +515,20 @@ Parallelität aus Phase 2 wirklich braucht.
 Preis-Entität, Einsatz-Oberfläche, Abbuchung. Der aufwendigste Core, weil er als
 einziger neue Zuschauer-Interaktion braucht.
 
+> **Stand 4. August 2026 — Teilschritt 4a (Guthaben-Fundament) umgesetzt:**
+> `credit_ledger` (append-only, team-weit, `ensureSchema()`),
+> `services/giveaway/credit.js` als einzige Buchungsstelle (Vorzeichen aus dem
+> Typ erzwungen; `transfer`/`purchase` existieren als Typen bewusst nicht —
+> §10.1-Leitplanken), Verfall nach 12 Monaten Inaktivität in `runRetention()`
+> (Gegenbuchung, kein DELETE), DSGVO komplett: Auskunft
+> (`collectSubjectData` + Abschnitt in `meine-daten.html`) und Löschung
+> (`eraseSubject`: Restsaldo ausbuchen + pseudonymisieren — dokumentierte
+> Ausnahme vom Engine-bucht-Prinzip). **Offen (4b/4c):** `giveaway_prizes` +
+> `prize_wagers`, earn-Hook (TicketBuy-Instanz-Close → Ledger), Core-Modul
+> `cores/ticket-buy.js` mit `buildPool` je Preis + `afterDraw`-Abbuchung
+> aller Setzer, Setz-Web-Seite (claim-Muster, Caddy-Whitelist!) + `!setzen`,
+> Chat-Texte.
+
 Pflichtpunkte über den Core hinaus:
 
 - **DSGVO:** `prize_wagers` **und** `credit_ledger` in `collectSubjectData()`,

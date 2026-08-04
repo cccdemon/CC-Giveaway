@@ -176,6 +176,8 @@ async function aiJudge(teamId, message) {
 }
 
 const wte = new WatchtimeEngine(redis, pg, aiJudge);
+const { CreditLedger, EXPIRE_MONTHS: CREDIT_EXPIRE_MONTHS } = require('./credit.js');
+const credit = new CreditLedger(pg);
 const helix = new Helix({
   clientId:     String(process.env.TWITCH_CLIENT_ID || '').replace(/^"|"$/g, ''),
   clientSecret: String(process.env.TWITCH_CLIENT_SECRET || '').replace(/^"|"$/g, ''),
@@ -1641,6 +1643,22 @@ async function ensureSchema() {
   await pg.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS status TEXT`);
   await pg.query(`ALTER TABLE giveaway_draws ADD COLUMN IF NOT EXISTS core TEXT`);
   await pg.query(`ALTER TABLE giveaway_draws ADD COLUMN IF NOT EXISTS prize_id BIGINT`);
+  // Phase 4a (CORE_TicketBuy, §5.2/§10.1): team-weites Guthaben-Journal,
+  // append-only. Kontostand = SUM(amount); Korrekturen nur per Gegenbuchung.
+  // Personenbezogen → collectSubjectData()/eraseSubject() im admin-Service
+  // und runRetention() (Verfall nach Inaktivität) sind mitgezogen.
+  await pg.query(`
+    CREATE TABLE IF NOT EXISTS credit_ledger (
+      id BIGSERIAL PRIMARY KEY,
+      team_id     TEXT NOT NULL,
+      username    TEXT NOT NULL,
+      entry_type  TEXT NOT NULL,
+      amount      NUMERIC(12,4) NOT NULL,
+      ref_session TEXT,
+      ref_prize   BIGINT,
+      detail      JSONB,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_credit_user ON credit_ledger(team_id, username, created_at DESC)`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_sessions_team ON sessions(team_id)`);
   await pg.query(`ALTER TABLE watchtime_events ADD COLUMN IF NOT EXISTS channel TEXT`);
   await pg.query(`ALTER TABLE watchtime_events ADD COLUMN IF NOT EXISTS team_id TEXT`);
@@ -1901,6 +1919,11 @@ async function runRetention() {
       `UPDATE draw_claims SET status='expired'
        WHERE status='pending' AND deadline_at < NOW()`);
     anonymized.draw_claims_expired = ex.rowCount;
+
+    // Guthaben (CORE_TicketBuy): nach 12 Monaten ohne Bewegung verfaellt der
+    // Restsaldo per Gegenbuchung (§10.1) — das Journal bleibt vollstaendig.
+    try { anonymized.credit_expired = await credit.expireInactive(CREDIT_EXPIRE_MONTHS); }
+    catch (e) { logErr('Retention', 'credit expire:', e.message); }
 
     const totalDel = Object.values(deleted).reduce((a, b) => a + b, 0);
     const totalAnon = Object.values(anonymized).reduce((a, b) => a + b, 0);
