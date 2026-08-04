@@ -1,0 +1,159 @@
+'use strict';
+
+// Phase-1-Abnahme (docs/ARCHITEKTUR-CORES.md): dieselben Eingaben gegen die
+// ALTE Implementierung (hier als eingefrorene Referenz-Kopie des Codes vor
+// dem Umbau) und den Core — Coins, Berechtigung und Pool-Gewichte müssen
+// exakt gleich sein. Dazu Vertrags-Checks (config-Deklaration ↔ Engine-API).
+
+const { test } = require('node:test');
+const assert = require('node:assert');
+
+const CORE = require('../cores/watchtime-chat');
+const { SECS_PER_COIN, CHAT_BONUS_SEC, CHAT_MIN_WORDS, CHAT_COOLDOWN,
+        MIN_CHANNELS, coinsFromSec, countWords } = require('../watchtime');
+
+// ── Referenz: Stand vor Phase 1 (watchtime.js, unverändert kopiert) ──
+function refCoinsFromSec(watchSec, baseSec) {
+  const base = (Number.isFinite(baseSec) && baseSec > 0) ? baseSec : 7200;
+  return Math.round((watchSec / base) * 10000) / 10000;
+}
+
+function refAggregate({ username, perChannelRaw, registered, banned, cfg }) {
+  const base = cfg.coinBaseSec;
+  const perChannel = {};
+  let totalWatch = 0, totalMsgs = 0, followed = 0;
+  for (const [ch, raw] of Object.entries(perChannelRaw)) {
+    const coins = refCoinsFromSec(raw.watchSec, base);
+    perChannel[ch] = { watchSec: raw.watchSec, coins, msgs: raw.msgs, follows: raw.follows };
+    totalWatch += raw.watchSec; totalMsgs += raw.msgs;
+    if (raw.follows) followed++;
+  }
+  const totalCoins = refCoinsFromSec(totalWatch, base);
+  const eligible = registered && !banned && followed >= cfg.followMin && totalCoins >= 1;
+  return {
+    username, perChannel, totalWatchSec: totalWatch, totalCoins,
+    channelsQualified: followed, channelsFollowed: followed,
+    followMin: cfg.followMin, drawMinSec: base, coinBaseSec: base,
+    registered, banned, eligible,
+    coins: totalCoins, watchSec: totalWatch, msgs: totalMsgs,
+  };
+}
+
+// Ereignisfolge → Roh-Zustand, wie ihn die Engine aus Redis sammeln würde.
+// (tick = +60s auf Kanal, chat = +2s Bonus; entspricht TICK_SEC/CHAT_BONUS_SEC.)
+function replay(events) {
+  const raw = {};
+  for (const e of events) {
+    raw[e.ch] = raw[e.ch] || { watchSec: 0, msgs: 0, follows: false };
+    if (e.type === 'tick')   raw[e.ch].watchSec += 60 * (e.mult || 1);
+    if (e.type === 'chat')   { raw[e.ch].watchSec += 2 * (e.mult || 1); raw[e.ch].msgs++; }
+    if (e.type === 'follow') raw[e.ch].follows = true;
+  }
+  return raw;
+}
+
+const SCENARIOS = [
+  { name: 'leer',            events: [], registered: false, banned: false, cfg: { coinBaseSec: 7200, followMin: 2 } },
+  { name: 'lurker 2h',       events: [...Array(120)].map(() => ({ type: 'tick', ch: 'a' })),
+    registered: false, banned: false, cfg: { coinBaseSec: 7200, followMin: 2 } },
+  { name: 'voll berechtigt', events: [
+      { type: 'follow', ch: 'a' }, { type: 'follow', ch: 'b' },
+      ...[...Array(120)].map(() => ({ type: 'tick', ch: 'a' })),
+      ...[...Array(30)].map(() => ({ type: 'chat', ch: 'b' }))],
+    registered: true, banned: false, cfg: { coinBaseSec: 7200, followMin: 2 } },
+  { name: 'gebannt',         events: [
+      { type: 'follow', ch: 'a' }, { type: 'follow', ch: 'b' },
+      ...[...Array(200)].map(() => ({ type: 'tick', ch: 'a' }))],
+    registered: true, banned: true, cfg: { coinBaseSec: 7200, followMin: 2 } },
+  { name: 'zu wenig follows', events: [
+      { type: 'follow', ch: 'a' },
+      ...[...Array(150)].map(() => ({ type: 'tick', ch: 'a' }))],
+    registered: true, banned: false, cfg: { coinBaseSec: 7200, followMin: 2 } },
+  { name: 'kleine coin-basis + multiplier', events: [
+      { type: 'follow', ch: 'a' },
+      ...[...Array(10)].map(() => ({ type: 'tick', ch: 'a', mult: 2 })),
+      ...[...Array(5)].map(() => ({ type: 'chat', ch: 'a', mult: 2 }))],
+    registered: true, banned: false, cfg: { coinBaseSec: 600, followMin: 1 } },
+  { name: 'followMin 0',     events: [...Array(120)].map(() => ({ type: 'tick', ch: 'a' })),
+    registered: true, banned: false, cfg: { coinBaseSec: 7200, followMin: 0 } },
+  { name: 'krumme sekunden', events: [
+      { type: 'follow', ch: 'a' }, { type: 'follow', ch: 'b' }, { type: 'follow', ch: 'c' },
+      ...[...Array(37)].map(() => ({ type: 'tick', ch: 'a' })),
+      ...[...Array(113)].map(() => ({ type: 'chat', ch: 'b' })),
+      ...[...Array(7)].map(() => ({ type: 'tick', ch: 'c', mult: 1.5 }))],
+    registered: true, banned: false, cfg: { coinBaseSec: 3600, followMin: 2 } },
+];
+
+test('Phase 1: CORE.aggregate === alte getUserAggregate-Logik (alle Szenarien)', () => {
+  for (const s of SCENARIOS) {
+    const input = { username: 'user_' + s.name.replace(/\W/g, ''), perChannelRaw: replay(s.events),
+                    registered: s.registered, banned: s.banned, cfg: s.cfg };
+    assert.deepStrictEqual(CORE.aggregate(input), refAggregate(input), 'Szenario: ' + s.name);
+  }
+});
+
+test('Phase 1: buildPool === alter eligible-Filter, Gewicht = Coins, Reihenfolge stabil', () => {
+  const parts = SCENARIOS.map(s => CORE.aggregate({
+    username: 'user_' + s.name.replace(/\W/g, ''), perChannelRaw: replay(s.events),
+    registered: s.registered, banned: s.banned, cfg: s.cfg,
+  })).sort((a, b) => b.totalCoins - a.totalCoins);   // wie getAllParticipants
+
+  const pool = CORE.buildPool(parts);
+  const refEligible = parts.filter(p => p.eligible);
+
+  assert.deepStrictEqual(pool.map(e => e.username), refEligible.map(p => p.username));
+  assert.deepStrictEqual(pool.map(e => e.weight),   refEligible.map(p => p.totalCoins));
+  for (const e of pool) assert.strictEqual(e.meta.username, e.username);
+  // Gesamtgewicht identisch → gewichteter Zufallslauf trifft dieselben Grenzen.
+  assert.strictEqual(pool.reduce((s, e) => s + e.weight, 0),
+                     refEligible.reduce((s, p) => s + p.totalCoins, 0));
+});
+
+test('Phase 1: chatMeaningful === alte Wortregel + KI-Override', () => {
+  const cases = [
+    { msg: 'eins zwei drei vier', ai: null,                                    want: { meaningful: true,  judgedBy: 'words' } },
+    { msg: 'zu kurz',             ai: null,                                    want: { meaningful: false, judgedBy: 'words' } },
+    { msg: 'zu kurz',             ai: { meaningful: true,  source: 'ai' },     want: { meaningful: true,  judgedBy: 'ai' } },
+    { msg: 'eins zwei drei vier', ai: { meaningful: false, source: 'ai' },     want: { meaningful: false, judgedBy: 'ai' } },
+    { msg: 'eins zwei drei vier', ai: { meaningful: true,  source: 'cache' },  want: { meaningful: true,  judgedBy: 'ai_cache' } },
+    // KI-Fehler (meaningful null) → fail-open auf Wortregel, wie vorher.
+    { msg: 'eins zwei drei vier', ai: { meaningful: null,  source: 'ai' },     want: { meaningful: true,  judgedBy: 'words' } },
+  ];
+  for (const c of cases) {
+    assert.deepStrictEqual(
+      CORE.chatMeaningful({ message: c.msg, minWords: 4, aiVerdict: c.ai }), c.want,
+      JSON.stringify(c));
+  }
+});
+
+test('Phase 1: Re-Exporte der Engine zeigen auf den Core (keine zweite Kopie)', () => {
+  assert.strictEqual(coinsFromSec, CORE.coinsFromSec);
+  assert.strictEqual(countWords, CORE.countWords);
+  assert.strictEqual(SECS_PER_COIN, CORE.defaults.SECS_PER_COIN);
+  assert.strictEqual(CHAT_BONUS_SEC, CORE.defaults.CHAT_BONUS_SEC);
+  assert.strictEqual(CHAT_MIN_WORDS, CORE.defaults.CHAT_MIN_WORDS);
+  assert.strictEqual(CHAT_COOLDOWN, CORE.defaults.CHAT_COOLDOWN);
+  assert.strictEqual(MIN_CHANNELS, CORE.defaults.MIN_CHANNELS);
+});
+
+test('Phase 1: config-Deklaration trägt die alten Defaults', () => {
+  assert.strictEqual(CORE.id, 'CORE_WatchtimeChatActivity');
+  assert.strictEqual(CORE.config.coinBaseSec.def, 7200);
+  assert.strictEqual(CORE.config.followMin.def, 2);
+  assert.strictEqual(CORE.config.chatBonusSec.def, 2);
+  assert.strictEqual(CORE.config.chatMinWords.def, 4);
+  assert.strictEqual(CORE.config.chatCooldown.def, 10);
+  // Grenzen decken sich mit den Engine-Settern (setCoinBaseSec/setFollowMin/setChatConfig).
+  assert.strictEqual(CORE.config.coinBaseSec.min, 60);
+  assert.strictEqual(CORE.config.coinBaseSec.max, 360000);
+  assert.strictEqual(CORE.config.followMin.max, 10);
+});
+
+test('Phase 1: coinsFromSec Fallback bei fehlender Basis unverändert', () => {
+  for (const sec of [0, 1, 3599, 3600, 7200, 10800, 123456]) {
+    assert.strictEqual(CORE.coinsFromSec(sec), refCoinsFromSec(sec));
+    assert.strictEqual(CORE.coinsFromSec(sec, 0), refCoinsFromSec(sec, 0));
+    assert.strictEqual(CORE.coinsFromSec(sec, NaN), refCoinsFromSec(sec, NaN));
+    assert.strictEqual(CORE.coinsFromSec(sec, 600), refCoinsFromSec(sec, 600));
+  }
+});

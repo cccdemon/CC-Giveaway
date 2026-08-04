@@ -13,6 +13,11 @@
 
 const { randomInt, createHash } = require('crypto');
 
+// Mechanik-Regeln (Coin-Formel, Eligibility, Pool, Chat-Urteil) liegen seit
+// Phase 1 des Core-Umbaus im Core (docs/ARCHITEKTUR-CORES.md). Die Engine
+// sammelt Rohdaten aus Redis/PG und delegiert die Regeln dorthin.
+const CORE = require('./cores/watchtime-chat');
+
 // ── Anti-Abuse: deterministische, reproduzierbare Schwellen ──
 const ABUSE = {
   HIST_LEN: 20, TIMES_LEN: 30,
@@ -22,14 +27,11 @@ const ABUSE = {
   NEW_ACCOUNT_DAYS: 30,     // Twitch-Account jünger als 30 Tage → new_account
 };
 
-const SECS_PER_COIN  = 7200;
-const CHAT_BONUS_SEC = 2;    // sinnvolle Chatnachricht (>3 Wörter) = +2s Viewtime
-const CHAT_COOLDOWN  = 10;
-const CHAT_MIN_WORDS = 4;    // >3 Wörter
+// Mechanik-Defaults kommen aus dem Core; Re-Export unten erhält die alte API.
+const { SECS_PER_COIN, CHAT_BONUS_SEC, CHAT_COOLDOWN, CHAT_MIN_WORDS,
+        MIN_CHANNELS, JOIN_MIN_COINS } = CORE.defaults;
 const TICK_SEC       = 60;
 const PRESENCE_TTL   = 600;
-const JOIN_MIN_COINS = 1;
-const MIN_CHANNELS   = 2;
 const CHANNELS_TTL   = 30;   // Cache der Team-Kanäle (s)
 
 const TP = (t) => `t:${t}:`;
@@ -93,20 +95,10 @@ function matchesKeyword(message, keyword) {
   return false;
 }
 
-function countWords(msg) {
-  let count = 0, inWord = false;
-  for (const ch of msg) {
-    if (ch === ' ' || ch === '\t') { inWord = false; }
-    else if (!inWord) { inWord = true; count++; }
-  }
-  return count;
-}
-
-// Coin-Basis ist per-Team konfigurierbar (getCoinBaseSec). SECS_PER_COIN = Default.
-function coinsFromSec(watchSec, baseSec) {
-  const base = (Number.isFinite(baseSec) && baseSec > 0) ? baseSec : SECS_PER_COIN;
-  return Math.round((watchSec / base) * 10000) / 10000;
-}
+// Formeln liegen im Core; Aliase hier erhalten die bestehende API
+// (Tests und server.js importieren sie weiter aus watchtime.js).
+const countWords   = CORE.countWords;
+const coinsFromSec = CORE.coinsFromSec;
 
 function sanitizeTeamId(t) {
   return String(t || '').replace(/[^a-zA-Z0-9_]/g, '').slice(0, 40);
@@ -314,16 +306,11 @@ class WatchtimeEngine {
     const chatCfg = await this.getChatConfig(t);
     if (!chatCfg.bonusSec) return null;                      // Bonus abgeschaltet
 
-    // Sinnhaftigkeit: KI wenn konfiguriert, sonst (und bei jedem KI-Fehler) Wortzählung.
-    const byWords = countWords(cleanMsg) >= chatCfg.minWords;
-    let meaningful = byWords, judgedBy = 'words';
-    if (this.aiJudge) {
-      const verdict = await this.aiJudge(t, cleanMsg);
-      if (verdict && verdict.meaningful !== null && verdict.meaningful !== undefined) {
-        meaningful = verdict.meaningful;
-        judgedBy = verdict.source === 'cache' ? 'ai_cache' : 'ai';
-      }
-    }
+    // Sinnhaftigkeit entscheidet der Core: KI-Urteil wenn konfiguriert,
+    // sonst (und bei jedem KI-Fehler) Wortzählung.
+    const aiVerdict = this.aiJudge ? await this.aiJudge(t, cleanMsg) : null;
+    const { meaningful, judgedBy } = CORE.chatMeaningful({
+      message: cleanMsg, minWords: chatCfg.minWords, aiVerdict });
     if (!meaningful) return null;
 
     const chatKey = K.chChatTs(t, ch, u);
@@ -389,37 +376,32 @@ class WatchtimeEngine {
   }
 
   // ── Aggregation ─────────────────────────────────────────
+  // Engine sammelt Rohdaten aus Redis, der Core rechnet die Regeln
+  // (Coins, Eligibility) — CORE.aggregate ist die zentrale Regelfunktion.
   async getUserAggregate(teamId, username) {
     const t = sanitizeTeamId(teamId);
     const u = sanitizeUsername(username);
     const channels = await this.getChannels(t);
-    const base = await this.getCoinBaseSec(t);
-    const perChannel = {};
-    let totalWatch = 0, totalMsgs = 0, followed = 0;
+    const perChannelRaw = {};
     for (const ch of channels) {
-      const watchSec = parseFloat(await this.redis.get(K.chWatch(t, ch, u)) || '0');
-      const msgs     = parseInt(await this.redis.get(K.chMsgs(t, ch, u)) || '0');
-      // Follow-Gate STRIKT: nur bestätigte Follows (Live-Event '1' oder Helix) zählen.
-      // (Viewtime-Accrual bleibt permissiv, siehe tickPresentUsers.)
-      const follows  = (await this.redis.get(K.chFollows(t, ch, u))) === '1';
-      const coins    = coinsFromSec(watchSec, base);
-      perChannel[ch] = { watchSec, coins, msgs, follows };
-      totalWatch += watchSec; totalMsgs += msgs;
-      if (follows) followed++;   // Follow zählt UNABHÄNGIG vom Gucken
+      perChannelRaw[ch] = {
+        watchSec: parseFloat(await this.redis.get(K.chWatch(t, ch, u)) || '0'),
+        msgs:     parseInt(await this.redis.get(K.chMsgs(t, ch, u)) || '0'),
+        // Follow-Gate STRIKT: nur bestätigte Follows (Live-Event '1' oder Helix) zählen.
+        // (Viewtime-Accrual bleibt permissiv, siehe tickPresentUsers.)
+        follows:  (await this.redis.get(K.chFollows(t, ch, u))) === '1',
+      };
     }
-    const totalCoins = coinsFromSec(totalWatch, base);
-    const followMin  = await this.getFollowMin(t);
-    const drawMinSec = base;   // Lostopf-Schwelle == 1 Coin == Coin-Basis
-    const registered = await this.redis.get(K.gwRegistered(t, u)) === '1';
-    const banned     = await this.redis.get(K.gwBanned(t, u)) === '1';
-    // Lostopf: Keyword + folgt ≥followMin Kanälen + ≥1 Coin (irgendwo geguckt).
-    const eligible   = registered && !banned && followed >= followMin && totalCoins >= 1;
-    return {
-      username: u, perChannel, totalWatchSec: totalWatch, totalCoins,
-      channelsQualified: followed, channelsFollowed: followed, followMin, drawMinSec, coinBaseSec: base,
-      registered, banned, eligible,
-      coins: totalCoins, watchSec: totalWatch, msgs: totalMsgs,
-    };
+    return CORE.aggregate({
+      username: u,
+      perChannelRaw,
+      registered: await this.redis.get(K.gwRegistered(t, u)) === '1',
+      banned:     await this.redis.get(K.gwBanned(t, u)) === '1',
+      cfg: {
+        coinBaseSec: await this.getCoinBaseSec(t),
+        followMin:   await this.getFollowMin(t),
+      },
+    });
   }
   async getUserState(teamId, username) { return this.getUserAggregate(teamId, username); }
 
@@ -521,14 +503,17 @@ class WatchtimeEngine {
     const t = sanitizeTeamId(teamId);
     const isTest = !!opts.test;
     const prize  = opts.prize ? sanitizeStr(opts.prize, 100) : null;
+    // Pool-Bildung (Filter + Gewicht) macht der Core; Zufall, Snapshot und
+    // Persistenz bleiben hier — genau EINE Stelle, die reproduzierbar zieht.
     const participants = await this.getAllParticipants(t);
-    const eligible = participants.filter(p => p.eligible);
-    if (!eligible.length) return null;
+    const pool = CORE.buildPool(participants);
+    if (!pool.length) return null;
+    const eligible = pool.map(e => e.meta);
 
-    const total = eligible.reduce((s, p) => s + p.totalCoins, 0);
+    const total = pool.reduce((s, e) => s + e.weight, 0);
     const rand  = (randomInt(0, 2 ** 31) / (2 ** 31)) * total;
     let acc = 0, winner = eligible[eligible.length - 1];
-    for (const p of eligible) { acc += p.totalCoins; if (rand < acc) { winner = p; break; } }
+    for (const e of pool) { acc += e.weight; if (rand < acc) { winner = e.meta; break; } }
 
     const snapshot = eligible.map(p => ({
       u: p.username, c: p.totalCoins, q: p.channelsQualified,
