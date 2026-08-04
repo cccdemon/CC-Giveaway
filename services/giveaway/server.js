@@ -19,6 +19,7 @@ const { WatchtimeEngine, K, sanitizeUsername, sanitizeStr, sanitizeTeamId, sanit
 // Chat-Texte (!los/!giveaway/Anmelde-Antwort) und Format-Helfer kommen aus
 // dem Core — die Regeltexte gehören zur Mechanik (Phase 1, ARCHITEKTUR-CORES).
 const CORE = require('./cores/watchtime-chat.js');
+const CoreRegistry = require('./cores/index.js');
 const { fmtDur, kw2 } = CORE;
 const { Helix } = require('./helix.js');
 const { judgeMessage, listModels, encryptKey, decryptKey, PROVIDERS } = require('./cores/chat-ai.js');
@@ -757,20 +758,38 @@ async function runAdminCmd(send, msg, meta, ctx) {
         break;
       }
       const keyword = sanitizeStr(msg.keyword || '', 100);
+      // Phase 3: Instanz kann einen anderen Core fahren (Registry-validiert).
+      const coreId = CoreRegistry.CORES[msg.core] ? msg.core : CoreRegistry.DEFAULT_CORE_ID;
+      const coreMod = CoreRegistry.getCore(coreId);
+      let windowSec = 0;
+      if (coreMod.accrual === 'none') {   // Sofortverlosung
+        if (!keyword) {
+          Object.assign(outcome, { blocked: 'no_keyword', core: coreId });
+          send({ event: 'gw_ack', type: 'open_blocked',
+                 error: 'Eine Sofortverlosung braucht ein Keyword — ohne Opt-in kein Teilnehmer.' });
+          break;
+        }
+        const wc = coreMod.config.windowSec;
+        windowSec = Math.max(wc.min, Math.min(wc.max, parseInt(msg.windowSec, 10) || wc.def));
+      }
       const teamChans = await wte.getChannels(teamId);
       const wanted = Array.isArray(msg.channels) ? msg.channels.map(sanitizeChannel).filter(Boolean) : [];
       const channels = wanted.filter(ch => teamChans.includes(ch));   // nur eigene Kanäle
       const gid = `sess_${Date.now()}`;
-      const coreConfig = await snapshotCoreConfig(teamId);
+      const coreConfig = coreMod.accrual === 'none' ? { windowSec } : await snapshotCoreConfig(teamId);
       await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels, core, status, core_config)
                       VALUES ($1,$2,$3,$4,$5,'open',$6) ON CONFLICT (id) DO NOTHING`,
-        [gid, teamId, keyword, JSON.stringify(channels.length ? channels : teamChans), CORE.id, JSON.stringify(coreConfig)]);
-      await wte.openGiveawayInstance(teamId, gid, { keyword, channels: channels.length ? channels : null });
-      Object.assign(outcome, { giveawayId: gid, keyword, channels: channels.length ? channels : 'alle' });
+        [gid, teamId, keyword, JSON.stringify(channels.length ? channels : teamChans), coreId, JSON.stringify(coreConfig)]);
+      await wte.openGiveawayInstance(teamId, gid, { keyword, channels: channels.length ? channels : null,
+                                                    core: coreId, windowSec });
+      Object.assign(outcome, { giveawayId: gid, keyword, core: coreId, windowSec: windowSec || undefined,
+                               channels: channels.length ? channels : 'alle' });
       await announceChannels(teamId, channels.length ? channels : null,
-        '🎁 Zusätzliches Giveaway gestartet!' + (keyword ? ` Mitmachen: schreib "${keyword}" im Chat.` : ''));
-      send({ event: 'gw_ack', type: 'instance_opened', giveawayId: gid, keyword,
-             channels: channels.length ? channels : null });
+        coreMod.accrual === 'none'
+          ? coreMod.infoText({ keyword, windowSec })
+          : '🎁 Zusätzliches Giveaway gestartet!' + (keyword ? ` Mitmachen: schreib "${keyword}" im Chat.` : ''));
+      send({ event: 'gw_ack', type: 'instance_opened', giveawayId: gid, keyword, core: coreId,
+             windowSec: windowSec || null, channels: channels.length ? channels : null });
       break;
     }
     case 'gw_close_instance': {
@@ -1727,6 +1746,7 @@ async function main() {
   await loadMasterSecret();
   subscribeToGiveaway();
   startWatchtimeTicker();
+  startInstantWatcher();
   startRetentionJob();
   server.listen(CFG.port, () => log('Giveaway', `Service on port ${CFG.port}`));
 }
@@ -1760,6 +1780,58 @@ function startWatchtimeTicker() {
     } catch(e) { logErr('Tick', e.message); }
   }, TICK_SEC * 1000);
   log('Tick', `Ticker started (${TICK_SEC}s)`);
+}
+
+// ── Phase 3: Sofortverlosungs-Watcher ─────────────────────
+// Fensterende steht in Redis (gWinEnd, deploy-/restart-sicher) — kein
+// setTimeout im Speicher. Alle 5s: abgelaufene Fenster schließen, ziehen,
+// ansagen, aufräumen. Leer-Zug (Ingest hängt / niemand berechtigt) bricht
+// mit klarer Ansage ab statt still leer zu ziehen (§5.3-Risiko).
+let instantBusy = false;
+function startInstantWatcher() {
+  setInterval(async () => {
+    if (instantBusy) return;   // kein Überlappen bei langsamer Runde
+    instantBusy = true;
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      for (const t of await wte.listOpenTeams()) {
+        for (const g of await wte.listGiveaways(t)) {
+          if (g.primary || !g.windowEndsAt || g.windowEndsAt > now) continue;
+          await finishInstantDraw(t, g);
+        }
+      }
+    } catch(e) { logErr('Instant', e.message); }
+    finally { instantBusy = false; }
+  }, 5000);
+  log('Instant', 'Sofortverlosungs-Watcher gestartet (5s)');
+}
+
+async function finishInstantDraw(teamId, g) {
+  // Erst schließen (Fenster zu, kein Doppel-Zug über zwei Watcher-Runden),
+  // dann ziehen — getInstantParticipants hängt nicht am open-Flag.
+  await wte.closeGiveawayInstance(teamId, g.gid);
+  await setSessionStatusById(g.gid, 'closed');
+  const CV = CoreRegistry.getCore(g.core);
+  let result = null, error = null;
+  try { result = await wte.drawWinner(teamId, g.gid, { test: false }); }
+  catch(e) { error = e.message; logErr('Instant', 'draw failed:', e.message); }
+  if (result) {
+    const claim = await createClaim(teamId, result);
+    broadcastTeam(teamId, { event: 'gw_overlay', winner: result.winner, coins: result.coins });
+    await announceChannels(teamId, g.channels, CV.winnerText({ winner: result.winner })
+      + ` Melde dich innerhalb von ${CLAIM_DEADLINE_DAYS} Tagen unter ${publicHost()}/viewer/claim (Login mit Twitch).`);
+    void claim;
+  } else {
+    await announceChannels(teamId, g.channels, CV.emptyDrawText());
+  }
+  // Auto-Pfad = zustandsändernd ohne Admin → eigener Audit-Eintrag.
+  await audit({ teamId, actor: 'system:instant', ip: null, action: 'auto_instant_draw',
+                target: result ? result.winner : null,
+                result: error ? 'error' : (result ? 'ok' : 'empty'),
+                detail: { giveawayId: g.gid, keyword: g.keyword,
+                          eligibleCount: result ? result.eligibleCount : 0,
+                          drawId: result ? result.drawId : null, error: error || undefined } });
+  await wte.cleanupGiveawayInstance(teamId, g.gid);
 }
 
 // ── Aufbewahrung (DSGVO Art. 5 Abs. 1 lit. e) ─────────────

@@ -141,7 +141,8 @@ function renderGiveawaySelect() {
   var opts = ['<option value="">— Kampagne —</option>'];
   giveawayList.forEach(function(g) {
     if (g.primary) return;   // Kampagne ist die leere Auswahl
-    var label = (g.keyword ? '„' + g.keyword + '" ' : '') + g.gid.replace(/^sess_/, '#')
+    var label = (g.core === 'CORE_CurrentViewers' ? '⚡ ' : '')
+              + (g.keyword ? '„' + g.keyword + '" ' : '') + g.gid.replace(/^sess_/, '#')
               + (g.paused ? ' ⏸' : '');
     opts.push('<option value="' + esc(g.gid) + '">' + esc(label) + '</option>');
   });
@@ -159,8 +160,17 @@ function renderGiveawaySelect() {
 function openInstance() {
   var kw = prompt('Keyword für das zusätzliche Giveaway (leer = ohne Chat-Anmeldung):', '');
   if (kw === null) return;   // abgebrochen
-  send({ event: 'gw_cmd', cmd: 'gw_open_instance', keyword: kw.trim() });
-  log('Zusatz-Giveaway wird gestartet …', 'cyan');
+  // Sofortverlosung: Keyword-Fenster + Präsenz, Engine zieht automatisch.
+  var instant = confirm('Als SOFORTVERLOSUNG starten?\n\nOK = Sofortverlosung (Keyword-Fenster, Ziehung automatisch nach Ablauf)\nAbbrechen = normales Zusatz-Giveaway (Zuschauzeit & Chat)');
+  var payload = { event: 'gw_cmd', cmd: 'gw_open_instance', keyword: kw.trim() };
+  if (instant) {
+    if (!payload.keyword) { log('Sofortverlosung braucht ein Keyword', 'red'); return; }
+    var secs = CC.validate.sanitizeInt(prompt('Fensterdauer in Sekunden (10–3600):', '60') || '60', 10, 3600, 60);
+    payload.core = 'CORE_CurrentViewers';
+    payload.windowSec = secs;
+  }
+  send(payload);
+  log(instant ? 'Sofortverlosung wird gestartet …' : 'Zusatz-Giveaway wird gestartet …', 'cyan');
 }
 
 function closeInstance() {

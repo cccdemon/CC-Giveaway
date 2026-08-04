@@ -205,7 +205,10 @@ test('Phase 2a: Registry löst Core-IDs auf, Fallback = heutiger Core', () => {
   assert.strictEqual(reg.getCore('gibts_nicht'), CORE);   // Bestands-Sessions laufen weiter
   assert.strictEqual(reg.getCore(null), CORE);
   assert.strictEqual(reg.DEFAULT_CORE_ID, 'CORE_WatchtimeChatActivity');
-  assert.deepStrictEqual(reg.listCores(), [{ id: 'CORE_WatchtimeChatActivity', label: 'Zuschauzeit & Chat' }]);
+  assert.deepStrictEqual(reg.listCores(), [
+    { id: 'CORE_WatchtimeChatActivity', label: 'Zuschauzeit & Chat' },
+    { id: 'CORE_CurrentViewers',        label: 'Sofortverlosung' },
+  ]);
 });
 
 test('Phase 1: coinsFromSec Fallback bei fehlender Basis unverändert', () => {

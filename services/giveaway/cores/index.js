@@ -4,10 +4,12 @@
 // Modul auf. Unbekannte oder fehlende IDs fallen auf den heutigen Core zurück —
 // Bestands-Sessions (Spalten-Default) laufen damit unverändert.
 const watchtimeChat = require('./watchtime-chat.js');
+const currentViewers = require('./current-viewers.js');
 
 const CORES = Object.freeze({
   [watchtimeChat.id]: watchtimeChat,
-  // Phase 3: CORE_CurrentViewers · Phase 4: CORE_TicketBuy
+  [currentViewers.id]: currentViewers,
+  // Phase 4: CORE_TicketBuy
 });
 
 const DEFAULT_CORE_ID = watchtimeChat.id;

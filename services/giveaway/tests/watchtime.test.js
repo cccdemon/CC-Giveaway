@@ -532,3 +532,82 @@ test('phase2d: listGiveaways liefert Primary + Instanzen mit Metadaten', async (
   assert.equal(s.paused, true);
   assert.deepEqual(s.channels, ['jerichoramirez']);
 });
+
+// ── Phase 3: CORE_CurrentViewers (Sofortverlosung) ────────
+
+test('phase3: CV-Instanz sammelt keine Watchtime, Kampagne schon', async () => {
+  const e = engine();
+  await e.openGiveaway(TEAM, 'join', 'sess_1');
+  await e.openGiveawayInstance(TEAM, 'sess_2', { keyword: 'blitz', core: 'CORE_CurrentViewers', windowSec: 60 });
+  await e.handleViewerTick(TEAM, 'justcallmedeimos', 'bob', true);
+  const updates = await e.tickPresentUsers();
+  assert.equal(updates.length, 1);                                  // nur Kampagne
+  assert.equal(await e.redis.get(K.gWatch(TEAM, 'sess_2', 'justcallmedeimos', 'bob')), null);
+});
+
+test('phase3: berechtigt nur mit Keyword UND viewer_tick-Praesenz', async () => {
+  const e = engine();
+  await e.openGiveawayInstance(TEAM, 'sess_2', { keyword: 'blitz', core: 'CORE_CurrentViewers', windowSec: 60 });
+  // alice: nur Chat (Keyword) — chLastTick fehlt → nicht anwesend
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'alice', 'blitz', true);
+  // bob: Keyword + viewer_tick → anwesend
+  await e.handleViewerTick(TEAM, 'justcallmedeimos', 'bob', true);
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'blitz', true);
+  const parts = await e.getInstantParticipants(TEAM, 'sess_2');
+  const alice = parts.find(p => p.username === 'alice');
+  const bob   = parts.find(p => p.username === 'bob');
+  assert.equal(alice.eligible, false);   // Chat-Tab offen reicht nicht
+  assert.equal(bob.eligible, true);
+  assert.equal(bob.weight, 1);
+});
+
+test('phase3: Ziehung der CV-Instanz zieht unter Anwesenden, stempelt Core', async () => {
+  const e = engine();
+  await e.openGiveawayInstance(TEAM, 'sess_2', { keyword: 'blitz', core: 'CORE_CurrentViewers', windowSec: 60 });
+  await e.handleViewerTick(TEAM, 'justcallmedeimos', 'bob', true);
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'blitz', true);
+  const r = await e.drawWinner(TEAM, 'sess_2', {});
+  assert.equal(r.winner, 'bob');
+  assert.equal(r.coins, 1);              // Gewicht 1, kein Coin-Konto
+  assert.equal(r.eligibleCount, 1);
+});
+
+test('phase3: leere CV-Ziehung liefert null (Abbruch statt Leer-Zug)', async () => {
+  const e = engine();
+  await e.openGiveawayInstance(TEAM, 'sess_2', { keyword: 'blitz', core: 'CORE_CurrentViewers', windowSec: 60 });
+  // alice hat Keyword, aber keine Praesenz → niemand berechtigt
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'alice', 'blitz', true);
+  assert.equal(await e.drawWinner(TEAM, 'sess_2', {}), null);
+});
+
+test('phase3: CV beeinflusst die Kampagne nicht (Keyword-Trennung + Draw)', async () => {
+  const e = engine();
+  await e.openGiveaway(TEAM, 'join', 'sess_1');
+  await e.openGiveawayInstance(TEAM, 'sess_2', { keyword: 'blitz', core: 'CORE_CurrentViewers', windowSec: 60 });
+  await e.handleViewerTick(TEAM, 'justcallmedeimos', 'bob', true);
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'blitz', true);
+  assert.equal((await e.getUserAggregate(TEAM, 'bob')).registered, false);   // Kampagne unberührt
+  assert.equal(await e.drawWinner(TEAM, 'sess_1', {}), null);                // dort niemand drin
+});
+
+test('phase3: cleanup raeumt die Instanz vollstaendig ab', async () => {
+  const e = engine();
+  await e.openGiveawayInstance(TEAM, 'sess_2', { keyword: 'blitz', core: 'CORE_CurrentViewers', windowSec: 60 });
+  await e.handleViewerTick(TEAM, 'justcallmedeimos', 'bob', true);
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'blitz', true);
+  await e.closeGiveawayInstance(TEAM, 'sess_2');
+  await e.cleanupGiveawayInstance(TEAM, 'sess_2');
+  assert.equal(await e.redis.get(K.gReg(TEAM, 'sess_2', 'bob')), null);
+  assert.equal(await e.redis.get(K.gCore(TEAM, 'sess_2')), null);
+  assert.equal(await e.redis.get(K.gWinEnd(TEAM, 'sess_2')), null);
+  assert.deepEqual(await e.redis.smembers(K.gwSet(TEAM)), []);
+});
+
+test('phase3: windowEndsAt steht in listGiveaways', async () => {
+  const e = engine();
+  await e.openGiveawayInstance(TEAM, 'sess_2', { keyword: 'blitz', core: 'CORE_CurrentViewers', windowSec: 60 });
+  const g = (await e.listGiveaways(TEAM)).find(x => x.gid === 'sess_2');
+  assert.equal(g.core, 'CORE_CurrentViewers');
+  assert.ok(g.windowEndsAt > Math.floor(Date.now() / 1000));
+  assert.ok(g.windowEndsAt <= Math.floor(Date.now() / 1000) + 61);
+});

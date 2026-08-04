@@ -7,6 +7,16 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 4. August 2026
 
+### Neu: Sofortverlosung
+
+Neben der langlaufenden Kampagne gibt es jetzt die **Sofortverlosung**: der
+Streamer startet sie mit Keyword und Zeitfenster (z.B. 60 Sekunden), alle die
+das Keyword schreiben **und gerade zuschauen** sind im Topf — gleiches Los für
+alle, kein Punktesammeln. Nach Ablauf zieht das System automatisch und sagt
+den Gewinner im Chat an. Nur den Chat offen zu haben reicht nicht: wer nicht
+als Zuschauer gemeldet ist, nimmt nicht teil. Meldet niemand Anwesenheit,
+wird die Verlosung mit klarer Ansage abgebrochen statt leer gezogen.
+
 ### Mehrere Giveaways gleichzeitig
 
 Ein Team kann jetzt **neben der laufenden Kampagne zusätzliche Giveaways**

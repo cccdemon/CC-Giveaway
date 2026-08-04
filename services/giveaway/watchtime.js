@@ -16,7 +16,10 @@ const { randomInt, createHash } = require('crypto');
 // Mechanik-Regeln (Coin-Formel, Eligibility, Pool, Chat-Urteil) liegen seit
 // Phase 1 des Core-Umbaus im Core (docs/ARCHITEKTUR-CORES.md). Die Engine
 // sammelt Rohdaten aus Redis/PG und delegiert die Regeln dorthin.
+// Phase 3: Instanzen können einen anderen Core fahren (getCore-Registry);
+// CORE bleibt der Default (Primary + Bestand).
 const CORE = require('./cores/watchtime-chat');
+const { getCore } = require('./cores/index.js');
 
 // ── Anti-Abuse: deterministische, reproduzierbare Schwellen ──
 const ABUSE = {
@@ -83,6 +86,8 @@ const K = {
   gPaused:   (t, g) => `${K.GP(t, g)}paused`,
   gKw:       (t, g) => `${K.GP(t, g)}keyword`,
   gChanList: (t, g) => `${K.GP(t, g)}channels`,
+  gCore:     (t, g) => `${K.GP(t, g)}core`,      // Core-ID der Instanz (Phase 3)
+  gWinEnd:   (t, g) => `${K.GP(t, g)}win_end`,   // Fensterende (Unix-Sek., Sofortverlosung)
   abuseHist:  (t, u) => `${TP(t)}gw:abuse:hist:${u}`,     // letzte Msg-Hashes
   abuseTimes: (t, u) => `${TP(t)}gw:abuse:times:${u}`,    // letzte Timestamps (Rate)
 };
@@ -287,7 +292,7 @@ class WatchtimeEngine {
     const out = [];
     const legacySid = await this.redis.get(K.gwSessionId(t));
     if (await this.redis.get(K.gwOpen(t)) === 'true' && await this.redis.get(K.gwPaused(t)) !== 'true') {
-      out.push({ gid: legacySid || null, primary: true, channels: null });
+      out.push({ gid: legacySid || null, primary: true, core: CORE.id, channels: null });
     }
     for (const g of await this.redis.smembers(K.gwSet(t))) {
       if (g === legacySid) continue;   // Primary ist schon drin
@@ -295,9 +300,18 @@ class WatchtimeEngine {
       if (await this.redis.get(K.gPaused(t, g)) === 'true') continue;
       let chans = null;
       try { const raw = await this.redis.get(K.gChanList(t, g)); if (raw) chans = JSON.parse(raw); } catch { /* alle */ }
-      out.push({ gid: g, primary: false, channels: Array.isArray(chans) && chans.length ? chans.map(sanitizeChannel).filter(Boolean) : null });
+      out.push({ gid: g, primary: false,
+                 core: await this.redis.get(K.gCore(t, g)) || CORE.id,
+                 channels: Array.isArray(chans) && chans.length ? chans.map(sanitizeChannel).filter(Boolean) : null });
     }
     return out;
+  }
+
+  async getCoreId(teamId, gid) {
+    if (!gid) return CORE.id;
+    const t = sanitizeTeamId(teamId);
+    if (gid === await this.redis.get(K.gwSessionId(t))) return CORE.id;   // Primary = Default-Core
+    return await this.redis.get(K.gCore(t, gid)) || CORE.id;
   }
 
   // Schlüsselwahl: gid null = Legacy (kein Giveaway-Kontext).
@@ -380,7 +394,9 @@ class WatchtimeEngine {
       const multByGid = new Map();   // je Giveaway einmal lesen
       for (const g of active) multByGid.set(g.gid, await this.getMultiplier(t, g.gid));
       for (const ch of channels) {
-        const targets = active.filter(g => !g.channels || g.channels.includes(ch));
+        // Nur Cores mit Watchtime-Accrual (Sofortverlosung: accrual 'none').
+        const targets = active.filter(g => (!g.channels || g.channels.includes(ch))
+                                        && getCore(g.core).accrual !== 'none');
         if (!targets.length) continue;
         const users = await this.redis.smembers(K.chIndex(t, ch));
         for (const u of users) {
@@ -441,7 +457,10 @@ class WatchtimeEngine {
     if (matchedAny) return regResult;
 
     if (await this.redis.get(K.gwBanned(t, u)) === '1') return null;
-    for (const g of targets) await this._bumpMsgs(t, g.gid, ch, u, primaryGid);
+    // Msgs/Bonus nur für Cores mit Watchtime-Accrual — die Sofortverlosung
+    // kennt weder Nachrichtenzähler noch Chat-Bonus.
+    const accrualTargets = targets.filter(g => getCore(g.core).accrual !== 'none');
+    for (const g of accrualTargets) await this._bumpMsgs(t, g.gid, ch, u, primaryGid);
     await this._detectAbuse(t, u, cleanMsg);   // Spam-Signale (flaggt, bannt nicht) — einmal je Nachricht
 
     if (!this._followAllowed(await this.redis.get(K.chFollows(t, ch, u)))) return { channel: ch, followed: false };
@@ -458,7 +477,7 @@ class WatchtimeEngine {
 
     const now = Math.floor(Date.now() / 1000);
     let primaryResult = null;
-    for (const g of targets) {
+    for (const g of accrualTargets) {
       const chatKey = this._kChatTs(t, g.gid, ch, u);
       if (g.primary && g.gid) await this._migrateKey(chatKey, K.chChatTs(t, ch, u));   // Cooldown läuft weiter
       const lastTs = await this.redis.get(chatKey);
@@ -675,7 +694,7 @@ class WatchtimeEngine {
   // ── Phase 2c: Sekundär-Instanz (z.B. Sofortverlosung neben der Kampagne) ──
   // Läuft ausschließlich im g:-Namespace; channels = Teilmenge der
   // Team-Kanäle (leer/null = alle).
-  async openGiveawayInstance(teamId, gid, { keyword = '', channels = null } = {}) {
+  async openGiveawayInstance(teamId, gid, { keyword = '', channels = null, core = null, windowSec = 0 } = {}) {
     const t = sanitizeTeamId(teamId);
     this.validateSessionId(gid);
     if (!t) throw new Error('Invalid teamId');
@@ -686,8 +705,45 @@ class WatchtimeEngine {
     if (Array.isArray(channels) && channels.length) {
       await this.redis.set(K.gChanList(t, gid), JSON.stringify(channels.map(sanitizeChannel).filter(Boolean)));
     }
+    // Phase 3: Instanz kann einen anderen Core fahren; Sofortverlosungen
+    // tragen ihr Fensterende, der Server-Watcher zieht danach automatisch.
+    if (core && core !== CORE.id) await this.redis.set(K.gCore(t, gid), sanitizeStr(core, 60));
+    const win = parseInt(windowSec, 10);
+    if (Number.isFinite(win) && win > 0) {
+      await this.redis.set(K.gWinEnd(t, gid), String(Math.floor(Date.now() / 1000) + win));
+    }
     await this.redis.sadd(K.openTeams(), t);
-    console.log(`[WTE] [${t}] instance ${gid} opened, keyword="${keyword}"`);
+    console.log(`[WTE] [${t}] instance ${gid} opened, core=${core || CORE.id}, keyword="${keyword}"`);
+  }
+
+  // ── Phase 3: Teilnehmer einer Sofortverlosung ───────────
+  // Berechtigt = Keyword geschrieben (gReg) UND als Zuschauer gemeldet:
+  // viewer_tick (chLastTick) innerhalb PRESENCE_TTL auf einem Instanz-Kanal.
+  // Chat setzt chPresent, aber NICHT chLastTick — wer nur den Chat offen
+  // hat, gilt hier nicht als anwesend (§5.3).
+  async getInstantParticipants(teamId, gid) {
+    const t = sanitizeTeamId(teamId);
+    let channels = null;
+    try { const raw = await this.redis.get(K.gChanList(t, gid)); if (raw) channels = JSON.parse(raw); } catch { /* alle */ }
+    if (!Array.isArray(channels) || !channels.length) channels = await this.getChannels(t);
+    const core = getCore(await this.getCoreId(t, gid));
+    const now = Math.floor(Date.now() / 1000);
+    const result = [];
+    for (const u of await this.redis.smembers(K.gwUsers(t))) {
+      const registered = await this.redis.get(K.gReg(t, gid, u)) === '1';
+      if (!registered) continue;   // ohne Keyword-Opt-in nie im Topf
+      let present = false;
+      for (const ch of channels) {
+        const ts = parseInt(await this.redis.get(K.chLastTick(t, ch, u)), 10);
+        if (Number.isFinite(ts) && now - ts < PRESENCE_TTL) { present = true; break; }
+      }
+      result.push(core.aggregate({
+        username: u, registered,
+        banned: await this.redis.get(K.gwBanned(t, u)) === '1',
+        present,
+      }));
+    }
+    return result;
   }
 
   // Alle offenen Giveaways (inkl. pausierter) mit Metadaten — fürs Panel.
@@ -696,10 +752,10 @@ class WatchtimeEngine {
     const out = [];
     const legacySid = await this.redis.get(K.gwSessionId(t));
     if (await this.redis.get(K.gwOpen(t)) === 'true') {
-      out.push({ gid: legacySid || null, primary: true,
+      out.push({ gid: legacySid || null, primary: true, core: CORE.id,
                  paused: await this.redis.get(K.gwPaused(t)) === 'true',
                  keyword: await this.redis.get(K.gwKeyword(t)) || '',
-                 channels: null });
+                 channels: null, windowEndsAt: null });
     }
     for (const g of await this.redis.smembers(K.gwSet(t))) {
       if (g === legacySid) continue;
@@ -707,9 +763,11 @@ class WatchtimeEngine {
       let chans = null;
       try { const raw = await this.redis.get(K.gChanList(t, g)); if (raw) chans = JSON.parse(raw); } catch { /* alle */ }
       out.push({ gid: g, primary: false,
+                 core: await this.redis.get(K.gCore(t, g)) || CORE.id,
                  paused: await this.redis.get(K.gPaused(t, g)) === 'true',
                  keyword: await this.redis.get(K.gKw(t, g)) || '',
-                 channels: Array.isArray(chans) && chans.length ? chans : null });
+                 channels: Array.isArray(chans) && chans.length ? chans : null,
+                 windowEndsAt: parseInt(await this.redis.get(K.gWinEnd(t, g)), 10) || null });
     }
     return out;
   }
@@ -724,15 +782,41 @@ class WatchtimeEngine {
     console.log(`[WTE] [${t}] instance ${gid} closed`);
   }
 
+  // Räumt eine (gezogene/geschlossene) Instanz vollständig aus Redis —
+  // keine g:-Leichen (§6). Nach der Auto-Ziehung der Sofortverlosung
+  // aufgerufen; für manuell geschlossene Instanzen erst nach der Ziehung.
+  async cleanupGiveawayInstance(teamId, gid) {
+    const t = sanitizeTeamId(teamId);
+    const channels = await this.getChannels(t);
+    const users = await this.redis.smembers(K.gwUsers(t));
+    const pipeline = this.redis.pipeline();
+    for (const u of users) {
+      pipeline.del(K.gReg(t, gid, u));
+      for (const ch of channels) {
+        pipeline.del(K.gWatch(t, gid, ch, u), K.gChatTs(t, gid, ch, u), K.gMsgs(t, gid, ch, u));
+      }
+    }
+    pipeline.del(K.gOpen(t, gid), K.gPaused(t, gid), K.gKw(t, gid), K.gChanList(t, gid),
+                 K.gCore(t, gid), K.gWinEnd(t, gid), K.gMult(t, gid));
+    pipeline.srem(K.gwSet(t), gid);
+    await pipeline.exec();
+    console.log(`[WTE] [${t}] instance ${gid} cleaned`);
+  }
+
   async drawWinner(teamId, sessionId, opts = {}) {
     const t = sanitizeTeamId(teamId);
     const isTest = !!opts.test;
     const prize  = opts.prize ? sanitizeStr(opts.prize, 100) : null;
     // Pool-Bildung (Filter + Gewicht) macht der Core; Zufall, Snapshot und
     // Persistenz bleiben hier — genau EINE Stelle, die reproduzierbar zieht.
-    // Gezogen wird der Stand DIESES Giveaways (sessionId = Giveaway-ID).
-    const participants = await this.getAllParticipants(t, sessionId || undefined);
-    const pool = CORE.buildPool(participants);
+    // Gezogen wird der Stand DIESES Giveaways (sessionId = Giveaway-ID) mit
+    // DESSEN Core (Phase 3: Sofortverlosung hat weder Coins noch Follows).
+    const drawCoreId = await this.getCoreId(t, sessionId);
+    const drawCore = getCore(drawCoreId);
+    const participants = drawCore.accrual === 'none'
+      ? await this.getInstantParticipants(t, sessionId)
+      : await this.getAllParticipants(t, sessionId || undefined);
+    const pool = drawCore.buildPool(participants);
     if (!pool.length) return null;
     const eligible = pool.map(e => e.meta);
 
@@ -765,7 +849,7 @@ class WatchtimeEngine {
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id
       `, [sessionId || null, winner.username, winner.totalCoins, Math.round(winner.totalWatchSec),
           totalRounded, eligible.length, randRounded, drawIndex, isTest, prize, JSON.stringify(snapshot),
-          CORE.id]);   // welche Mechanik gezogen hat — Nachvollziehbarkeit (§7)
+          drawCoreId]);   // welche Mechanik gezogen hat — Nachvollziehbarkeit (§7)
       drawId = ins.rows[0].id;
       if (!isTest) {
         let prevWinner = null;

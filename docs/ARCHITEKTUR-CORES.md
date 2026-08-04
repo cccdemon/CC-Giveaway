@@ -498,6 +498,18 @@ Der einfachste neue Core: kein Guthaben, kein Preis-Modell, gleiches Gewicht fü
 alle. Guter erster Beweis, dass der Vertrag trägt — und der erste, der die
 Parallelität aus Phase 2 wirklich braucht.
 
+> **Stand 4. August 2026: umgesetzt.** `cores/current-viewers.js`
+> (`accrual:'none'` — Tick/Chat-Bonus lassen solche Instanzen aus),
+> Präsenz ausschließlich aus `viewer_tick` (`chLastTick`, Chat allein
+> reicht nicht — schließt Chat-Bots aus), Berechtigung = Keyword-Opt-in
+> (`gReg`) UND Präsenz auf einem Instanz-Kanal. Fensterende liegt in Redis
+> (`gWinEnd`, restart-sicher); der Server-Watcher (5s) schließt, zieht über
+> die normale Engine-Ziehung (Core-Stempel `CORE_CurrentViewers` in
+> `giveaway_draws`), sagt Gewinner bzw. **Leer-Zug-Abbruch** klar an,
+> auditiert als `auto_instant_draw` und räumt die Instanz vollständig ab
+> (`cleanupGiveawayInstance`). Start im Panel: ＋ → „Sofortverlosung",
+> Keyword + Fensterdauer.
+
 ### Phase 4 — CORE_TicketBuy
 
 Preis-Entität, Einsatz-Oberfläche, Abbuchung. Der aufwendigste Core, weil er als
