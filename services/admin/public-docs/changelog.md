@@ -5,6 +5,26 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ---
 
+## 4. August 2026
+
+### Jedes Giveaway hat jetzt seinen eigenen Stand
+
+Punktestände, Anmeldungen und Boosts gehören ab jetzt zum **einzelnen
+Giveaway**, nicht mehr zum Team. Ein laufendes Giveaway übernimmt seinen
+bisherigen Stand automatisch — für Zuschauer ändert sich nichts.
+
+**Für Veranstalter wichtig:** Wer ein Giveaway schließt und ein neues öffnet,
+startet das neue **bei null** — auch ohne vorheriges Zurücksetzen. Bisher
+liefen alte Punktestände in so einem Fall stillschweigend weiter. Der Stand
+des alten Giveaways bleibt bis zum Zurücksetzen erhalten (z.B. für Ziehungen
+nach dem Schließen). Ein zeitlich begrenzter Boost gilt ebenfalls nur noch
+für das Giveaway, in dem er gestartet wurde.
+
+Das ist die Grundlage dafür, dass künftig **mehrere Giveaways gleichzeitig**
+laufen können — siehe Roadmap.
+
+---
+
 ## 3. August 2026
 
 ### Gewinnchancen wurden zu niedrig angezeigt — behoben

@@ -346,3 +346,76 @@ test('drawWinner ignores non-eligible', async () => {
   assert.equal(r.winner, 'alice');
   assert.equal(r.eligibleCount, 1);
 });
+
+// ── Phase 2b: Giveaway-Dimension (g:<sid>-Schlüssel) ──────
+// gid = Session-ID. Ohne offene Session bleibt alles auf den Legacy-Keys —
+// das decken die Tests oben ab. Hier: Migration, Isolation, Aufräumen.
+
+test('phase2b: laufendes Giveaway migriert Altbestand beim ersten Zugriff', async () => {
+  const e = engine();
+  // Altbestand aus der Zeit vor dem Deploy:
+  await e.redis.set(K.chWatch(TEAM, 'justcallmedeimos', 'bob'), String(SECS_PER_COIN));
+  await e.openGiveaway(TEAM, 'join', 'sess_1');
+  await e.handleViewerTick(TEAM, 'justcallmedeimos', 'bob', true);
+  await e.tickPresentUsers();
+  const a = await e.getUserAggregate(TEAM, 'bob');
+  assert.equal(a.totalWatchSec, SECS_PER_COIN + 60);
+  // Quelle ist jetzt der g:-Schlüssel, der Legacy-Schlüssel ist weg:
+  assert.equal(await e.redis.get(K.chWatch(TEAM, 'justcallmedeimos', 'bob')), null);
+  assert.equal(parseFloat(await e.redis.get(K.gWatch(TEAM, 'sess_1', 'justcallmedeimos', 'bob'))), SECS_PER_COIN + 60);
+});
+
+test('phase2b: zweites Giveaway startet bei null, Stand des ersten bleibt getrennt', async () => {
+  const e = engine();
+  await e.openGiveaway(TEAM, 'join', 'sess_1');
+  await e.handleViewerTick(TEAM, 'justcallmedeimos', 'bob', true);
+  await e.tickPresentUsers();
+  let a = await e.getUserAggregate(TEAM, 'bob');
+  assert.equal(a.totalWatchSec, 60);
+  await e.openGiveaway(TEAM, 'join', 'sess_2');
+  a = await e.getUserAggregate(TEAM, 'bob');
+  assert.equal(a.totalWatchSec, 0);                 // frischer Stand
+  assert.equal(parseFloat(await e.redis.get(K.gWatch(TEAM, 'sess_1', 'justcallmedeimos', 'bob'))), 60);
+});
+
+test('phase2b: Multiplier haengt am Giveaway, nicht am Team', async () => {
+  const e = engine();
+  await e.openGiveaway(TEAM, 'join', 'sess_1');
+  await e.setMultiplier(TEAM, 2, 900);
+  assert.equal(await e.getMultiplier(TEAM), 2);
+  await e.openGiveaway(TEAM, 'join', 'sess_2');
+  assert.equal(await e.getMultiplier(TEAM), 1);     // kein Alt-Boost im neuen Giveaway
+});
+
+test('phase2b: Legacy-Multiplier wirkt nach Deploy weiter (Fallback)', async () => {
+  const e = engine();
+  await e.redis.set(K.gwMult(TEAM), '3');           // Boost von vor dem Deploy
+  await e.redis.set(K.gwSessionId(TEAM), 'sess_1'); // laufende Session
+  assert.equal(await e.getMultiplier(TEAM), 3);
+});
+
+test('phase2b: reset raeumt auch die g:-Schluessel ab', async () => {
+  const e = engine();
+  await e.openGiveaway(TEAM, 'join', 'sess_1');
+  await e.handleViewerTick(TEAM, 'justcallmedeimos', 'bob', true);
+  await e.tickPresentUsers();
+  await e.setMultiplier(TEAM, 2, 900);
+  await e.resetGiveaway(TEAM);
+  assert.equal(await e.redis.get(K.gWatch(TEAM, 'sess_1', 'justcallmedeimos', 'bob')), null);
+  assert.equal(await e.redis.get(K.gMult(TEAM, 'sess_1')), null);
+  const a = await e.getUserAggregate(TEAM, 'bob');
+  assert.equal(a.totalWatchSec, 0);
+});
+
+test('phase2b: backup roundtrip ueber die Giveaway-Dimension', async () => {
+  const e = engine();
+  await e.openGiveaway(TEAM, 'join', 'sess_1');
+  await e.handleViewerTick(TEAM, 'justcallmedeimos', 'bob', true);
+  await e.tickPresentUsers();
+  const dump = await e.exportTeam(TEAM);
+  assert.equal(dump.participants[0].perChannel['justcallmedeimos'].watchSec, 60);
+  await e.resetGiveaway(TEAM);
+  await e.importTeam(TEAM, dump, { mode: 'replace' });
+  const a = await e.getUserAggregate(TEAM, 'bob');
+  assert.equal(a.totalWatchSec, 60);
+});

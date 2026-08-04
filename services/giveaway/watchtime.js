@@ -63,6 +63,18 @@ const K = {
   chMsgs:     (t, ch, u) => `${TP(t)}gw:ch:${ch}:msgs:${u}`,
   chFollows:  (t, ch, u) => `${TP(t)}gw:ch:${ch}:follows:${u}`,
   chIndex:    (t, ch)    => `${TP(t)}gw:ch:${ch}:index`,
+  // ── Phase 2b: Giveaway-Dimension (docs/ARCHITEKTUR-CORES.md §6) ──
+  // Accrual-Zustand liegt je Giveaway (gid = Session-ID) unter t:<team>:g:<gid>:.
+  // Team-weit BLEIBEN bewusst: Presence/LastTick (Anwesenheit), Follows
+  // (Zuschauer-Eigenschaft), Index, Users, Banned, Keyword, cfg:* (Migration
+  // nach core_config folgt). Alte Schlüssel werden beim ersten Zugriff in den
+  // g:-Namespace migriert (Rename) — ein laufendes Giveaway übersteht den Deploy.
+  GP:        (t, g) => `${TP(t)}g:${g}:`,
+  gWatch:    (t, g, ch, u) => `${K.GP(t, g)}ch:${ch}:watch:${u}`,
+  gChatTs:   (t, g, ch, u) => `${K.GP(t, g)}ch:${ch}:chat_ts:${u}`,
+  gMsgs:     (t, g, ch, u) => `${K.GP(t, g)}ch:${ch}:msgs:${u}`,
+  gReg:      (t, g, u)     => `${K.GP(t, g)}registered:${u}`,
+  gMult:     (t, g)        => `${K.GP(t, g)}mult`,
   abuseHist:  (t, u) => `${TP(t)}gw:abuse:hist:${u}`,     // letzte Msg-Hashes
   abuseTimes: (t, u) => `${TP(t)}gw:abuse:times:${u}`,    // letzte Timestamps (Rate)
 };
@@ -133,9 +145,13 @@ class WatchtimeEngine {
     return (await this.getChannels(teamId))[0] || '';
   }
 
-  // ── Multiplier ──────────────────────────────────────────
+  // ── Multiplier (per Giveaway, Legacy-Fallback) ──────────
   async getMultiplier(teamId) {
-    const f = parseFloat(await this.redis.get(K.gwMult(sanitizeTeamId(teamId))) || '1');
+    const t = sanitizeTeamId(teamId);
+    const gid = await this._gid(t);
+    const raw = gid ? await this._readMech(K.gMult(t, gid), K.gwMult(t))
+                    : await this.redis.get(K.gwMult(t));
+    const f = parseFloat(raw || '1');
     return (isFinite(f) && f > 0) ? f : 1;
   }
   // Teilnahmebedingung: wie vielen Kanälen muss man folgen (per-Team, default MIN_CHANNELS).
@@ -200,20 +216,52 @@ class WatchtimeEngine {
   }
   async setMultiplier(teamId, factor, seconds) {
     const t = sanitizeTeamId(teamId);
+    const gid = await this._gid(t);
+    const key = gid ? K.gMult(t, gid) : K.gwMult(t);
     const f = Math.max(1, Math.min(10, parseFloat(factor) || 1));
     const s = Math.max(1, Math.min(86400, parseInt(seconds) || 0));
-    if (f <= 1 || !s) { await this.redis.del(K.gwMult(t)); return { factor: 1, seconds: 0 }; }
-    await this.redis.set(K.gwMult(t), String(f), 'EX', s);
+    if (f <= 1 || !s) {
+      await this.redis.del(key);
+      await this.redis.del(K.gwMult(t));   // Altbestand nie parallel weiterlaufen lassen
+      return { factor: 1, seconds: 0 };
+    }
+    await this.redis.set(key, String(f), 'EX', s);
+    if (gid) await this.redis.del(K.gwMult(t));
     return { factor: f, seconds: s };
   }
   async multiplierState(teamId) {
     const t = sanitizeTeamId(teamId);
     const f = await this.getMultiplier(t);
-    const ttl = f > 1 ? await this.redis.ttl(K.gwMult(t)) : 0;
+    if (f <= 1) return { factor: f, secondsLeft: 0 };
+    const gid = await this._gid(t);
+    let ttl = gid ? await this.redis.ttl(K.gMult(t, gid)) : -2;
+    if (ttl < 0) ttl = await this.redis.ttl(K.gwMult(t));
     return { factor: f, secondsLeft: ttl > 0 ? ttl : 0 };
   }
 
   _followAllowed(val) { return val !== '0'; }
+
+  // ── Phase 2b: Giveaway-Dimension ────────────────────────
+  // gid = Session-ID des laufenden Giveaways. Ohne offene Session (gid null)
+  // laufen alle Zugriffe wie bisher auf den Legacy-Schlüsseln.
+  async _gid(teamId) { return await this.redis.get(K.gwSessionId(teamId)); }
+
+  // Lesen: neuer g:-Schlüssel gewinnt, sonst Altbestand (Deploy-Überleben).
+  async _readMech(gKey, legacyKey) {
+    const v = await this.redis.get(gKey);
+    return (v !== null && v !== undefined) ? v : await this.redis.get(legacyKey);
+  }
+  // Vor dem Schreiben: Altbestand einmalig in den g:-Namespace verschieben,
+  // damit es je Wert genau EINE Quelle gibt (nie beide addieren/lesen).
+  async _migrateKey(gKey, legacyKey) {
+    const cur = await this.redis.get(gKey);
+    if (cur !== null && cur !== undefined) return;
+    const legacy = await this.redis.get(legacyKey);
+    if (legacy !== null && legacy !== undefined) {
+      await this.redis.set(gKey, legacy);
+      await this.redis.del(legacyKey);
+    }
+  }
 
   async isOpen(teamId)      { return await this.redis.get(K.gwOpen(sanitizeTeamId(teamId))) === 'true'; }
   async isPaused(teamId)    { return await this.redis.get(K.gwPaused(sanitizeTeamId(teamId))) === 'true'; }
@@ -268,7 +316,9 @@ class WatchtimeEngine {
           if (await this.redis.get(K.gwBanned(t, u)) === '1') continue;
           if (!await this.redis.get(K.chPresent(t, ch, u))) continue;
           if (!this._followAllowed(await this.redis.get(K.chFollows(t, ch, u)))) continue;
-          const newSec = parseFloat(await this.redis.incrbyfloat(K.chWatch(t, ch, u), inc));
+          const wKey = sid ? K.gWatch(t, sid, ch, u) : K.chWatch(t, ch, u);
+          if (sid) await this._migrateKey(wKey, K.chWatch(t, ch, u));
+          const newSec = parseFloat(await this.redis.incrbyfloat(wKey, inc));
           await this._logEvent(t, u, 'tick', inc, sid, ch);
           updates.push({ teamId: t, username: u, channel: ch, watchSec: newSec, coins: coinsFromSec(newSec, base) });
         }
@@ -295,14 +345,17 @@ class WatchtimeEngine {
     await this._touchUser(t, u);
     await this.redis.sadd(K.chIndex(t, ch), u);
 
+    const mKey = sid ? K.gMsgs(t, sid, ch, u) : K.chMsgs(t, ch, u);
+    if (sid) await this._migrateKey(mKey, K.chMsgs(t, ch, u));
+
     const keyword = await this.redis.get(K.gwKeyword(t));
     if (matchesKeyword(cleanMsg, keyword)) {
-      await this.redis.incr(K.chMsgs(t, ch, u));
+      await this.redis.incr(mKey);
       return this._tryRegister(t, u, username);
     }
 
     if (await this.redis.get(K.gwBanned(t, u)) === '1') return null;
-    await this.redis.incr(K.chMsgs(t, ch, u));
+    await this.redis.incr(mKey);
     await this._detectAbuse(t, u, cleanMsg);   // Spam-Signale (flaggt, bannt nicht)
 
     if (!this._followAllowed(await this.redis.get(K.chFollows(t, ch, u)))) return { channel: ch, followed: false };
@@ -317,7 +370,8 @@ class WatchtimeEngine {
       message: cleanMsg, minWords: chatCfg.minWords, aiVerdict });
     if (!meaningful) return null;
 
-    const chatKey = K.chChatTs(t, ch, u);
+    const chatKey = sid ? K.gChatTs(t, sid, ch, u) : K.chChatTs(t, ch, u);
+    if (sid) await this._migrateKey(chatKey, K.chChatTs(t, ch, u));   // Cooldown läuft weiter
     const now = Math.floor(Date.now() / 1000);
     const lastTs = await this.redis.get(chatKey);
     if (lastTs && (now - parseInt(lastTs)) < chatCfg.cooldown) return null;
@@ -325,7 +379,9 @@ class WatchtimeEngine {
     const mult = await this.getMultiplier(t);
     const inc  = CORE.chatDelta({ bonusSec: chatCfg.bonusSec, multiplier: mult });
     await this.redis.set(chatKey, String(now), 'EX', 86400);
-    const newSec = parseFloat(await this.redis.incrbyfloat(K.chWatch(t, ch, u), inc));
+    const wKey = sid ? K.gWatch(t, sid, ch, u) : K.chWatch(t, ch, u);
+    if (sid) await this._migrateKey(wKey, K.chWatch(t, ch, u));
+    const newSec = parseFloat(await this.redis.incrbyfloat(wKey, inc));
     await this._logEvent(t, u, 'chat_bonus', inc, sid, ch);
 
     return { added: inc, channel: ch, watchSec: newSec, judgedBy,
@@ -336,8 +392,11 @@ class WatchtimeEngine {
     // Opt-in per Keyword: JEDER kann sich anmelden (= Zustimmung Regeln).
     // Für den Lostopf zählt separat die Berechtigung (Follows + ≥2h Viewtime),
     // siehe getUserAggregate.eligible.
-    const already = await this.redis.get(K.gwRegistered(teamId, username));
-    await this.redis.set(K.gwRegistered(teamId, username), '1');
+    const gid = await this._gid(teamId);
+    const regKey = gid ? K.gReg(teamId, gid, username) : K.gwRegistered(teamId, username);
+    if (gid) await this._migrateKey(regKey, K.gwRegistered(teamId, username));
+    const already = await this.redis.get(regKey);
+    await this.redis.set(regKey, '1');
     await this._touchUser(teamId, username);
     await this.pg.query(`
       INSERT INTO users (username, display) VALUES ($1, $2)
@@ -351,7 +410,8 @@ class WatchtimeEngine {
     const t = sanitizeTeamId(teamId);
     const u = sanitizeUsername(username);
     if (!t || !u) return null;
-    await this.redis.set(K.gwRegistered(t, u), '1');
+    const gid = await this._gid(t);
+    await this.redis.set(gid ? K.gReg(t, gid, u) : K.gwRegistered(t, u), '1');
     await this._touchUser(t, u);
     await this.pg.query(`INSERT INTO users (username, display) VALUES ($1,$1)
                          ON CONFLICT (username) DO UPDATE SET last_seen = NOW()`, [u]);
@@ -366,8 +426,10 @@ class WatchtimeEngine {
     const sid = await this.redis.get(K.gwSessionId(t));
     await this._touchUser(t, u);
     await this.redis.sadd(K.chIndex(t, ch), u);
-    let after = parseFloat(await this.redis.incrbyfloat(K.chWatch(t, ch, u), deltaSec));
-    if (after < 0) { await this.redis.set(K.chWatch(t, ch, u), '0'); after = 0; }
+    const wKey = sid ? K.gWatch(t, sid, ch, u) : K.chWatch(t, ch, u);
+    if (sid) await this._migrateKey(wKey, K.chWatch(t, ch, u));
+    let after = parseFloat(await this.redis.incrbyfloat(wKey, deltaSec));
+    if (after < 0) { await this.redis.set(wKey, '0'); after = 0; }
     await this._logEvent(t, u, deltaSec >= 0 ? 'admin_add' : 'admin_sub', deltaSec, sid, ch);
     return { username: u, channel: ch, watchSec: after };
   }
@@ -386,20 +448,25 @@ class WatchtimeEngine {
     const t = sanitizeTeamId(teamId);
     const u = sanitizeUsername(username);
     const channels = await this.getChannels(t);
+    const gid = await this._gid(t);
     const perChannelRaw = {};
     for (const ch of channels) {
       perChannelRaw[ch] = {
-        watchSec: parseFloat(await this.redis.get(K.chWatch(t, ch, u)) || '0'),
-        msgs:     parseInt(await this.redis.get(K.chMsgs(t, ch, u)) || '0'),
+        watchSec: parseFloat((gid ? await this._readMech(K.gWatch(t, gid, ch, u), K.chWatch(t, ch, u))
+                                  : await this.redis.get(K.chWatch(t, ch, u))) || '0'),
+        msgs:     parseInt((gid ? await this._readMech(K.gMsgs(t, gid, ch, u), K.chMsgs(t, ch, u))
+                                : await this.redis.get(K.chMsgs(t, ch, u))) || '0'),
         // Follow-Gate STRIKT: nur bestätigte Follows (Live-Event '1' oder Helix) zählen.
         // (Viewtime-Accrual bleibt permissiv, siehe tickPresentUsers.)
+        // Follows bleiben team-weit — Eigenschaft des Zuschauers, nicht des Giveaways.
         follows:  (await this.redis.get(K.chFollows(t, ch, u))) === '1',
       };
     }
     return CORE.aggregate({
       username: u,
       perChannelRaw,
-      registered: await this.redis.get(K.gwRegistered(t, u)) === '1',
+      registered: (gid ? await this._readMech(K.gReg(t, gid, u), K.gwRegistered(t, u))
+                       : await this.redis.get(K.gwRegistered(t, u))) === '1',
       banned:     await this.redis.get(K.gwBanned(t, u)) === '1',
       cfg: {
         coinBaseSec: await this.getCoinBaseSec(t),
@@ -615,15 +682,19 @@ class WatchtimeEngine {
     const t = sanitizeTeamId(teamId);
     const channels = await this.getChannels(t);
     const users = await this.redis.smembers(K.gwUsers(t));
+    const gid = await this.redis.get(K.gwSessionId(t));   // vor dem Löschen merken
     const pipeline = this.redis.pipeline();
     for (const u of users) {
       pipeline.del(K.gwRegistered(t, u));
+      if (gid) pipeline.del(K.gReg(t, gid, u));
       pipeline.del(K.gwBanned(t, u));
       pipeline.srem(K.userTeams(u), t);
       pipeline.del(K.abuseHist(t, u), K.abuseTimes(t, u));
       for (const ch of channels) {
         pipeline.del(K.chWatch(t, ch, u), K.chChatTs(t, ch, u), K.chPresent(t, ch, u),
                      K.chLastTick(t, ch, u), K.chMsgs(t, ch, u), K.chFollows(t, ch, u));
+        // g:-Namespace vollständig mitwegräumen — keine Redis-Leichen (§6).
+        if (gid) pipeline.del(K.gWatch(t, gid, ch, u), K.gChatTs(t, gid, ch, u), K.gMsgs(t, gid, ch, u));
       }
     }
     for (const ch of channels) pipeline.del(K.chIndex(t, ch));
@@ -634,6 +705,7 @@ class WatchtimeEngine {
     pipeline.del(K.gwKeyword(t));
     pipeline.del(K.gwSessionId(t));
     pipeline.del(K.gwMult(t));
+    if (gid) pipeline.del(K.gMult(t, gid));
     pipeline.del(K.gwChannels(t));
     await pipeline.exec();
     console.log(`[WTE] [${t}] reset`);
@@ -648,20 +720,24 @@ class WatchtimeEngine {
     if (!t) throw new Error('Invalid teamId');
     const channels = await this.getChannels(t);
     const users = await this.redis.smembers(K.gwUsers(t));
+    const gid = await this._gid(t);
 
     const participants = [];
     for (const u of users) {
       const perChannel = {};
       for (const ch of channels) {
-        const watchSec = parseFloat(await this.redis.get(K.chWatch(t, ch, u)) || '0');
-        const msgs     = parseInt(await this.redis.get(K.chMsgs(t, ch, u)) || '0');
+        const watchSec = parseFloat((gid ? await this._readMech(K.gWatch(t, gid, ch, u), K.chWatch(t, ch, u))
+                                         : await this.redis.get(K.chWatch(t, ch, u))) || '0');
+        const msgs     = parseInt((gid ? await this._readMech(K.gMsgs(t, gid, ch, u), K.chMsgs(t, ch, u))
+                                       : await this.redis.get(K.chMsgs(t, ch, u))) || '0');
         const follows  = await this.redis.get(K.chFollows(t, ch, u));
         if (!watchSec && !msgs && follows === null) continue;   // nie aktiv gewesen
         perChannel[ch] = { watchSec, msgs, follows };
       }
       participants.push({
         username: u,
-        registered: await this.redis.get(K.gwRegistered(t, u)) === '1',
+        registered: (gid ? await this._readMech(K.gReg(t, gid, u), K.gwRegistered(t, u))
+                         : await this.redis.get(K.gwRegistered(t, u))) === '1',
         banned:     await this.redis.get(K.gwBanned(t, u)) === '1',
         perChannel,
       });
@@ -711,13 +787,17 @@ class WatchtimeEngine {
     if (cfg.autoPause)  await this.redis.set(K.cfgAutoPause(t), '1');
     if (cfg.autoResume) await this.redis.set(K.cfgAutoResume(t), '1');
 
+    // Beim Merge in ein laufendes Giveaway muss auf dessen g:-Keys gebucht
+    // werden — sonst forken Import und Live-Stand. Nach replace ist gid null
+    // (Reset), geschrieben wird Legacy; der Fallback liest das korrekt.
+    const gid = await this._gid(t);
     let users = 0, channelsTouched = new Set();
     for (const p of data.participants) {
       const u = sanitizeUsername(p && p.username);
       if (!u) continue;
       users++;
       await this._touchUser(t, u);
-      if (p.registered) await this.redis.set(K.gwRegistered(t, u), '1');
+      if (p.registered) await this.redis.set(gid ? K.gReg(t, gid, u) : K.gwRegistered(t, u), '1');
       if (p.banned)     await this.redis.set(K.gwBanned(t, u), '1');
       for (const [rawCh, v] of Object.entries(p.perChannel || {})) {
         const ch = sanitizeChannel(rawCh);
@@ -726,12 +806,15 @@ class WatchtimeEngine {
         await this.redis.sadd(K.chIndex(t, ch), u);
         const watchSec = Math.max(0, parseFloat(v.watchSec) || 0);
         const msgs     = Math.max(0, parseInt(v.msgs) || 0);
+        const wKey = gid ? K.gWatch(t, gid, ch, u) : K.chWatch(t, ch, u);
+        const mKey = gid ? K.gMsgs(t, gid, ch, u)  : K.chMsgs(t, ch, u);
+        if (gid) { await this._migrateKey(wKey, K.chWatch(t, ch, u)); await this._migrateKey(mKey, K.chMsgs(t, ch, u)); }
         if (mode === 'merge') {
-          if (watchSec) await this.redis.incrbyfloat(K.chWatch(t, ch, u), watchSec);
-          if (msgs)     await this.redis.incrby(K.chMsgs(t, ch, u), msgs);
+          if (watchSec) await this.redis.incrbyfloat(wKey, watchSec);
+          if (msgs)     await this.redis.incrby(mKey, msgs);
         } else {
-          await this.redis.set(K.chWatch(t, ch, u), String(watchSec));
-          await this.redis.set(K.chMsgs(t, ch, u), String(msgs));
+          await this.redis.set(wKey, String(watchSec));
+          await this.redis.set(mKey, String(msgs));
         }
         // follows: null bedeutet "nie gesehen" und bleibt null (permissiv),
         // '0'/'1' sind bestätigte Zustände und werden übernommen.
