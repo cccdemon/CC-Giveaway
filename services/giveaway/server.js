@@ -246,7 +246,16 @@ async function memberChannel(login, teamId) {
 const AUDIT_SKIP = new Set([
   'gw_get_channels', 'gw_get_multiplier', 'gw_get_stream_settings',
   'gw_get_keyword', 'gw_get_ingest_tokens', 'gw_get_ai_settings', 'gw_list_ai_models',
+  'gw_list_giveaways',
 ]);
+
+// Obergrenze gleichzeitiger Giveaways je Team (Entscheidung §10.2:
+// 3 langlaufende + 1 Sofortverlosung; die Typ-Trennung kommt mit den Cores,
+// bis dahin gilt die Summe). Konstante, per ENV überschreibbar — bewusst
+// nicht im Admin-Panel einstellbar.
+const MAX_PARALLEL_GIVEAWAYS = Math.max(1, parseInt(process.env.MAX_PARALLEL_GIVEAWAYS || '4', 10) || 4);
+
+const validGid = (s) => (typeof s === 'string' && /^sess_\d+$/i.test(s)) ? s : null;
 
 async function audit(entry) {
   const row = {
@@ -331,8 +340,13 @@ async function openGiveaway(teamId, keyword) {
   await wte.openGiveaway(teamId, keyword, sid);
   await redis.del(K.gwAutoPaused(teamId));   // frischer Start ist nie auto-pausiert
   const chans = await wte.getChannels(teamId);
-  await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels, core, status) VALUES ($1,$2,$3,$4,$5,'open') ON CONFLICT (id) DO NOTHING`,
-    [sid, teamId, keyword || '', JSON.stringify(chans), CORE.id]);
+  // core_config-Snapshot beim Öffnen: übernimmt die (Legacy-)Team-Werte aus
+  // Redis — inkl. cfgDrawMinSec — in die Giveaway-Instanz (§6 Alt-Key-Migration).
+  // Gelesen wird zur Laufzeit weiterhin aus Redis; der Snapshot dokumentiert,
+  // mit welcher Konfiguration dieses Giveaway gestartet ist.
+  const coreConfig = await snapshotCoreConfig(teamId);
+  await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels, core, status, core_config) VALUES ($1,$2,$3,$4,$5,'open',$6) ON CONFLICT (id) DO NOTHING`,
+    [sid, teamId, keyword || '', JSON.stringify(chans), CORE.id, JSON.stringify(coreConfig)]);
   broadcastTeam(teamId, { event: 'gw_status', status: 'open' });
   await announceTeam(teamId, '🎉 Das Giveaway ist ERÖFFNET! ' + await giveawayInfoText(teamId));
   log('GW', `[${teamId}] opened session ${sid}, kw="${keyword}", channels=${chans.join(',')}`);
@@ -345,6 +359,26 @@ async function setSessionStatus(teamId, status) {
     const sid = await wte.getSessionId(teamId);
     if (sid) await pg.query(`UPDATE sessions SET status=$1 WHERE id=$2`, [status, sid]);
   } catch (e) { logErr('GW', 'setSessionStatus:', e.message); }
+}
+async function setSessionStatusById(gid, status) {
+  try { await pg.query(`UPDATE sessions SET status=$1 WHERE id=$2`, [status, gid]); }
+  catch (e) { logErr('GW', 'setSessionStatusById:', e.message); }
+}
+async function snapshotCoreConfig(teamId) {
+  return {
+    coinBaseSec: await wte.getCoinBaseSec(teamId),
+    followMin:   await wte.getFollowMin(teamId),
+    chat:        await wte.getChatConfig(teamId),
+  };
+}
+// Ansage nur in bestimmte Kanäle (Instanz mit Kanal-Teilmenge);
+// channels null = alle Team-Kanäle.
+async function announceChannels(teamId, channels, message) {
+  if (!Array.isArray(channels) || !channels.length) return announceTeam(teamId, message);
+  for (const ch of channels) {
+    redisPub.publish('ch:chat_reply', JSON.stringify({ event: 'chat_reply', channel: ch, message }));
+  }
+  return channels.length;
 }
 async function closeGiveaway(teamId) {
   const sid = await wte.getSessionId(teamId);
@@ -666,16 +700,93 @@ async function runAdminCmd(send, msg, meta, ctx) {
       await closeGiveaway(teamId);
       send({ event: 'gw_status', status: 'closed' });
       break;
-    case 'gw_pause':
+    case 'gw_pause': {
+      // Mit giveawayId: nur diese Sekundär-Instanz pausieren.
+      const gid = validGid(msg.giveawayId);
+      if (gid && gid !== await sid()) {
+        await wte.setPaused(teamId, true, gid);
+        await setSessionStatusById(gid, 'paused');
+        Object.assign(outcome, { giveawayId: gid });
+        send({ event: 'gw_ack', type: 'instance_paused', giveawayId: gid });
+        break;
+      }
       await pauseGiveaway(teamId);               // manuell, nicht auto
       send({ event: 'gw_status', status: 'paused' });
       log('GW', `[${teamId}] paused`);
       break;
-    case 'gw_resume':
+    }
+    case 'gw_resume': {
+      const gid = validGid(msg.giveawayId);
+      if (gid && gid !== await sid()) {
+        await wte.setPaused(teamId, false, gid);
+        await setSessionStatusById(gid, 'open');
+        Object.assign(outcome, { giveawayId: gid });
+        send({ event: 'gw_ack', type: 'instance_resumed', giveawayId: gid });
+        break;
+      }
       await resumeGiveaway(teamId);
       send({ event: 'gw_status', status: 'open' });
       log('GW', `[${teamId}] resumed`);
       break;
+    }
+    // ── Phase 2d: Parallel-Instanzen (z.B. Sofortverlosung neben Kampagne) ──
+    case 'gw_list_giveaways': {
+      send({ event: 'gw_ack', type: 'giveaways', giveaways: await wte.listGiveaways(teamId),
+             maxParallel: MAX_PARALLEL_GIVEAWAYS });
+      break;
+    }
+    case 'gw_open_instance': {
+      // Dieselben Rechts-Gates wie gw_open — jede Instanz ist ein Gewinnspiel.
+      if (!await ownerAcceptedTos(teamId)) {
+        Object.assign(outcome, { blocked: 'no_tos' });
+        send({ event: 'gw_ack', type: 'open_blocked', error: TOS_HINT });
+        break;
+      }
+      if (!await hasImprint(teamId)) {
+        Object.assign(outcome, { blocked: 'no_imprint' });
+        send({ event: 'gw_ack', type: 'open_blocked', error: IMPRINT_HINT });
+        break;
+      }
+      const running = await wte.listGiveaways(teamId);
+      if (running.length >= MAX_PARALLEL_GIVEAWAYS) {
+        Object.assign(outcome, { blocked: 'limit', running: running.length });
+        send({ event: 'gw_ack', type: 'open_blocked',
+               error: `Maximal ${MAX_PARALLEL_GIVEAWAYS} gleichzeitige Giveaways je Team.` });
+        break;
+      }
+      const keyword = sanitizeStr(msg.keyword || '', 100);
+      const teamChans = await wte.getChannels(teamId);
+      const wanted = Array.isArray(msg.channels) ? msg.channels.map(sanitizeChannel).filter(Boolean) : [];
+      const channels = wanted.filter(ch => teamChans.includes(ch));   // nur eigene Kanäle
+      const gid = `sess_${Date.now()}`;
+      const coreConfig = await snapshotCoreConfig(teamId);
+      await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels, core, status, core_config)
+                      VALUES ($1,$2,$3,$4,$5,'open',$6) ON CONFLICT (id) DO NOTHING`,
+        [gid, teamId, keyword, JSON.stringify(channels.length ? channels : teamChans), CORE.id, JSON.stringify(coreConfig)]);
+      await wte.openGiveawayInstance(teamId, gid, { keyword, channels: channels.length ? channels : null });
+      Object.assign(outcome, { giveawayId: gid, keyword, channels: channels.length ? channels : 'alle' });
+      await announceChannels(teamId, channels.length ? channels : null,
+        '🎁 Zusätzliches Giveaway gestartet!' + (keyword ? ` Mitmachen: schreib "${keyword}" im Chat.` : ''));
+      send({ event: 'gw_ack', type: 'instance_opened', giveawayId: gid, keyword,
+             channels: channels.length ? channels : null });
+      break;
+    }
+    case 'gw_close_instance': {
+      const gid = validGid(msg.giveawayId);
+      const known = gid ? (await wte.listGiveaways(teamId)).find(g => g.gid === gid && !g.primary) : null;
+      if (!known) {
+        Object.assign(outcome, { error: 'unknown_instance', giveawayId: msg.giveawayId || null });
+        send({ event: 'gw_ack', type: 'error', error: 'Unbekannte Giveaway-Instanz.' });
+        break;
+      }
+      await wte.closeGiveawayInstance(teamId, gid);
+      await setSessionStatusById(gid, 'closed');
+      Object.assign(outcome, { giveawayId: gid });
+      await announceChannels(teamId, known.channels,
+        '🔒 Das zusätzliche Giveaway ist geschlossen — Ziehung folgt.');
+      send({ event: 'gw_ack', type: 'instance_closed', giveawayId: gid });
+      break;
+    }
     case 'gw_set_stream_settings': {
       const ap = !!msg.autoPause, ar = !!msg.autoResume;
       if (ap) await redis.set(K.cfgAutoPause(teamId), '1'); else await redis.del(K.cfgAutoPause(teamId));
@@ -836,8 +947,11 @@ async function runAdminCmd(send, msg, meta, ctx) {
       break;
     }
     case 'gw_set_multiplier': {
-      const prev = await wte.multiplierState(teamId);
-      const r = await wte.setMultiplier(teamId, msg.factor, (parseInt(msg.minutes) || 0) * 60);
+      // Mit giveawayId: Boost für genau diese Instanz („Boost für 15 Minuten"
+      // muss ein Giveaway meinen, nicht das Team — §6).
+      const mGid = validGid(msg.giveawayId) || undefined;
+      const prev = await wte.multiplierState(teamId, mGid);
+      const r = await wte.setMultiplier(teamId, msg.factor, (parseInt(msg.minutes) || 0) * 60, mGid);
       Object.assign(outcome, { factorBefore: prev.factor, factorAfter: r.factor, seconds: r.seconds });
       broadcastTeam(teamId, { event: 'gw_multiplier', factor: r.factor, secondsLeft: r.seconds });
       // Ein Boost, den keiner mitbekommt, bringt niemanden zum Zuschauen.
@@ -889,7 +1003,9 @@ async function runAdminCmd(send, msg, meta, ctx) {
       try {
         // Vor echter Ziehung Follows via Helix verifizieren (Phase 4).
         if (!msg.test) { try { await verifyFollows(teamId); } catch(e) { logErr('Helix', 'pre-draw verify:', e.message); } }
-        const result = await wte.drawWinner(teamId, await sid(), { test: !!msg.test, prize: msg.prize });
+        // Mit giveawayId zieht die Instanz, sonst das Primary.
+        const drawGid = validGid(msg.giveawayId) || await sid();
+        const result = await wte.drawWinner(teamId, drawGid, { test: !!msg.test, prize: msg.prize });
         if (!result) { outcome.winner = null; send({ event: 'gw_ack', type: 'no_winner' }); break; }
         Object.assign(outcome, { winner: result.winner, winnerCoins: result.coins, drawId: result.drawId,
                                  eligibleCount: result.eligibleCount, totalCoins: result.total,

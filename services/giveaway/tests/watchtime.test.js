@@ -502,3 +502,33 @@ test('phase2c: close der Instanz laesst Kampagne im Scan-Set, und umgekehrt', as
   await e.closeGiveaway(TEAM, 'sess_1');
   assert.deepEqual(await e.listOpenTeams(), []);
 });
+
+// ── Phase 2d: Server-Anbindung der Instanzen ──────────────
+
+test('phase2d: Sekundaer-Boost laesst Primary-Boost unberuehrt', async () => {
+  const e = engine();
+  await e.redis.set(K.gwMult(TEAM), '3');            // Legacy-Boost von vor dem Deploy
+  await e.redis.set(K.gwSessionId(TEAM), 'sess_1');
+  await e.redis.set(K.gwOpen(TEAM), 'true');
+  await e.openGiveawayInstance(TEAM, 'sess_2', {});
+  await e.setMultiplier(TEAM, 2, 900, 'sess_2');
+  assert.equal(await e.getMultiplier(TEAM), 3);           // Primary weiter 3 (Fallback)
+  assert.equal(await e.getMultiplier(TEAM, 'sess_2'), 2);
+  await e.setMultiplier(TEAM, 1, 0, 'sess_2');            // Sekundär aus
+  assert.equal(await e.getMultiplier(TEAM), 3);           // Primary unberührt
+});
+
+test('phase2d: listGiveaways liefert Primary + Instanzen mit Metadaten', async () => {
+  const e = engine();
+  await e.openGiveaway(TEAM, 'join', 'sess_1');
+  await e.openGiveawayInstance(TEAM, 'sess_2', { keyword: 'blitz', channels: ['jerichoramirez'] });
+  await e.setPaused(TEAM, true, 'sess_2');
+  const list = await e.listGiveaways(TEAM);
+  assert.equal(list.length, 2);
+  const p = list.find(g => g.primary), s = list.find(g => !g.primary);
+  assert.equal(p.gid, 'sess_1');
+  assert.equal(p.keyword, 'join');
+  assert.equal(s.gid, 'sess_2');
+  assert.equal(s.paused, true);
+  assert.deepEqual(s.channels, ['jerichoramirez']);
+});

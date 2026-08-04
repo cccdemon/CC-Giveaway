@@ -229,17 +229,19 @@ class WatchtimeEngine {
   }
   async setMultiplier(teamId, factor, seconds, explicitGid = undefined) {
     const t = sanitizeTeamId(teamId);
-    const gid = explicitGid === undefined ? await this._gid(t) : explicitGid;
+    const primary = await this._gid(t);
+    const gid = explicitGid === undefined ? primary : explicitGid;
+    const isPrimary = !gid || gid === primary;   // Legacy-Key gehört NUR dem Primary
     const key = gid ? K.gMult(t, gid) : K.gwMult(t);
     const f = Math.max(1, Math.min(10, parseFloat(factor) || 1));
     const s = Math.max(1, Math.min(86400, parseInt(seconds) || 0));
     if (f <= 1 || !s) {
       await this.redis.del(key);
-      await this.redis.del(K.gwMult(t));   // Altbestand nie parallel weiterlaufen lassen
+      if (isPrimary) await this.redis.del(K.gwMult(t));   // Altbestand nie parallel weiterlaufen lassen
       return { factor: 1, seconds: 0 };
     }
     await this.redis.set(key, String(f), 'EX', s);
-    if (gid) await this.redis.del(K.gwMult(t));
+    if (gid && isPrimary) await this.redis.del(K.gwMult(t));
     return { factor: f, seconds: s };
   }
   async multiplierState(teamId, gid = undefined) {
@@ -686,6 +688,30 @@ class WatchtimeEngine {
     }
     await this.redis.sadd(K.openTeams(), t);
     console.log(`[WTE] [${t}] instance ${gid} opened, keyword="${keyword}"`);
+  }
+
+  // Alle offenen Giveaways (inkl. pausierter) mit Metadaten — fürs Panel.
+  async listGiveaways(teamId) {
+    const t = sanitizeTeamId(teamId);
+    const out = [];
+    const legacySid = await this.redis.get(K.gwSessionId(t));
+    if (await this.redis.get(K.gwOpen(t)) === 'true') {
+      out.push({ gid: legacySid || null, primary: true,
+                 paused: await this.redis.get(K.gwPaused(t)) === 'true',
+                 keyword: await this.redis.get(K.gwKeyword(t)) || '',
+                 channels: null });
+    }
+    for (const g of await this.redis.smembers(K.gwSet(t))) {
+      if (g === legacySid) continue;
+      if (await this.redis.get(K.gOpen(t, g)) !== 'true') continue;
+      let chans = null;
+      try { const raw = await this.redis.get(K.gChanList(t, g)); if (raw) chans = JSON.parse(raw); } catch { /* alle */ }
+      out.push({ gid: g, primary: false,
+                 paused: await this.redis.get(K.gPaused(t, g)) === 'true',
+                 keyword: await this.redis.get(K.gKw(t, g)) || '',
+                 channels: Array.isArray(chans) && chans.length ? chans : null });
+    }
+    return out;
   }
 
   async closeGiveawayInstance(teamId, gid) {

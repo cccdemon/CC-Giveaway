@@ -462,10 +462,16 @@ und gehört deshalb nicht ins Änderungsprotokoll.
 > mit Lazy-Migration des Altbestands, und die Ingest-Verteilung
 > (`_activeGiveaways`, Sekundär-Instanzen via `openGiveawayInstance` mit
 > eigenem Keyword/Kanalliste/Pause/Multiplier; Tick und Chat verteilen an
-> alle aktiven Giveaways, Ziehung zieht je Giveaway). Der Server spricht
-> weiter nur das Primary an. **Offen (2d):** Panel-Auswahl, Server-Cmds für
-> Instanzen, Sim-Console-Giveaway-Auswahl, `cfgDrawMinSec` → `core_config`,
-> Obergrenze 3+1 durchsetzen, Chat-Ansagen je Giveaway.
+> alle aktiven Giveaways, Ziehung zieht je Giveaway). Server-Anbindung (2d):
+> `gw_open_instance`/`gw_close_instance`/`gw_list_giveaways` (mit Rechts-Gates
+> und Obergrenze `MAX_PARALLEL_GIVEAWAYS`, ENV, Default 4 = 3+1);
+> `gw_pause`/`gw_resume`/`gw_set_multiplier`/`gw_draw_winner` nehmen optional
+> `giveawayId`. `core_config`-Snapshot beim Öffnen übernimmt die Team-Werte
+> inkl. Alt-Key `cfgDrawMinSec`. Die **Test-Console-Sim braucht keine eigene
+> Giveaway-Auswahl**: Sim-Events laufen durch dieselbe Pipeline und werden
+> serverseitig an alle aktiven Giveaways verteilt. **Offen:** Panel-UI
+> (Giveaway-Auswahl im Dashboard), Sekundär-Anzeige (`wt_update` je Instanz),
+> Laufzeit-Config aus `core_config` statt Redis-Team-Keys.
 
 Schlüssel um `g:<giveawayId>` erweitern, Ingest-Verteilung auf n Empfänger,
 Giveaway-Auswahl im Panel. Altbestand über Fallback auf die alten Schlüssel,
