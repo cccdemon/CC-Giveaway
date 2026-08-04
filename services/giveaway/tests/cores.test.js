@@ -199,6 +199,15 @@ test('Phase 1: fmtDur/tickDelta/chatDelta unverändert', () => {
   assert.strictEqual(CORE.chatDelta({ bonusSec: 2, multiplier: 1.5 }), 3);
 });
 
+test('Phase 2a: Registry löst Core-IDs auf, Fallback = heutiger Core', () => {
+  const reg = require('../cores/index.js');
+  assert.strictEqual(reg.getCore('CORE_WatchtimeChatActivity'), CORE);
+  assert.strictEqual(reg.getCore('gibts_nicht'), CORE);   // Bestands-Sessions laufen weiter
+  assert.strictEqual(reg.getCore(null), CORE);
+  assert.strictEqual(reg.DEFAULT_CORE_ID, 'CORE_WatchtimeChatActivity');
+  assert.deepStrictEqual(reg.listCores(), [{ id: 'CORE_WatchtimeChatActivity', label: 'Zuschauzeit & Chat' }]);
+});
+
 test('Phase 1: coinsFromSec Fallback bei fehlender Basis unverändert', () => {
   for (const sec of [0, 1, 3599, 3600, 7200, 10800, 123456]) {
     assert.strictEqual(CORE.coinsFromSec(sec), refCoinsFromSec(sec));

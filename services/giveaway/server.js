@@ -331,15 +331,24 @@ async function openGiveaway(teamId, keyword) {
   await wte.openGiveaway(teamId, keyword, sid);
   await redis.del(K.gwAutoPaused(teamId));   // frischer Start ist nie auto-pausiert
   const chans = await wte.getChannels(teamId);
-  await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING`,
-    [sid, teamId, keyword || '', JSON.stringify(chans)]);
+  await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels, core, status) VALUES ($1,$2,$3,$4,$5,'open') ON CONFLICT (id) DO NOTHING`,
+    [sid, teamId, keyword || '', JSON.stringify(chans), CORE.id]);
   broadcastTeam(teamId, { event: 'gw_status', status: 'open' });
   await announceTeam(teamId, '🎉 Das Giveaway ist ERÖFFNET! ' + await giveawayInfoText(teamId));
   log('GW', `[${teamId}] opened session ${sid}, kw="${keyword}", channels=${chans.join(',')}`);
   return sid;
 }
+// sessions.status spiegelt den Redis-Zustand (open/paused/closed) — rein
+// informativ fuer Archiv/Panel, das Verhalten haengt weiter an Redis.
+async function setSessionStatus(teamId, status) {
+  try {
+    const sid = await wte.getSessionId(teamId);
+    if (sid) await pg.query(`UPDATE sessions SET status=$1 WHERE id=$2`, [status, sid]);
+  } catch (e) { logErr('GW', 'setSessionStatus:', e.message); }
+}
 async function closeGiveaway(teamId) {
   const sid = await wte.getSessionId(teamId);
+  await setSessionStatus(teamId, 'closed');
   await wte.closeGiveaway(teamId, sid);
   await redis.del(K.gwOnline(teamId), K.gwAutoPaused(teamId));
   boostAnnounced.delete(teamId);
@@ -350,6 +359,7 @@ async function closeGiveaway(teamId) {
 }
 async function pauseGiveaway(teamId, { auto = false } = {}) {
   await wte.setPaused(teamId, true);
+  await setSessionStatus(teamId, 'paused');
   if (auto) await redis.set(K.gwAutoPaused(teamId), '1');
   else      await redis.del(K.gwAutoPaused(teamId));
   broadcastTeam(teamId, { event: 'gw_status', status: 'paused' });
@@ -359,6 +369,7 @@ async function pauseGiveaway(teamId, { auto = false } = {}) {
 }
 async function resumeGiveaway(teamId, { auto = false } = {}) {
   await wte.setPaused(teamId, false);
+  await setSessionStatus(teamId, 'open');
   await redis.del(K.gwAutoPaused(teamId));
   broadcastTeam(teamId, { event: 'gw_status', status: 'open' });
   await announceTeam(teamId, auto
@@ -1485,6 +1496,14 @@ async function ensureSchema() {
   // Multi-tenant + multi-channel columns.
   await pg.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS channels JSONB`);
   await pg.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS team_id TEXT`);
+  // Phase 2 (Cores, docs/ARCHITEKTUR-CORES.md §7): sessions ist die
+  // Giveaway-Instanz. Bestandszeilen bekommen den heutigen Core als Default
+  // und laufen unveraendert weiter — keine Datenmigration.
+  await pg.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS core TEXT NOT NULL DEFAULT 'CORE_WatchtimeChatActivity'`);
+  await pg.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS core_config JSONB`);
+  await pg.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS status TEXT`);
+  await pg.query(`ALTER TABLE giveaway_draws ADD COLUMN IF NOT EXISTS core TEXT`);
+  await pg.query(`ALTER TABLE giveaway_draws ADD COLUMN IF NOT EXISTS prize_id BIGINT`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_sessions_team ON sessions(team_id)`);
   await pg.query(`ALTER TABLE watchtime_events ADD COLUMN IF NOT EXISTS channel TEXT`);
   await pg.query(`ALTER TABLE watchtime_events ADD COLUMN IF NOT EXISTS team_id TEXT`);

@@ -539,10 +539,11 @@ class WatchtimeEngine {
       const ins = await client.query(`
         INSERT INTO giveaway_draws
           (session_id, winner, winner_coins, winner_watch_sec, total_coins,
-           eligible_count, rand_value, draw_index, is_test, prize, eligible_snapshot)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id
+           eligible_count, rand_value, draw_index, is_test, prize, eligible_snapshot, core)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id
       `, [sessionId || null, winner.username, winner.totalCoins, Math.round(winner.totalWatchSec),
-          totalRounded, eligible.length, randRounded, drawIndex, isTest, prize, JSON.stringify(snapshot)]);
+          totalRounded, eligible.length, randRounded, drawIndex, isTest, prize, JSON.stringify(snapshot),
+          CORE.id]);   // welche Mechanik gezogen hat — Nachvollziehbarkeit (§7)
       drawId = ins.rows[0].id;
       if (!isTest) {
         let prevWinner = null;
