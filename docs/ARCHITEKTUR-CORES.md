@@ -539,8 +539,19 @@ einziger neue Zuschauer-Interaktion braucht.
 > Redis `gWagerCmd`, Default `!setzen`); Chat: `<cmd> <preis> <anzahl>`,
 > `<cmd> <preis> 0` = Rücknahme, `<cmd>` = Hilfe mit Preisliste. Panel:
 > Instanz-Typauswahl (Kampagne/Sofort/Los), 🎁 Preis anlegen, ⌨ Befehl
-> ändern. **Offen (4c):** öffentliche Setz-/Guthaben-Seite
-> (claim-Muster, Caddy-Whitelist), Preisbild, `!los`-Integration.
+> ändern.
+>
+> **Teilschritt 4c umgesetzt:** Setz-/Guthaben-Seite
+> `/giveaway/wager.html` (Guthaben je Team, Preise mit eigenem Einsatz,
+> Setzen/Rücknahme, Chat-Befehl-Hinweis, Rechtstext-Fussnote) + REST
+> `GET /api/wager/state` und `POST /api/wager` — Identität ausschließlich
+> aus der Twitch-Session (X-Auth-User), Buchungen auditiert
+> (`wager_set`/`wager_retract`). Caddy: **bewusst KEIN**
+> `@needsauth not path`-Eintrag — die Seite braucht den Login (Identität),
+> Zuschauer registrieren sich beim ersten Twitch-Login selbst; das ist das
+> claim.html-Muster, die frühere Whitelist-Notiz ist damit hinfällig.
+> Nav-Link „Lose setzen" in beiden Shared-Libs. **Offen:** Preisbild,
+> `!los`-Integration (nennt Guthaben/Einsätze).
 
 Pflichtpunkte über den Core hinaus:
 

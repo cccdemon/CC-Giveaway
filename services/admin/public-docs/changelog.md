@@ -19,6 +19,10 @@ Befehl (Standard „!setzen", der Streamer kann ihn umbenennen):
 jedes Los kann gewinnen. Nach der Ziehung sind die Einsätze aller
 Teilnehmer dieses Preises verbraucht.
 
+Neben dem Chat gibt es die Seite **„Lose setzen"** (Login mit Twitch):
+Guthaben je Team, alle offenen Preise mit deinem Einsatz, Setzen und
+Rücknahme per Klick.
+
 Guthaben entsteht ausschließlich aus Zuschauzeit: es ist nicht kaufbar,
 nicht auszahlbar, nicht übertragbar, und verfällt nach 12 Monaten ohne
 Bewegung. Alle Bewegungen stehen in „Meine Daten".

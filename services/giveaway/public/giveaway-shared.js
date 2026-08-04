@@ -255,6 +255,7 @@
     { href:'/giveaway/archive.html', label:'Vergangene Giveaways', ic:'🗄' },
     { href:'/giveaway/audit.html', label:'Audit-Log', ic:'🧾' },
     { href:'/giveaway/claim.html', label:'Gewinn melden', ic:'🏆' },
+    { href:'/giveaway/wager.html', label:'Lose setzen', ic:'🎟' },
     { href:'/admin/users.html', label:'Benutzer', ic:'👥' },
     { href:'/admin/datenschutz-admin.html', label:'Betroffenenrechte', ic:'🛡' },
     { href:'/viewer/help',      label:'Anleitung', ic:'📖' },

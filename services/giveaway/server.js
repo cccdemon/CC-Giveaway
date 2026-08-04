@@ -1441,6 +1441,55 @@ app.get('/api/audit/archive', async (req, res) => {
 // fremde Adressdaten hinterlegen.
 const CLAIM_FIELDS = { real_name: 120, email: 190, street: 140, zip: 20, city: 90, country: 60, note: 500 };
 
+// ── Phase 4c: Lose setzen (CORE_TicketBuy) ────────────────
+// Identität kommt ausschließlich aus der Twitch-Session (X-Auth-User via
+// Caddy forward_auth) — wie bei der Gewinnermeldung, nie per Fremdeingabe.
+app.get('/api/wager/state', async (req, res) => {
+  try {
+    const user = reqUser(req);
+    if (!user) return res.status(401).json({ error: 'unauthenticated' });
+    const out = [];
+    for (const t of await wte.getUserTeams(user)) {
+      const prizes = await wte.listPrizes(t);
+      const available = await wte.availableCredit(t, user);
+      if (!prizes.length && available <= 0) continue;   // nichts zu zeigen
+      const withStake = [];
+      for (const p of prizes) withStake.push({ ...p, myStake: await wte.prizeStake(p.id, user) });
+      let wagerCmd = null;   // Chat-Befehl der laufenden Los-Instanz (Hinweistext)
+      for (const g of await wte.listGiveaways(t)) {
+        if (g.core === 'CORE_TicketBuy' && g.gid) {
+          wagerCmd = (await redis.get(K.gWagerCmd(t, g.gid))) || '!setzen';
+          break;
+        }
+      }
+      out.push({ teamId: t, available, prizes: withStake, wagerCmd });
+    }
+    res.json({ user, teams: out });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/wager', express.json(), async (req, res) => {
+  try {
+    const user = reqUser(req);
+    if (!user) return res.status(401).json({ error: 'unauthenticated' });
+    const teamId = sanitizeTeamId(req.body && req.body.team);
+    const prizeId = parseInt(req.body && req.body.prizeId, 10);
+    const amtRaw = req.body ? req.body.amount : undefined;
+    const amount = parseInt(amtRaw, 10);
+    if (!teamId || !Number.isFinite(prizeId) || prizeId <= 0
+        || amtRaw === undefined || amtRaw === null || !Number.isFinite(amount) || amount < 0) {
+      return res.status(400).json({ error: 'bad_request' });
+    }
+    const r = await wte.placeWager(teamId, null, user, prizeId, amount);
+    if (r.error) return res.status(409).json({ error: r.error });
+    // Zustandsändernd ausserhalb der Admin-WS → eigener Audit-Eintrag.
+    await audit({ teamId, actor: user, ip: req.ip, action: amount === 0 ? 'wager_retract' : 'wager_set',
+                  target: user, detail: { prizeId, amount: amount || undefined,
+                                          refunded: r.refunded, stake: r.stake } });
+    res.json(r);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/claim/mine', async (req, res) => {
   try {
     const user = sanitizeUsername(reqUser(req) || '');
