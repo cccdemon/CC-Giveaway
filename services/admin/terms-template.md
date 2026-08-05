@@ -66,9 +66,10 @@ abweichend von § 4:
    nicht.
 2. **Alle Berechtigten haben dieselbe Gewinnchance** — Zuschauzeit, Chataktivität
    oder Guthaben spielen keine Rolle; eine Vorleistung ist nicht erforderlich.
-3. Die Ziehung erfolgt **automatisch nach Ablauf des Zeitfensters**. Ist niemand
-   teilnahmeberechtigt, wird die Verlosung ohne Ziehung abgebrochen und im Chat
-   angesagt.
+3. Das Zeitfenster ist die **Anmeldephase**; der Veranstalter kann mehrere
+   Fenster nacheinander öffnen — einmal Angemeldete bleiben im Topf. Die
+   **Ziehung nimmt der Veranstalter selbst vor** und sagt sie im Chat an.
+   Maßgeblich für die Anwesenheit ist der Zeitpunkt der Ziehung.
 
 ## § 4c Los-Giveaway (Einsatz auf Preise)
 Der Veranstalter kann Giveaways mit **Los-Einsatz** durchführen. Dabei gilt

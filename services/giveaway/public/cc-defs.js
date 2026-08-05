@@ -44,7 +44,8 @@
     'gw_gen_ingest_token', 'gw_get_ingest_tokens',
     'gw_open_instance', 'gw_close_instance', 'gw_list_giveaways',
     'gw_add_prize', 'gw_list_prizes', 'gw_set_wager_cmd',
-    'gw_contest_voting', 'gw_review_entry', 'gw_list_entries'
+    'gw_contest_voting', 'gw_review_entry', 'gw_list_entries',
+    'gw_instant_window'
   ];
 
   global.CC = global.CC || {};

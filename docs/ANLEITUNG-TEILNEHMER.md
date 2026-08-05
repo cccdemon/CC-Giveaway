@@ -27,9 +27,10 @@ aktive Teilnahme als Gewinnchance.
 
 ## Extra: Sofortverlosung ⚡
 Manchmal startet der Streamer eine **Sofortverlosung**: schreib das angesagte
-Keyword **innerhalb des Zeitfensters** (z.B. 60 Sekunden) in den Chat — und
-schau dabei wirklich zu (nur den Chat offen zu haben reicht nicht). Nach Ablauf
-wird **automatisch gezogen**, alle Berechtigten haben die **gleiche Chance**.
+Keyword **im Anmeldefenster** (z.B. 60 Sekunden) in den Chat — und schau dabei
+wirklich zu (nur den Chat offen zu haben reicht nicht). Der Streamer kann das
+Fenster auch mehrmals öffnen; einmal angemeldet bleibst du im Topf. **Gezogen
+wird live vom Streamer**, alle Berechtigten haben die **gleiche Chance**.
 Kein Sammeln, keine Vorleistung.
 
 ## Extra: Los-Giveaway 🎟

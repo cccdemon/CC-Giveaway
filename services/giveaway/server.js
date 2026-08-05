@@ -634,6 +634,9 @@ const MEMBER_CMDS = new Set([
   'gw_get_ingest_tokens', 'gw_gen_ingest_token', 'gw_get_ai_settings',
   'gw_open', 'gw_pause', 'gw_resume', 'gw_set_multiplier',
   'gw_list_giveaways', 'gw_list_prizes', 'gw_list_entries',
+  // Sofortverlosung darf jeder streamende Member fahren: Fenster öffnen
+  // UND ziehen (Entscheidung: Ziehung macht der jeweilige Kanalstreamer).
+  'gw_instant_window', 'gw_draw_winner',
 ]);
 
 // Abgelehnte Versuche gehoeren ins Protokoll — aber das Admin-Panel pollt die
@@ -772,8 +775,11 @@ async function runAdminCmd(send, msg, meta, ctx) {
                  error: 'Eine Sofortverlosung braucht ein Keyword — ohne Opt-in kein Teilnehmer.' });
           break;
         }
+        // 0 = Anmeldefenster später öffnen (gw_instant_window). Das Fenster
+        // ist nur die Anmeldephase — gezogen wird manuell (★).
         const wc = coreMod.config.windowSec;
-        windowSec = Math.max(wc.min, Math.min(wc.max, parseInt(msg.windowSec, 10) || wc.def));
+        const wReq = parseInt(msg.windowSec, 10);
+        windowSec = (Number.isFinite(wReq) && wReq > 0) ? Math.max(wc.min, Math.min(wc.max, wReq)) : 0;
       }
       // TicketBuy: Setz-Befehl kommt aus der WebUI (Default aus der Core-Config).
       let wagerCmd = '';
@@ -803,7 +809,8 @@ async function runAdminCmd(send, msg, meta, ctx) {
       Object.assign(outcome, { giveawayId: gid, keyword, core: coreId, windowSec: windowSec || undefined,
                                wagerCmd: wagerCmd || undefined, channels: channels.length ? channels : 'alle' });
       await announceChannels(teamId, channels.length ? channels : null,
-        coreId === 'CORE_CurrentViewers' ? coreMod.infoText({ keyword, windowSec })
+        coreId === 'CORE_CurrentViewers'
+          ? (windowSec > 0 ? coreMod.infoText({ keyword, windowSec }) : coreMod.prepText({ keyword }))
         : coreId === 'CORE_ScreenshotContest' ? coreMod.infoText()
         : coreId === 'CORE_TicketBuy' ? coreMod.infoText({ cmd: wagerCmd })
         : '🎁 Zusätzliches Giveaway gestartet!' + (keyword ? ` Mitmachen: schreib "${keyword}" im Chat.` : ''));
@@ -830,6 +837,14 @@ async function runAdminCmd(send, msg, meta, ctx) {
         await announceChannels(teamId, known.channels,
           `🎟 Los-Giveaway beendet — eure Zuschauzeit ist jetzt Los-Guthaben (${settled.users} Konten gutgeschrieben). `
           + 'Es bleibt erhalten und zählt beim nächsten Los-Giveaway weiter.');
+      } else if (known.core === 'CORE_CurrentViewers' || known.core === 'CORE_ScreenshotContest') {
+        // Kein Accrual-Zustand, der eine spätere Ziehung braucht (Contest-Daten
+        // liegen in PG) → Redis-Reste sofort abräumen, keine g:-Leichen.
+        await wte.cleanupGiveawayInstance(teamId, gid);
+        await announceChannels(teamId, known.channels,
+          known.core === 'CORE_CurrentViewers'
+            ? '⚡ Die Sofortverlosung ist beendet.'
+            : '📸 Der Screenshot-Contest ist beendet — danke an alle Einsender!');
       } else {
         await announceChannels(teamId, known.channels,
           '🔒 Das zusätzliche Giveaway ist geschlossen — Ziehung folgt.');
@@ -882,6 +897,22 @@ async function runAdminCmd(send, msg, meta, ctx) {
       Object.assign(outcome, { giveawayId: gid, cmdBefore: before, cmdAfter: cmd });
       await announceChannels(teamId, inst.channels, `🎟 Lose setzen geht ab jetzt mit „${cmd} <preis-nr> <anzahl>".`);
       send({ event: 'gw_ack', type: 'wager_cmd_set', giveawayId: gid, command: cmd });
+      break;
+    }
+    // Sofortverlosung: (weiteres) Anmeldefenster öffnen — Ziehung bleibt manuell.
+    case 'gw_instant_window': {
+      const gid = validGid(msg.giveawayId);
+      const inst = gid ? (await wte.listGiveaways(teamId)).find(g => g.gid === gid && g.core === 'CORE_CurrentViewers') : null;
+      if (!inst) {
+        Object.assign(outcome, { error: 'no_instant_instance' });
+        send({ event: 'gw_ack', type: 'error', error: 'Keine Sofortverlosungs-Instanz gewählt.' });
+        break;
+      }
+      const w = await wte.openInstantWindow(teamId, gid, msg.windowSec);
+      Object.assign(outcome, { giveawayId: gid, windowSec: w.windowSec });
+      const CV = CoreRegistry.getCore('CORE_CurrentViewers');
+      await announceChannels(teamId, inst.channels, CV.infoText({ keyword: inst.keyword, windowSec: w.windowSec }));
+      send({ event: 'gw_ack', type: 'instant_window', giveawayId: gid, windowSec: w.windowSec, endsAt: w.endsAt });
       break;
     }
     // ── Phase 6: Screenshot-Contest ────────────────────────
@@ -2139,10 +2170,10 @@ function startWatchtimeTicker() {
 }
 
 // ── Phase 3: Sofortverlosungs-Watcher ─────────────────────
-// Fensterende steht in Redis (gWinEnd, deploy-/restart-sicher) — kein
-// setTimeout im Speicher. Alle 5s: abgelaufene Fenster schließen, ziehen,
-// ansagen, aufräumen. Leer-Zug (Ingest hängt / niemand berechtigt) bricht
-// mit klarer Ansage ab statt still leer zu ziehen (§5.3-Risiko).
+// Das Zeitfenster ist NUR die Anmeldephase (Keyword + Anwesenheit) — die
+// Ziehung macht der Streamer ausdrücklich selbst (★ im Panel), und es kann
+// mehrere Fenster geben. Der Watcher schließt abgelaufene Fenster mit
+// Chat-Ansage; sonst passiert nichts automatisch.
 let instantBusy = false;
 function startInstantWatcher() {
   setInterval(async () => {
@@ -2153,41 +2184,23 @@ function startInstantWatcher() {
       for (const t of await wte.listOpenTeams()) {
         for (const g of await wte.listGiveaways(t)) {
           if (g.primary || !g.windowEndsAt || g.windowEndsAt > now) continue;
-          await finishInstantDraw(t, g);
+          await closeInstantWindow(t, g);
         }
       }
     } catch(e) { logErr('Instant', e.message); }
     finally { instantBusy = false; }
   }, 5000);
-  log('Instant', 'Sofortverlosungs-Watcher gestartet (5s)');
+  log('Instant', 'Sofortverlosungs-Watcher gestartet (5s, schließt nur Fenster — Ziehung ist manuell)');
 }
 
-async function finishInstantDraw(teamId, g) {
-  // Erst schließen (Fenster zu, kein Doppel-Zug über zwei Watcher-Runden),
-  // dann ziehen — getInstantParticipants hängt nicht am open-Flag.
-  await wte.closeGiveawayInstance(teamId, g.gid);
-  await setSessionStatusById(g.gid, 'closed');
-  const CV = CoreRegistry.getCore(g.core);
-  let result = null, error = null;
-  try { result = await wte.drawWinner(teamId, g.gid, { test: false }); }
-  catch(e) { error = e.message; logErr('Instant', 'draw failed:', e.message); }
-  if (result) {
-    const claim = await createClaim(teamId, result);
-    broadcastTeam(teamId, { event: 'gw_overlay', winner: result.winner, coins: result.coins });
-    await announceChannels(teamId, g.channels, CV.winnerText({ winner: result.winner })
-      + ` Melde dich innerhalb von ${CLAIM_DEADLINE_DAYS} Tagen unter ${publicHost()}/viewer/claim (Login mit Twitch).`);
-    void claim;
-  } else {
-    await announceChannels(teamId, g.channels, CV.emptyDrawText());
-  }
-  // Auto-Pfad = zustandsändernd ohne Admin → eigener Audit-Eintrag.
-  await audit({ teamId, actor: 'system:instant', ip: null, action: 'auto_instant_draw',
-                target: result ? result.winner : null,
-                result: error ? 'error' : (result ? 'ok' : 'empty'),
-                detail: { giveawayId: g.gid, keyword: g.keyword,
-                          eligibleCount: result ? result.eligibleCount : 0,
-                          drawId: result ? result.drawId : null, error: error || undefined } });
-  await wte.cleanupGiveawayInstance(teamId, g.gid);
+async function closeInstantWindow(teamId, g) {
+  await redis.del(K.gWinEnd(teamId, g.gid));
+  const n = (await wte.getInstantParticipants(teamId, g.gid)).filter(p => p.eligible).length;
+  await announceChannels(teamId, g.channels,
+    `⚡ Anmeldefenster geschlossen — ${n} im Topf. Die Ziehung macht der Streamer gleich live!`);
+  broadcastTeam(teamId, { event: 'gw_ack', type: 'instant_window_closed', giveawayId: g.gid, eligible: n });
+  await audit({ teamId, actor: 'system:instant', ip: null, action: 'instant_window_closed',
+                target: null, detail: { giveawayId: g.gid, keyword: g.keyword, eligible: n } });
 }
 
 // ── Aufbewahrung (DSGVO Art. 5 Abs. 1 lit. e) ─────────────

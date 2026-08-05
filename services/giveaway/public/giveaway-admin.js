@@ -149,41 +149,91 @@ function selectedCore() {
 }
 function updateTicketBuyButtons() {
   var core = selectedCore();
-  var isTb = core === 'CORE_TicketBuy';
-  var isSc = core === 'CORE_ScreenshotContest';
-  var p = document.getElementById('gw-add-prize'); if (p) p.style.display = isTb ? '' : 'none';
-  var w = document.getElementById('gw-wager-cmd'); if (w) w.style.display = isTb ? '' : 'none';
-  var e = document.getElementById('gw-entries');   if (e) e.style.display = isSc ? '' : 'none';
-  var v = document.getElementById('gw-voting');    if (v) v.style.display = isSc ? '' : 'none';
   var app = document.querySelector('.gw-app');
   if (app) {
     app.className = 'gw-app' + (currentGiveaway ? ' core-inst ' + (CORE_CSS[core] || '') : '');
   }
+  // Typ-Karten in der Rail mit Daten füllen
+  if (core === 'CORE_TicketBuy') tbLoadPrizes();
+  if (core === 'CORE_ScreenshotContest') scLoadEntries();
 }
 
-// ── Phase 6: Screenshot-Contest (Review + Voting-Steuerung) ──
-function listEntries() {
-  if (!currentGiveaway) return;
-  send({ event: 'gw_cmd', cmd: 'gw_list_entries', giveawayId: currentGiveaway });
+// SCHLIESSEN wirkt auf die Auswahl: Kampagne oder gewählte Zusatz-Instanz.
+function gwCloseSmart() {
+  if (!currentGiveaway) { gwClose(); return; }
+  if (!confirm('Zusatz-Giveaway ' + currentGiveaway + ' schließen?')) return;
+  send({ event: 'gw_cmd', cmd: 'gw_close_instance', giveawayId: currentGiveaway });
 }
 
-function reviewEntry() {
-  if (!currentGiveaway) return;
-  listEntries();
-  var id = prompt('Einsendung-Nr. freigeben/ablehnen (Liste siehe Log):', '');
-  if (id === null || !id.trim()) return;
-  var ok = confirm('OK = FREIGEBEN · Abbrechen = ABLEHNEN');
-  send({ event: 'gw_cmd', cmd: 'gw_review_entry', entryId: parseInt(id, 10),
-         decision: ok ? 'approve' : 'reject' });
+// ── Los-Giveaway-Karte (rechte Rail) ─────────────────────
+function tbSetWagerCmd() {
+  var cmd = (document.getElementById('tb-wagercmd').value.trim() || '!setzen').toLowerCase();
+  send({ event: 'gw_cmd', cmd: 'gw_set_wager_cmd', giveawayId: currentGiveaway, command: cmd });
 }
 
-function contestVoting() {
-  if (!currentGiveaway) return;
-  var a = prompt('Voting-Steuerung: open / pause / resume / close', 'open');
-  if (a === null || !a.trim()) return;
-  send({ event: 'gw_cmd', cmd: 'gw_contest_voting', giveawayId: currentGiveaway,
-         action: a.trim().toLowerCase() });
+function tbAddPrize() {
+  var title = document.getElementById('tb-prize-title').value.trim();
+  if (!title) { log('Preis braucht einen Titel', 'red'); return; }
+  var mins = CC.validate.sanitizeInt(document.getElementById('tb-prize-end').value, 0, 20160, 0);
+  send({ event: 'gw_cmd', cmd: 'gw_add_prize', giveawayId: currentGiveaway, title: title, wagerEndMinutes: mins });
+  document.getElementById('tb-prize-title').value = '';
 }
+
+function tbLoadPrizes() { send({ event: 'gw_cmd', cmd: 'gw_list_prizes' }); }
+
+function renderPrizes(prizes) {
+  var host = document.getElementById('tb-prizes');
+  if (!host) return;
+  if (!prizes || !prizes.length) { host.innerHTML = '<div class="wsc-empty">Noch keine Preise.</div>'; return; }
+  host.innerHTML = prizes.map(function(p) {
+    return '<div class="tb-prize"><span class="t">#' + p.id + ' ' + esc(p.title) + '</span>'
+      + '<span class="s">' + Number(p.total_stake).toFixed(0) + ' 🎟</span>'
+      + (p.status === 'open'
+          ? '<button class="btn btn-solid btn-sm" onclick="tbDrawPrize(' + p.id + ')">★ ZIEHEN</button>'
+          : '<span class="cfg-hint">gezogen</span>')
+      + '</div>';
+  }).join('');
+}
+
+function tbDrawPrize(prizeId) {
+  if (!confirm('Preis #' + prizeId + ' jetzt ziehen? Danach sind alle Einsätze dieses Preises gebunden.')) return;
+  send({ event: 'gw_cmd', cmd: 'gw_draw_winner', giveawayId: currentGiveaway, prizeId: prizeId, prize: '' });
+}
+
+// ── Contest-Karte (rechte Rail) ──────────────────────────
+function scVoting(action) {
+  send({ event: 'gw_cmd', cmd: 'gw_contest_voting', giveawayId: currentGiveaway, action: action });
+}
+
+function scLoadEntries() { send({ event: 'gw_cmd', cmd: 'gw_list_entries', giveawayId: currentGiveaway }); }
+
+function scReview(entryId, decision) {
+  send({ event: 'gw_cmd', cmd: 'gw_review_entry', entryId: entryId, decision: decision });
+}
+
+var SC_VOTING_LABEL = { open: 'OFFEN', paused: 'PAUSIERT', closed: 'GESCHLOSSEN' };
+function renderEntries(msg) {
+  var badge = document.getElementById('sc-voting-state');
+  if (badge) badge.textContent = SC_VOTING_LABEL[msg.voting] || msg.voting || '?';
+  var host = document.getElementById('sc-entries');
+  if (!host) return;
+  var entries = msg.entries || [];
+  if (!entries.length) { host.innerHTML = '<div class="wsc-empty">Noch keine Einsendungen.</div>'; return; }
+  host.innerHTML = entries.map(function(en) {
+    var name = maskName(en.username, en.username);
+    return '<div class="sc-entry">'
+      + '<span class="t st-' + esc(en.status) + '" style="cursor:pointer" title="Bild ansehen" '
+      + 'onclick="window.open(\'/giveaway/api/contest/image/' + en.entryId + '\')">#' + en.entryId + ' '
+      + esc(en.title || '—') + ' · ' + esc(name) + '</span>'
+      + '<span class="s">' + en.score + ' Pkt/' + en.votes + '</span>'
+      + (en.status === 'pending'
+          ? '<button class="btn btn-green btn-sm" onclick="scReview(' + en.entryId + ',\'approve\')" title="Freigeben">✓</button>'
+            + '<button class="btn btn-red btn-sm" onclick="scReview(' + en.entryId + ',\'reject\')" title="Ablehnen">✗</button>'
+          : '')
+      + '</div>';
+  }).join('');
+}
+
 
 function renderGiveawaySelect() {
   var sel = document.getElementById('gw-select');
@@ -272,7 +322,7 @@ function iwStart() {
       return;
     }
   }
-  if (t.fields.window)   payload.windowSec = CC.validate.sanitizeInt(document.getElementById('iw-window').value, 10, 3600, 60);
+  if (t.fields.window)   payload.windowSec = CC.validate.sanitizeInt(document.getElementById('iw-window').value, 0, 3600, 60);
   if (t.fields.wagercmd) payload.wagerCmd  = (document.getElementById('iw-wagercmd').value.trim() || '!setzen').toLowerCase();
   if (t.fields.minwatch) payload.minWatchSec = CC.validate.sanitizeInt(document.getElementById('iw-minwatch').value, 0, 6000, 10) * 60;
 
@@ -291,22 +341,24 @@ document.getElementById('iw-overlay').addEventListener('click', function(e) {
   if (e.target === this) iwClose();
 });
 
-// ── Phase 4b: Preise (nur für gewählte Los-Giveaway-Instanz) ──
-function addPrize() {
-  if (!currentGiveaway) { log('Erst Los-Giveaway-Instanz wählen', 'red'); return; }
-  var title = prompt('Titel des Preises:', '');
-  if (title === null || !title.trim()) return;
-  var mins = CC.validate.sanitizeInt(prompt('Einsatz-Ende in Minuten (0 = offen bis zur Ziehung):', '0') || '0', 0, 20160, 0);
-  send({ event: 'gw_cmd', cmd: 'gw_add_prize', giveawayId: currentGiveaway,
-         title: title.trim(), wagerEndMinutes: mins });
+// ── Sofortverlosung: Anmeldefenster (Ziehung macht der Streamer mit ★) ──
+function cvOpenWindow() {
+  var secs = CC.validate.sanitizeInt(document.getElementById('cv-window').value, 10, 3600, 60);
+  send({ event: 'gw_cmd', cmd: 'gw_instant_window', giveawayId: currentGiveaway, windowSec: secs });
 }
 
-function setWagerCmd() {
-  if (!currentGiveaway) { log('Erst Los-Giveaway-Instanz wählen', 'red'); return; }
-  var cmd = prompt('Neuer Setz-Befehl:', '!setzen');
-  if (cmd === null || !cmd.trim()) return;
-  send({ event: 'gw_cmd', cmd: 'gw_set_wager_cmd', giveawayId: currentGiveaway, command: cmd.trim().toLowerCase() });
+function cvUpdateState() {
+  var badge = document.getElementById('cv-state');
+  if (!badge) return;
+  var g = giveawayList.find(function(x){ return x.gid === currentGiveaway; });
+  var now = Math.floor(Date.now() / 1000);
+  if (g && g.windowEndsAt && g.windowEndsAt > now) {
+    badge.textContent = 'OFFEN · noch ' + (g.windowEndsAt - now) + 's';
+  } else {
+    badge.textContent = 'ZU';
+  }
 }
+setInterval(cvUpdateState, 1000);
 
 function closeInstance() {
   if (!currentGiveaway) { log('Keine Instanz gewählt', 'red'); return; }
@@ -381,20 +433,10 @@ function handle(msg) {
       log(`ACK: ${msg.type} -> ${msg.user || msg.keyword || msg.winner || msg.channel || ''}`, 'cyan');
       // Read-only Antworten (NIE requestData → sonst Endlosschleife)
       if (msg.type === 'giveaways')     { giveawayList = msg.giveaways || []; renderGiveawaySelect(); break; }
-      if (msg.type === 'entries')       {
-        log('Voting: ' + (msg.voting || 'closed'), 'gold');
-        (msg.entries || []).forEach(function(en){
-          log('#' + en.entryId + ' [' + en.status + '] „' + (en.title || '—') + '" von ' + maskName(en.username, en.username)
-            + ' · ' + en.score + ' Pkt / ' + en.votes + ' Stimmen', 'cyan');
-        });
-        if (!(msg.entries || []).length) log('Keine Einsendungen', 'gold');
-        break;
-      }
-      if (msg.type === 'prizes')        {
-        (msg.prizes || []).forEach(function(p){ log('Preis #' + p.id + ' „' + p.title + '" [' + p.status + '] Einsatz: ' + p.total_stake, 'cyan'); });
-        if (!(msg.prizes || []).length) log('Keine offenen Preise', 'gold');
-        break;
-      }
+      if (msg.type === 'entries')       { renderEntries(msg); break; }
+      if (msg.type === 'prizes')        { renderPrizes(msg.prizes || []); break; }
+      if (msg.type === 'instant_window') { log('Anmeldefenster offen: ' + msg.windowSec + 's', 'gold'); liveRefresh(); break; }
+      if (msg.type === 'instant_window_closed') { log('Anmeldefenster zu — ' + msg.eligible + ' im Topf. Ziehen mit ★', 'gold'); liveRefresh(); break; }
       if (msg.type === 'channels')      { ingestChannels = msg.channels || []; renderIngest(); break; }
       if (msg.type === 'ingest_tokens') { ingestTokens = {}; (msg.tokens || []).forEach(t => ingestTokens[t.channel] = t.token); renderIngest(); break; }
       if (msg.type === 'ingest_token')  { ingestTokens[msg.channel] = msg.token; renderIngest(); break; }
@@ -623,18 +665,10 @@ function updateGwStatus() {
 }
 
 function drawWinner() {
+  // Los-Giveaway zieht je Preis über die ★-Buttons in der Preis-Karte.
+  if (selectedCore() === 'CORE_TicketBuy') { log('Los-Giveaway: Ziehung je Preis — ★ in der Preis-Karte rechts', 'gold'); return; }
   var el = document.getElementById('prize-input');
-  var prize = el ? el.value.trim() : '';
-  var payload = { event:'gw_cmd', cmd:'gw_draw_winner', prize: prize };
-  // Los-Giveaway zieht JE PREIS — Preis-Nr. abfragen (Liste via 🎁/Log).
-  if (selectedCore() === 'CORE_TicketBuy') {
-    send({ event: 'gw_cmd', cmd: 'gw_list_prizes' });
-    var pid = prompt('Preis-Nr. für die Ziehung (offene Preise siehe Log):', '');
-    if (pid === null || !pid.trim()) return;
-    payload.prizeId = parseInt(pid, 10);
-    payload.prize = '';
-  }
-  send(payload);
+  send({ event:'gw_cmd', cmd:'gw_draw_winner', prize: el ? el.value.trim() : '' });
 }
 
 function showWinnerAnimation(winnerName, watchSec, coins, prize) {

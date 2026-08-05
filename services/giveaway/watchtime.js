@@ -475,6 +475,12 @@ class WatchtimeEngine {
       const kw = g.primary ? await this.redis.get(K.gwKeyword(t))
                            : await this.redis.get(K.gKw(t, g.gid));
       if (!matchesKeyword(cleanMsg, kw)) continue;
+      // Sofortverlosung: das Keyword zählt NUR im offenen Anmeldefenster —
+      // die Ziehung selbst macht der Streamer manuell (auch mehrere Fenster).
+      if (g.gid && getCore(g.core).id === 'CORE_CurrentViewers') {
+        const end = parseInt(await this.redis.get(K.gWinEnd(t, g.gid)), 10);
+        if (!Number.isFinite(end) || end * 1000 < Date.now()) continue;
+      }
       matchedAny = true;
       await this._bumpMsgs(t, g.gid, ch, u, primaryGid);
       const r = await this._tryRegister(t, u, username, g.gid);
@@ -800,6 +806,16 @@ class WatchtimeEngine {
                  windowEndsAt: parseInt(await this.redis.get(K.gWinEnd(t, g)), 10) || null });
     }
     return out;
+  }
+
+  // Sofortverlosung: (weiteres) Anmeldefenster öffnen. Teilnehmer aus
+  // früheren Fenstern bleiben angemeldet (gReg akkumuliert).
+  async openInstantWindow(teamId, gid, windowSec) {
+    const t = sanitizeTeamId(teamId);
+    const sec = Math.max(10, Math.min(3600, parseInt(windowSec, 10) || 60));
+    const endsAt = Math.floor(Date.now() / 1000) + sec;
+    await this.redis.set(K.gWinEnd(t, gid), String(endsAt));
+    return { windowSec: sec, endsAt };
   }
 
   async closeGiveawayInstance(teamId, gid) {

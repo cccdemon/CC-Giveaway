@@ -12,8 +12,23 @@
   .gw-app.core-contest   #card-keyword { display:none !important; }
   .gw-app.core-instant #card-boost,
   .gw-app.core-contest #card-boost { display:none !important; }
-  .gw-app.core-instant #btn-draw,
   .gw-app.core-instant #btn-verify { display:none !important; }
+  .gw-app:not(.core-instant) #card-instant { display:none !important; }
+  /* TicketBuy zieht je Preis (Buttons in der Preis-Karte), nicht global */
+  .gw-app.core-ticketbuy #btn-draw { display:none !important; }
+  /* Typ-Karten in der Rail nur bei passender Auswahl */
+  .gw-app:not(.core-ticketbuy) #card-ticketbuy { display:none !important; }
+  .gw-app:not(.core-contest) #card-contest { display:none !important; }
+  .tb-prize { display:flex; align-items:center; gap:8px; font-size:11.5px; padding:6px 0;
+              border-bottom:1px solid rgba(255,255,255,.06); }
+  .tb-prize .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tb-prize .s { color:var(--gold,#f0a500); font-variant-numeric:tabular-nums; }
+  .sc-entry { display:flex; align-items:center; gap:8px; font-size:11.5px; padding:6px 0;
+              border-bottom:1px solid rgba(255,255,255,.06); }
+  .sc-entry .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sc-entry .st-pending { color:var(--gold,#f0a500); }
+  .sc-entry .st-approved { color:#22e07a; }
+  .sc-entry .st-rejected { color:rgba(200,220,232,.4); text-decoration:line-through; }
 
   /* ── Instanz-Assistent (ersetzt die prompt()-Kette) ────── */
   .iw-overlay { position:fixed; inset:0; z-index:900; display:flex; align-items:center;
@@ -69,10 +84,6 @@
       <select id="gw-select" onchange="onGiveawayChange()" title="Giveaway (Kampagne oder Zusatz-Instanz)"><option value="">— Kampagne —</option></select>
       <button class="btn btn-cyan btn-sm" onclick="openInstance()" title="Zusätzliches Giveaway parallel starten (z.B. Sofortverlosung)">＋</button>
       <button class="btn btn-red btn-sm" id="gw-close-inst" onclick="closeInstance()" title="Gewählte Zusatz-Instanz schließen" style="display:none;">✕</button>
-      <button class="btn btn-gold btn-sm" id="gw-add-prize" onclick="addPrize()" title="Preis für das gewählte Los-Giveaway anlegen" style="display:none;">🎁</button>
-      <button class="btn btn-cyan btn-sm" id="gw-wager-cmd" onclick="setWagerCmd()" title="Setz-Befehl des Los-Giveaways ändern" style="display:none;">⌨</button>
-      <button class="btn btn-gold btn-sm" id="gw-entries" onclick="reviewEntry()" title="Contest-Einsendungen freigeben/ablehnen" style="display:none;">🖼</button>
-      <button class="btn btn-cyan btn-sm" id="gw-voting" onclick="contestVoting()" title="Contest-Voting öffnen/pausieren/fortsetzen/schließen" style="display:none;">🗳</button>
       <div class="state-chip idle" id="gw-txt">IDLE</div>
     </div>
     <div class="cb-stats">
@@ -97,7 +108,7 @@
     <button class="btn btn-green vis-campaign-only" onclick="gwOpen()">ÖFFNEN</button>
     <button class="btn btn-gold"  onclick="gwPause()">PAUSE</button>
     <button class="btn btn-cyan"  onclick="gwResume()">FORTSETZEN</button>
-    <button class="btn btn-red vis-campaign-only" onclick="gwClose()">SCHLIESSEN</button>
+    <button class="btn btn-red" onclick="gwCloseSmart()">SCHLIESSEN</button>
   </div>
 
   <!-- ── Zwei-Spalten ─────────────────────────────────── -->
@@ -147,6 +158,55 @@
           <button class="btn btn-cyan btn-sm" onclick="setKeyword()">SETZEN</button>
         </div>
         <button class="btn btn-gold btn-full mt-6" onclick="clearKeyword()">DEAKTIVIEREN</button>
+      </div>
+
+      <!-- Sofortverlosung: Anmeldefenster (Ziehung macht der Streamer mit ★) -->
+      <div class="card" id="card-instant">
+        <div class="card-title">SOFORTVERLOSUNG // FENSTER <span class="ct-badge" id="cv-state">ZU</span></div>
+        <div class="manual-row">
+          <input type="number" id="cv-window" value="60" min="10" max="3600" step="5" class="in-narrow" title="Sekunden">
+          <span class="mr-lbl">Sek.</span>
+          <button class="btn btn-green btn-sm" onclick="cvOpenWindow()">FENSTER ÖFFNEN</button>
+        </div>
+        <div class="cfg-hint">Das Fenster ist nur die <b>Anmeldephase</b> (Keyword + zuschauen). Es kann mehrfach
+        geöffnet werden — Teilnehmer bleiben angemeldet. Gezogen wird <b>nicht automatisch</b>:
+        wenn du bereit bist → <b>★ GEWINNER ZIEHEN</b>.</div>
+      </div>
+
+      <!-- Los-Giveaway: Setz-Befehl, Preise, Ziehung je Preis -->
+      <div class="card" id="card-ticketbuy">
+        <div class="card-title">LOS-GIVEAWAY // PREISE</div>
+        <div class="card-sub">SETZ-BEFEHL</div>
+        <div class="input-row">
+          <input type="text" id="tb-wagercmd" placeholder="!setzen" maxlength="30">
+          <button class="btn btn-cyan btn-sm" onclick="tbSetWagerCmd()">SETZEN</button>
+        </div>
+        <div class="cfg-hint">Zuschauer setzen mit „&lt;Befehl&gt; &lt;Preis-Nr&gt; &lt;Anzahl&gt;" — Anzahl 0 = Rücknahme.</div>
+        <div class="card-sub mt-8">NEUER PREIS</div>
+        <div class="input-row">
+          <input type="text" id="tb-prize-title" placeholder="Titel (z.B. Headset)" maxlength="100">
+        </div>
+        <div class="input-row mt-6">
+          <input type="number" id="tb-prize-end" min="0" max="20160" step="15" value="0" class="in-narrow" title="Einsatz-Ende in Minuten (0 = offen bis zur Ziehung)">
+          <span class="mr-lbl">min Einsatz-Ende (0 = offen)</span>
+          <button class="btn btn-gold btn-sm" onclick="tbAddPrize()">ANLEGEN</button>
+        </div>
+        <div class="card-sub mt-8">OFFENE PREISE <span class="link-cyan" onclick="tbLoadPrizes()">↻</span></div>
+        <div id="tb-prizes"><div class="wsc-empty">Lade…</div></div>
+      </div>
+
+      <!-- Screenshot-Contest: Voting-Steuerung + Einsendungen -->
+      <div class="card" id="card-contest">
+        <div class="card-title">CONTEST // VOTING <span class="ct-badge" id="sc-voting-state">GESCHLOSSEN</span></div>
+        <div class="btn-group">
+          <button class="btn btn-green btn-sm" onclick="scVoting('open')">ÖFFNEN</button>
+          <button class="btn btn-gold btn-sm"  onclick="scVoting('pause')">PAUSE</button>
+          <button class="btn btn-cyan btn-sm"  onclick="scVoting('resume')">WEITER</button>
+          <button class="btn btn-red btn-sm"   onclick="scVoting('close')">BEENDEN</button>
+        </div>
+        <div class="cfg-hint">Jede Änderung wird im Chat angesagt. Nach BEENDEN: ★ GEWINNER ZIEHEN.</div>
+        <div class="card-sub mt-8">EINSENDUNGEN <span class="link-cyan" onclick="scLoadEntries()">↻</span></div>
+        <div id="sc-entries"><div class="wsc-empty">Lade…</div></div>
       </div>
 
       <!-- Giveaway-Einstellungen (team-weit → nur in der Kampagnen-Ansicht pflegen) -->
@@ -286,9 +346,9 @@
         <div class="hint" id="iw-keyword-hint"></div>
       </div>
       <div class="iw-field" id="iw-f-window">
-        <label for="iw-window">Zeitfenster (Sekunden)</label>
-        <input type="number" id="iw-window" min="10" max="3600" step="5" value="60">
-        <div class="hint">Nach Ablauf wird automatisch gezogen. 10–3600 Sekunden.</div>
+        <label for="iw-window">Erstes Anmeldefenster (Sekunden, 0 = später öffnen)</label>
+        <input type="number" id="iw-window" min="0" max="3600" step="5" value="60">
+        <div class="hint">Nur die Anmeldephase — mehrfach öffenbar (Karte rechts). Gezogen wird nicht automatisch: ★ drückst du selbst.</div>
       </div>
       <div class="iw-field" id="iw-f-wagercmd">
         <label for="iw-wagercmd">Chat-Befehl zum Setzen</label>

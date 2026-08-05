@@ -889,3 +889,33 @@ test('phase6: Contest ohne bewertete Einsendungen zieht nicht', async () => {
   await e.reviewContestEntry(TEAM, 1, true);        // freigegeben, aber 0 Stimmen
   assert.equal(await e.drawWinner(TEAM, 'sess_9', {}), null);
 });
+
+test('phase3b: Keyword zaehlt nur im offenen Anmeldefenster, Fenster mehrfach oeffenbar', async () => {
+  const e = engine();
+  // Instanz OHNE Fenster: Keyword wird ignoriert
+  await e.openGiveawayInstance(TEAM, 'sess_2', { keyword: 'blitz', core: 'CORE_CurrentViewers', windowSec: 0 });
+  await e.handleViewerTick(TEAM, 'justcallmedeimos', 'bob', true);
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'blitz', true);
+  let parts = await e.getInstantParticipants(TEAM, 'sess_2');
+  assert.equal(parts.length, 0);                        // Fenster zu → keine Anmeldung
+  // Fenster oeffnen → Anmeldung zaehlt
+  await e.openInstantWindow(TEAM, 'sess_2', 60);
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'blitz', true);
+  parts = await e.getInstantParticipants(TEAM, 'sess_2');
+  assert.equal(parts.length, 1);
+  assert.equal(parts[0].eligible, true);
+  // Fenster "ablaufen lassen" (Ende in die Vergangenheit) → carol kommt nicht mehr rein
+  await e.redis.set(K.gWinEnd(TEAM, 'sess_2'), String(Math.floor(Date.now() / 1000) - 5));
+  await e.handleViewerTick(TEAM, 'justcallmedeimos', 'carol', true);
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'carol', 'blitz', true);
+  parts = await e.getInstantParticipants(TEAM, 'sess_2');
+  assert.equal(parts.length, 1);                        // bob bleibt, carol nicht
+  // Zweites Fenster: carol kommt dazu, bob bleibt angemeldet
+  await e.openInstantWindow(TEAM, 'sess_2', 60);
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'carol', 'blitz', true);
+  parts = await e.getInstantParticipants(TEAM, 'sess_2');
+  assert.equal(parts.length, 2);                        // akkumuliert ueber Fenster
+  // Ziehung bleibt manuell moeglich
+  const r = await e.drawWinner(TEAM, 'sess_2', {});
+  assert.ok(['bob', 'carol'].includes(r.winner));
+});

@@ -10,8 +10,11 @@
 //
 // Kein Guthaben, kein Coin-Konto: Gewicht = 1 für alle Berechtigten.
 // Kein Watchtime-Accrual (accrual:'none') — Tick und Chat-Bonus der
-// Engine lassen diese Instanzen aus. Die Ziehung nach Fensterende stößt
-// der Server an (Watcher); Zufall/Snapshot/Protokoll bleiben Engine.
+// Engine lassen diese Instanzen aus. Das Zeitfenster ist NUR die
+// Anmeldephase (auch mehrere Fenster nacheinander; Teilnehmer bleiben
+// angemeldet). Der Watcher schließt abgelaufene Fenster mit Ansage —
+// DIE ZIEHUNG MACHT DER STREAMER MANUELL (★ im Panel);
+// Zufall/Snapshot/Protokoll bleiben Engine.
 // ════════════════════════════════════════════════════════
 
 const WINDOW_SEC_DEF = 60;
@@ -39,7 +42,12 @@ function buildPool(participants) {
 
 function infoText({ keyword, windowSec }) {
   const kwTxt = keyword ? `"${keyword}"` : 'das Keyword';
-  return `⚡ SOFORTVERLOSUNG! Schreib jetzt ${kwTxt} in den Chat — in ${Math.round(windowSec || WINDOW_SEC_DEF)} Sekunden wird unter allen gezogen, die gerade zuschauen. Kein Sammeln, keine Vorleistung: dabei sein reicht.`;
+  return `⚡ SOFORTVERLOSUNG! Schreib jetzt ${kwTxt} in den Chat — das Anmeldefenster ist ${Math.round(windowSec || WINDOW_SEC_DEF)} Sekunden offen. Mitmachen kann, wer gerade zuschaut. Kein Sammeln, keine Vorleistung — die Ziehung macht der Streamer gleich live!`;
+}
+
+function prepText({ keyword }) {
+  const kwTxt = keyword ? `"${keyword}"` : 'das Keyword';
+  return `⚡ Gleich startet eine SOFORTVERLOSUNG — halte dich bereit, ${kwTxt} zu schreiben, sobald das Anmeldefenster öffnet!`;
 }
 
 function emptyDrawText() {
@@ -63,6 +71,7 @@ module.exports = {
   aggregate,
   buildPool,
   infoText,
+  prepText,
   emptyDrawText,
   winnerText,
 
