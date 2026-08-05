@@ -191,6 +191,10 @@
           <button class="btn btn-cyan btn-sm" onclick="tbSetWagerCmd()">SETZEN</button>
         </div>
         <div class="cfg-hint">Zuschauer setzen mit „&lt;Befehl&gt; &lt;Preis-Nr&gt; &lt;Anzahl&gt;" — Anzahl 0 = Rücknahme.</div>
+        <div class="btn-group mt-6">
+          <button class="btn btn-cyan btn-sm" onclick="copyViewerLink('wager', this)">🔗 SETZ-SEITE</button>
+          <button class="btn btn-gold btn-sm" onclick="gwAnnouncePage()">📣 IM CHAT ANSAGEN</button>
+        </div>
         <div class="card-sub mt-8" id="tb-prize-form-title">NEUER PREIS</div>
         <div class="input-row">
           <input type="text" id="tb-prize-title" placeholder="Titel (z.B. Headset)" maxlength="100">
@@ -218,6 +222,10 @@
           <button class="btn btn-red btn-sm"   onclick="scVoting('close')">BEENDEN</button>
         </div>
         <div class="cfg-hint">Jede Änderung wird im Chat angesagt. Nach BEENDEN: ★ GEWINNER ZIEHEN.</div>
+        <div class="btn-group mt-6">
+          <button class="btn btn-cyan btn-sm" onclick="copyViewerLink('contest', this)">🔗 CONTEST-SEITE</button>
+          <button class="btn btn-gold btn-sm" onclick="gwAnnouncePage()">📣 IM CHAT ANSAGEN</button>
+        </div>
         <div class="card-sub mt-8">EINSENDUNGEN <span class="link-cyan" onclick="scLoadEntries()">↻</span></div>
         <div id="sc-entries"><div class="wsc-empty">Lade…</div></div>
       </div>
@@ -361,6 +369,11 @@
       <div class="iw-field" id="iw-f-sponsor">
         <label for="iw-sponsor">Sponsor / bereitgestellt von (optional)</label>
         <input type="text" id="iw-sponsor" maxlength="100" placeholder="z.B. Community-Mitglied XY">
+      </div>
+      <div class="iw-field" id="iw-f-name">
+        <label for="iw-name">Anzeigename (optional)</label>
+        <input type="text" id="iw-name" maxlength="40" placeholder="z.B. Freitags-Blitz">
+        <div class="hint">Nur fürs Dashboard — macht parallele Giveaways in der Auswahl unterscheidbar.</div>
       </div>
       <div class="iw-field" id="iw-f-keyword">
         <label for="iw-keyword" id="iw-keyword-label">Keyword</label>

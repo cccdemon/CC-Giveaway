@@ -93,6 +93,7 @@ const K = {
   gMinWatch: (t, g) => `${K.GP(t, g)}min_watch`, // Contest: Mindest-Viewtime Einsenden/Voten (Phase 6)
   gVoteState:(t, g) => `${K.GP(t, g)}vote_state`,// Contest: Voting closed|open|paused (Phase 6)
   gAnnounce: (t, g) => `${K.GP(t, g)}announce`,  // CV: Chat-Ansagen ('false' = stumm; Gewinner-Ansage bleibt)
+  gName:     (t, g) => `${K.GP(t, g)}name`,      // frei vergebbarer Anzeigename der Instanz (Panel)
   abuseHist:  (t, u) => `${TP(t)}gw:abuse:hist:${u}`,     // letzte Msg-Hashes
   abuseTimes: (t, u) => `${TP(t)}gw:abuse:times:${u}`,    // letzte Timestamps (Rate)
 };
@@ -727,7 +728,7 @@ class WatchtimeEngine {
   // ── Phase 2c: Sekundär-Instanz (z.B. Sofortverlosung neben der Kampagne) ──
   // Läuft ausschließlich im g:-Namespace; channels = Teilmenge der
   // Team-Kanäle (leer/null = alle).
-  async openGiveawayInstance(teamId, gid, { keyword = '', channels = null, core = null, windowSec = 0, wagerCmd = '', minWatchSec = null, announce = true } = {}) {
+  async openGiveawayInstance(teamId, gid, { keyword = '', channels = null, core = null, windowSec = 0, wagerCmd = '', minWatchSec = null, announce = true, name = '' } = {}) {
     const t = sanitizeTeamId(teamId);
     this.validateSessionId(gid);
     if (!t) throw new Error('Invalid teamId');
@@ -758,6 +759,7 @@ class WatchtimeEngine {
     }
     // Chat-Ansagen abschaltbar (Sofortverlosung): nur die Abweichung speichern.
     if (announce === false) await this.redis.set(K.gAnnounce(t, gid), 'false');
+    if (name) await this.redis.set(K.gName(t, gid), sanitizeStr(name, 40).trim());
     await this.redis.sadd(K.openTeams(), t);
     console.log(`[WTE] [${t}] instance ${gid} opened, core=${core || CORE.id}, keyword="${keyword}"`);
   }
@@ -814,7 +816,8 @@ class WatchtimeEngine {
                  keyword: await this.redis.get(K.gKw(t, g)) || '',
                  channels: Array.isArray(chans) && chans.length ? chans : null,
                  windowEndsAt: parseInt(await this.redis.get(K.gWinEnd(t, g)), 10) || null,
-                 announce: await this.redis.get(K.gAnnounce(t, g)) !== 'false' });
+                 announce: await this.redis.get(K.gAnnounce(t, g)) !== 'false',
+                 name: await this.redis.get(K.gName(t, g)) || '' });
     }
     return out;
   }
@@ -1059,6 +1062,18 @@ class WatchtimeEngine {
     return { ok: true, replaced: existing.rowCount > 0 };
   }
 
+  // Einsendung zurückziehen: Zeile weg = Bild weg; Stimmen fallen per
+  // ON DELETE CASCADE. Nur solange die Instanz läuft (danach ist der
+  // Contest entschieden und der Bestand Teil des Nachweises).
+  async withdrawContestEntry(teamId, gid, username) {
+    const t = sanitizeTeamId(teamId), u = sanitizeUsername(username);
+    if (await this.redis.get(K.gOpen(t, gid)) !== 'true') return { error: 'contest_closed' };
+    const r = await this.pg.query(
+      `DELETE FROM contest_entries WHERE session_id=$1 AND team_id=$2 AND username=$3 RETURNING id`,
+      [gid, t, u]);
+    return r.rowCount ? { ok: true, entryId: r.rows[0].id } : { error: 'no_entry' };
+  }
+
   async reviewContestEntry(teamId, entryId, approve) {
     const t = sanitizeTeamId(teamId);
     const r = await this.pg.query(
@@ -1131,7 +1146,7 @@ class WatchtimeEngine {
     }
     pipeline.del(K.gOpen(t, gid), K.gPaused(t, gid), K.gKw(t, gid), K.gChanList(t, gid),
                  K.gCore(t, gid), K.gWinEnd(t, gid), K.gMult(t, gid), K.gWagerCmd(t, gid),
-                 K.gMinWatch(t, gid), K.gVoteState(t, gid), K.gAnnounce(t, gid));
+                 K.gMinWatch(t, gid), K.gVoteState(t, gid), K.gAnnounce(t, gid), K.gName(t, gid));
     pipeline.srem(K.gwSet(t), gid);
     await pipeline.exec();
     console.log(`[WTE] [${t}] instance ${gid} cleaned`);

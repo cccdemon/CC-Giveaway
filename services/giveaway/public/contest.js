@@ -60,7 +60,9 @@ function renderContest(c) {
       + voteHint
       + '<div class="sc-row"><input type="text" id="title-' + esc(c.teamId) + '" placeholder="Titel (optional)" maxlength="100">'
       + '<input type="file" id="file-' + esc(c.teamId) + '" accept="image/png,image/jpeg,image/webp">'
-      + '<button class="btn btn-gold btn-sm" onclick="submitEntry(\'' + esc(c.teamId) + '\',' + (c.myEntry ? c.myEntry.votes : 0) + ')">EINSENDEN</button></div>'
+      + '<button class="btn btn-gold btn-sm" onclick="submitEntry(\'' + esc(c.teamId) + '\',' + (c.myEntry ? c.myEntry.votes : 0) + ')">EINSENDEN</button>'
+      + (c.myEntry ? '<button class="btn btn-red btn-sm" onclick="withdrawEntry(\'' + esc(c.teamId) + '\',' + c.myEntry.votes + ')">ZURÜCKZIEHEN</button>' : '')
+      + '</div>'
       + '<div class="sc-msg" id="smsg-' + esc(c.teamId) + '"></div>'
       + '<div class="sc-meta">Jede Einsendung wird vor der Freigabe vom Veranstalter geprüft.</div></div>';
   }
@@ -128,6 +130,21 @@ function submitEntry(teamId, existingVotes, forceConfirm) {
       .catch(function(e) { if (msgEl) { msgEl.className = 'sc-msg err'; msgEl.textContent = e.message; } });
   };
   reader.readAsDataURL(file);
+}
+
+// Einsendung komplett zurückziehen: Bild wird gelöscht, Stimmen verfallen.
+function withdrawEntry(teamId, votes) {
+  if (!confirm('Deine Einsendung wirklich zurückziehen? Das Bild wird gelöscht'
+      + (votes > 0 ? ' und die ' + votes + ' abgegebenen Stimmen verfallen' : '') + '.')) return;
+  fetch('/giveaway/api/contest/withdraw', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ team: teamId }),
+  }).then(function(r) { return r.json(); })
+    .then(function(j) {
+      if (j.error) { alert(ERRORS[j.error] || j.error); return; }
+      load();
+    })
+    .catch(function(e) { alert(e.message); });
 }
 
 function vote(teamId, entryId, score) {

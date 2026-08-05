@@ -166,6 +166,22 @@ function gwCloseSmart() {
   send({ event: 'gw_cmd', cmd: 'gw_close_instance', giveawayId: currentGiveaway });
 }
 
+// ── Zuschauer-Seite: Link kopieren / im Chat ansagen ─────
+function copyViewerLink(kind, btn) {
+  var url = window.location.origin + '/viewer/' + kind;
+  var done = function() {
+    log('Link kopiert: ' + url, 'cyan');
+    if (btn) { var t = btn.textContent; btn.textContent = '✓ KOPIERT'; setTimeout(function(){ btn.textContent = t; }, 1200); }
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done).catch(done);
+  else done();
+}
+
+function gwAnnouncePage() {
+  if (!currentGiveaway) { log('Keine Instanz gewählt', 'red'); return; }
+  send({ event: 'gw_cmd', cmd: 'gw_announce_page', giveawayId: currentGiveaway });
+}
+
 // ── Los-Giveaway-Karte (rechte Rail) ─────────────────────
 function tbSetWagerCmd() {
   var cmd = (document.getElementById('tb-wagercmd').value.trim() || '!setzen').toLowerCase();
@@ -277,7 +293,9 @@ function renderEntries(msg) {
       + (en.status === 'pending'
           ? '<button class="btn btn-green btn-sm" onclick="scReview(' + en.entryId + ',\'approve\')" title="Freigeben">✓</button>'
             + '<button class="btn btn-red btn-sm" onclick="scReview(' + en.entryId + ',\'reject\')" title="Ablehnen">✗</button>'
-          : '')
+          : en.status === 'approved'
+          ? '<button class="btn btn-red btn-sm" onclick="scReview(' + en.entryId + ',\'reject\')" title="Freigabe zurückziehen (Bild wieder sperren)">✗</button>'
+          : '<button class="btn btn-green btn-sm" onclick="scReview(' + en.entryId + ',\'approve\')" title="Doch freigeben">✓</button>')
       + '</div>';
   }).join('');
 }
@@ -287,10 +305,12 @@ function renderGiveawaySelect() {
   var sel = document.getElementById('gw-select');
   if (!sel) return;
   var opts = ['<option value="">— Kampagne —</option>'];
+  var CORE_ICON = { CORE_CurrentViewers: '⚡ ', CORE_TicketBuy: '🎟 ', CORE_ScreenshotContest: '📸 ' };
   giveawayList.forEach(function(g) {
     if (g.primary) return;   // Kampagne ist die leere Auswahl
-    var label = (g.core === 'CORE_CurrentViewers' ? '⚡ ' : '')
-              + (g.keyword ? '„' + g.keyword + '" ' : '') + g.gid.replace(/^sess_/, '#')
+    var label = (CORE_ICON[g.core] || '')
+              + (g.name ? g.name + ' ' : (g.keyword ? '„' + g.keyword + '" ' : ''))
+              + g.gid.replace(/^sess_/, '#')
               + (g.paused ? ' ⏸' : '');
     opts.push('<option value="' + esc(g.gid) + '">' + esc(label) + '</option>');
   });
@@ -342,6 +362,7 @@ function iwSelect(type) {
   var showPrize = type !== 'ticketbuy';   // Los-Giveaway: Gewinne = einzelne Preise
   document.getElementById('iw-f-prize').style.display   = showPrize ? '' : 'none';
   document.getElementById('iw-f-sponsor').style.display = showPrize ? '' : 'none';
+  document.getElementById('iw-f-name').style.display    = type !== 'campaign' ? '' : 'none';
   document.getElementById('iw-f-keyword').style.display  = f.keyword  ? '' : 'none';
   document.getElementById('iw-f-window').style.display   = f.window   ? '' : 'none';
   document.getElementById('iw-f-announce').style.display = f.window   ? '' : 'none';   // nur Sofortverlosung
@@ -394,6 +415,10 @@ function iwStart() {
 
   var picked = Array.prototype.slice.call(document.querySelectorAll('#iw-channels input:checked')).map(function(c){ return c.value; });
   if (picked.length) payload.channels = picked;
+  if (iwType !== 'campaign') {
+    var iName = (document.getElementById('iw-name') || {}).value || '';
+    if (iName.trim()) payload.name = iName.trim();
+  }
 
   send(payload);
   iwClose();
@@ -580,6 +605,7 @@ function handle(msg) {
       if (msg.type === 'prize_added')   { log('Preis #' + msg.prizeId + ' angelegt: „' + (msg.title || '') + '"', 'gold'); tbLoadPrizes(); }
       if (msg.type === 'prize_edited')  { log('Preis #' + msg.prizeId + ' korrigiert', 'gold'); tbLoadPrizes(); }
       if (msg.type === 'prize_cancelled') { log('Preis #' + msg.prizeId + ' storniert — ' + (msg.refundedUsers || 0) + ' Einsätze zurückgebucht', 'gold'); tbLoadPrizes(); }
+      if (msg.type === 'page_announced') log('Zuschauer-Link im Chat angesagt', 'gold');
       if (msg.type === 'wager_cmd_set') log('Setz-Befehl geändert: „' + (msg.command || '') + '"', 'gold');
       if (msg.type === 'contest_voting') log('Contest-Voting: ' + (msg.voting || '?'), 'gold');
       if (msg.type === 'entry_reviewed') log('Einsendung #' + msg.entryId + ' → ' + (msg.decision === 'approve' ? 'FREIGEGEBEN' : 'abgelehnt'), 'gold');

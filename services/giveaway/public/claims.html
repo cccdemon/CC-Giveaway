@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chaos Crew – Gewinn-Abwicklung</title>
+<link rel="stylesheet" href="chaos-crew-admin.css">
+<style>
+  .cl-wrap { padding:14px 18px 40px; max-width:1240px; margin:0 auto; }
+  .cl-title { font-size:13px; letter-spacing:2px; color:var(--cyan); margin:8px 0 4px; }
+  .cl-note { font-size:11px; color:var(--dim); margin-bottom:14px; line-height:1.6; }
+
+  .cl-filters { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
+  .cl-filter { font-size:10px; letter-spacing:1px; border:1px solid rgba(0,212,255,.18);
+               border-radius:20px; padding:4px 12px; cursor:pointer; color:var(--dim); background:transparent; }
+  .cl-filter.active { color:var(--cyan); border-color:var(--cyan); }
+  .cl-filter .n { opacity:.6; margin-left:4px; }
+
+  .cl-item { border:1px solid rgba(0,212,255,.12); border-radius:10px; padding:12px 14px; margin-bottom:10px; }
+  .cl-item.overdue { border-color:rgba(255,77,106,.4); }
+  .cl-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .cl-head .win { font-size:13px; color:var(--text); font-weight:600; }
+  .cl-head .prize { font-size:11px; color:var(--gold); }
+  .cl-badge { font-size:9px; letter-spacing:1px; border:1px solid currentColor; border-radius:20px; padding:1px 8px; }
+  .cl-badge.pending  { color:var(--gold); }
+  .cl-badge.claimed  { color:#22e07a; }
+  .cl-badge.expired  { color:var(--red,#ff4d6a); }
+  .cl-badge.h        { color:var(--cyan); }
+  .cl-badge.purged   { color:var(--dim); }
+  .cl-sub { font-size:10px; color:var(--dim); margin-top:4px; line-height:1.6; }
+  .cl-contact { border:1px solid rgba(240,165,0,.3); border-radius:8px; padding:8px 11px; margin-top:8px;
+                font-size:11px; color:var(--text); line-height:1.7; }
+  .cl-contact .warn { font-size:9px; letter-spacing:1px; color:var(--gold); display:block; margin-bottom:3px; }
+  .cl-actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:9px; }
+  .cl-hint-red { font-size:10px; color:var(--red,#ff4d6a); margin-top:6px; }
+</style>
+</head>
+<body>
+<script src="cc-defs.js"></script>
+<script src="giveaway-shared.js"></script>
+
+<div class="gw-app">
+  <div class="cmdbar">
+    <div class="cb-left">
+      <select id="team-select" onchange="onTeamChange()" title="Team"><option>— lädt —</option></select>
+      <div class="state-chip idle">GEWINNE</div>
+    </div>
+  </div>
+
+  <div class="cl-wrap">
+    <div class="cl-title">GEWINN-ABWICKLUNG</div>
+    <div class="cl-note">
+      Jede Ziehung erzeugt eine Gewinnermeldung mit 14 Tagen Meldefrist. Hier siehst du, wer sich
+      gemeldet hat, markierst den Stand (<b>kontaktiert → versendet → erledigt</b>) und löschst die
+      Kontaktdaten, sobald die Abwicklung fertig ist — der Ziehungsnachweis bleibt.
+      Abgelaufene Fristen: Ersatz ziehst du im Dashboard mit ★.
+    </div>
+
+    <div class="cl-filters" id="cl-filters"></div>
+    <div id="cl-list"><div class="wsc-empty">Lade…</div></div>
+  </div>
+</div>
+
+<script src="claims.js"></script>
+</body>
+</html>

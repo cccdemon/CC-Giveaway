@@ -587,8 +587,8 @@ async function collectSubjectData(u) {
     q('SELECT version, accepted_at FROM tos_acceptances WHERE login=$1 ORDER BY version', [u]),
     // Die Gewinnermeldung ist der einzige Ort mit Klarnamen und Anschrift -
     // sie gehoert damit zwingend in die Selbstauskunft nach Art. 15 DSGVO.
-    q(`SELECT id, team_id, session_id, status, deadline_at, claimed_at, purge_at, purged_at,
-              real_name, email, street, zip, city, country, note, terms_version
+    q(`SELECT id, team_id, session_id, status, handling, handled_at, deadline_at, claimed_at,
+              purge_at, purged_at, real_name, email, street, zip, city, country, note, terms_version
        FROM draw_claims WHERE winner=$1 ORDER BY created_at DESC`, [u]),
     // Guthaben-Journal (CORE_TicketBuy) — personenbezogen, gehoert in die
     // Auskunft nach Art. 15 (Regel aus docs/ARCHITEKTUR-CORES.md §7).
@@ -698,6 +698,11 @@ async function eraseSubject(u, actor, action) {
               city=NULL, country=NULL, note=NULL, claim_ip=NULL, purged_at=NOW()
        WHERE winner=$1`, [u, pseudo]);
     done.gewinnermeldung_bereinigt = cl.rowCount;
+    // Abwicklungsvermerk (Inbox): handled_by ist der Login des Bearbeiters —
+    // wird er selbst gelöscht, bleibt nur das Pseudonym stehen.
+    const hb = await client.query(
+      `UPDATE draw_claims SET handled_by=$2 WHERE handled_by=$1`, [u, pseudo]);
+    done.abwicklung_pseudonymisiert = hb.rowCount;
 
     await client.query(
       `INSERT INTO audit_log (team_id, actor, action, target, result, detail)

@@ -24,6 +24,16 @@
         rewrite * /help.html
         reverse_proxy admin:3005
     }
+    # Kurzlinks aus dem Chat → Zuschauer-Seiten (Ziel liegt hinter Login)
+    handle /viewer/claim {
+        redir * /giveaway/claim.html 302
+    }
+    handle /viewer/wager {
+        redir * /giveaway/wager.html 302
+    }
+    handle /viewer/contest {
+        redir * /giveaway/contest.html 302
+    }
 
     # ── Admin Dashboard ───────────────────────────────────
     # Login + user management + aggregated health

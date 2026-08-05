@@ -7,6 +7,34 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 6. August 2026
 
+### Neu: Gewinn-Abwicklung im Blick
+
+Neue Seite **Gewinn-Abwicklung** (Tools-Menü, nur Team-Owner): alle
+Gewinnermeldungen an einem Ort — wer hat sich gemeldet, welche Frist läuft,
+was ist zu tun. Der Stand lässt sich als **kontaktiert → versendet →
+erledigt** markieren, und die Kontaktdaten des Gewinners können sofort nach
+der Abwicklung gelöscht werden (der Ziehungsnachweis bleibt). Abgelaufene
+Fristen sind rot markiert. Außerdem repariert: der Link „Gewinn melden" aus
+der Chat-Ansage führte ins Leere — jetzt landet er auf der Meldeseite.
+
+### Contest: Einsendung zurückziehen, Freigabe korrigierbar
+
+Wer seinen Screenshot ganz zurückziehen will (nicht ersetzen), kann das
+jetzt auf der Contest-Seite — das Bild wird gelöscht, abgegebene Stimmen
+verfallen (mit Warnung). Der Veranstalter kann Freigabe-Entscheidungen
+korrigieren: ein freigegebenes Bild wieder sperren oder ein abgelehntes
+doch freigeben.
+
+### Dashboard: Zuschauer-Links, Namen für Giveaways, aufgeräumte Menüs
+
+Die Karten von Los-Giveaway und Contest haben jetzt **„Link kopieren"** und
+**„Im Chat ansagen"** — die Zuschauer-Seiten sind unter den Kurzadressen
+`/viewer/wager` und `/viewer/contest` erreichbar. Zusatz-Giveaways können
+beim Start einen **Anzeigenamen** bekommen (statt kryptischer Nummern in
+der Auswahl), und jede Mechanik zeigt ihr Symbol (⚡ 🎟 📸).
+Plattform-Admin-Werkzeuge (Benutzer, Betroffenenrechte, Test-Konsole)
+erscheinen im Menü nur noch für Plattform-Administratoren.
+
 ### Los-Giveaway: sicherer Lebenszyklus und volle Preisverwaltung
 
 Ein Los-Giveaway lässt sich **nicht mehr schließen, solange ungezogene Preise

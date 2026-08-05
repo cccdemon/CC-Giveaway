@@ -90,6 +90,14 @@ function makePg(channels) {
       return { rows: [...by.entries()].filter(([, s]) => s > 0).map(([username, stake]) => ({ username, stake })) };
     }
     // ── Contest (Phase 6) ──
+    if (/DELETE FROM contest_entries WHERE session_id=\$1 AND team_id=\$2 AND username=\$3/.test(sql)) {
+      const idx = entries.findIndex(e => e.session_id === p[0] && e.team_id === p[1] && e.username === p[2]);
+      if (idx < 0) return { rowCount: 0, rows: [] };
+      const id = entries[idx].id;
+      entries.splice(idx, 1);
+      for (let i = cvotes.length - 1; i >= 0; i--) if (cvotes[i].entry_id === id) cvotes.splice(i, 1);   // CASCADE
+      return { rowCount: 1, rows: [{ id }] };
+    }
     if (/INSERT INTO contest_entries/.test(sql)) {
       const ex = entries.find(e => e.session_id === p[1] && e.username === p[2]);
       if (ex) Object.assign(ex, { title: p[3], mime: p[4], image: p[5], status: 'pending' });
@@ -991,6 +999,36 @@ test('prize: cancelPrize bucht alle Einsaetze zurueck, danach kein Setzen mehr',
   assert.equal(late.error, 'no_prize');                       // storniert = nicht mehr setzbar
   const again = await e.cancelPrize(TEAM, p1);
   assert.equal(again.error, 'not_open');                      // kein Doppel-Storno
+});
+
+test('phase6b: Einsendung zurueckziehen loescht Bild und Stimmen (nur solange offen)', async () => {
+  const e = await contestSetup(0);
+  await e.submitContestEntry(TEAM, 'sess_9', 'bob', { title: 'V1', mime: 'image/png', image: IMG });
+  await e.reviewContestEntry(TEAM, 1, true);
+  await e.setContestVoting(TEAM, 'sess_9', 'open');
+  await e.castContestVote(TEAM, 'sess_9', 'carol', 1, 8);
+  // Fremder kann nichts zurueckziehen
+  let r = await e.withdrawContestEntry(TEAM, 'sess_9', 'carol');
+  assert.equal(r.error, 'no_entry');
+  // Einsender zieht zurueck → Einsendung UND Stimmen weg
+  r = await e.withdrawContestEntry(TEAM, 'sess_9', 'bob');
+  assert.equal(r.ok, true);
+  assert.equal((await e.getContestStandings(TEAM, 'sess_9', { all: true })).length, 0);
+  assert.equal(e.pg.cvotes.length, 0);
+  // Nach Instanz-Schliessung kein Rueckzug mehr
+  await e.submitContestEntry(TEAM, 'sess_9', 'bob', { title: 'V2', mime: 'image/png', image: IMG });
+  await e.redis.set(K.gOpen(TEAM, 'sess_9'), 'false');
+  r = await e.withdrawContestEntry(TEAM, 'sess_9', 'bob');
+  assert.equal(r.error, 'contest_closed');
+});
+
+test('instanz: Anzeigename wird gespeichert, gelistet und mit aufgeraeumt', async () => {
+  const e = engine();
+  await e.openGiveawayInstance(TEAM, 'sess_2', { keyword: 'blitz', core: 'CORE_CurrentViewers', name: 'Freitags-Blitz' });
+  const g = (await e.listGiveaways(TEAM)).find(x => x.gid === 'sess_2');
+  assert.equal(g.name, 'Freitags-Blitz');
+  await e.cleanupGiveawayInstance(TEAM, 'sess_2');
+  assert.equal(await e.redis.get(K.gName(TEAM, 'sess_2')), null);
 });
 
 test('phase3c: Chat-Ansagen der Sofortverlosung sind schaltbar (announce-Flag)', async () => {

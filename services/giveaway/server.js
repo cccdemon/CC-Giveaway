@@ -672,7 +672,7 @@ const MEMBER_CMDS = new Set([
   // Sofortverlosung darf jeder streamende Member fahren: Fenster öffnen,
   // ziehen (Entscheidung: Ziehung macht der jeweilige Kanalstreamer) und
   // die Chat-Ansagen der Instanz stumm/laut schalten.
-  'gw_instant_window', 'gw_draw_winner', 'gw_set_announce',
+  'gw_instant_window', 'gw_draw_winner', 'gw_set_announce', 'gw_announce_page',
 ]);
 
 // Abgelehnte Versuche gehoeren ins Protokoll — aber das Admin-Panel pollt die
@@ -878,7 +878,8 @@ async function runAdminCmd(send, msg, meta, ctx) {
       const announceOn = coreId !== 'CORE_CurrentViewers' || msg.announce !== false;
       await wte.openGiveawayInstance(teamId, gid, { keyword, channels: channels.length ? channels : null,
                                                     core: coreId, windowSec, wagerCmd, minWatchSec,
-                                                    announce: announceOn });
+                                                    announce: announceOn,
+                                                    name: sanitizeStr(msg.name || '', 40).trim() });
       Object.assign(outcome, { giveawayId: gid, keyword, core: coreId, windowSec: windowSec || undefined,
                                wagerCmd: wagerCmd || undefined, prize: iPrize || undefined,
                                sponsor: iSponsor || undefined, channels: channels.length ? channels : 'alle',
@@ -1057,6 +1058,27 @@ async function runAdminCmd(send, msg, meta, ctx) {
       const CV = CoreRegistry.getCore('CORE_CurrentViewers');
       if (inst.announce) await announceChannels(teamId, inst.channels, CV.infoText({ keyword: inst.keyword, windowSec: w.windowSec }));
       send({ event: 'gw_ack', type: 'instant_window', giveawayId: gid, windowSec: w.windowSec, endsAt: w.endsAt });
+      break;
+    }
+    // Zuschauer-Seite der Instanz im Chat ankündigen (Setz-/Contest-Seite).
+    case 'gw_announce_page': {
+      const gid = validGid(msg.giveawayId);
+      const inst = gid ? (await wte.listGiveaways(teamId)).find(g => g.gid === gid) : null;
+      let txt = null;
+      if (inst && inst.core === 'CORE_TicketBuy') {
+        const cmd = await redis.get(K.gWagerCmd(teamId, gid)) || '!setzen';
+        txt = `🎟 Lose setzen: ${publicHost()}/viewer/wager (Login mit Twitch) — oder im Chat mit „${cmd} <preis-nr> <anzahl>".`;
+      } else if (inst && inst.core === 'CORE_ScreenshotContest') {
+        txt = `📸 Screenshot-Contest: Einsenden und Bewerten auf ${publicHost()}/viewer/contest (Login mit Twitch).`;
+      }
+      if (!txt) {
+        Object.assign(outcome, { error: 'no_viewer_page' });
+        send({ event: 'gw_ack', type: 'error', error: 'Für diese Instanz gibt es keine Zuschauer-Seite.' });
+        break;
+      }
+      Object.assign(outcome, { giveawayId: gid, core: inst.core });
+      await announceChannels(teamId, inst.channels, txt);
+      send({ event: 'gw_ack', type: 'page_announced', giveawayId: gid });
       break;
     }
     // Chat-Ansagen der Sofortverlosung an/aus (Gewinner-Ansage bleibt immer).
@@ -1854,6 +1876,23 @@ app.post('/api/contest/vote', express.json(), async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// Einsendung zurückziehen — nur der Einsender selbst, nur solange der
+// Contest läuft. Zeile weg = Bild weg, Stimmen fallen mit (CASCADE).
+app.post('/api/contest/withdraw', express.json(), async (req, res) => {
+  try {
+    const user = reqUser(req);
+    if (!user) return res.status(401).json({ error: 'unauthenticated' });
+    const teamId = sanitizeTeamId(req.body && req.body.team);
+    const inst = teamId ? await contestInstance(teamId) : null;
+    if (!inst) return res.status(404).json({ error: 'no_contest' });
+    const r = await wte.withdrawContestEntry(teamId, inst.gid, user);
+    if (r.error) return res.status(409).json({ error: r.error });
+    await audit({ teamId, actor: user, ip: req.ip, action: 'contest_withdraw', target: user,
+                  sessionId: inst.gid, detail: { entryId: r.entryId } });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/contest/image/:id', async (req, res) => {
   try {
     const user = reqUser(req);
@@ -1884,6 +1923,74 @@ app.get('/api/claim/mine', async (req, res) => {
       LEFT JOIN teams t ON t.id = c.team_id
       WHERE c.winner = $1 ORDER BY d.drawn_at DESC`, [user]);
     res.json({ user, claims: r.rows.map(c => ({ ...c, overdue: c.status === 'pending' && new Date(c.deadline_at) < new Date() })) });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Gewinn-Abwicklung (Inbox) — NUR Owner: hier stehen Kontaktdaten ──
+app.get('/api/claims', async (req, res) => {
+  try {
+    const user = reqUser(req);
+    const teamId = sanitizeTeamId(req.query.team);
+    if (!user) return res.status(401).json({ error: 'unauthenticated' });
+    if (!await ownsTeam(user, teamId)) return res.status(403).json({ error: 'forbidden' });
+    const r = await pg.query(`
+      SELECT c.id, c.session_id, c.winner, c.status, c.handling, c.handled_at, c.handled_by,
+             c.deadline_at, c.claimed_at, c.purge_at, c.purged_at, c.created_at,
+             c.real_name, c.email, c.street, c.zip, c.city, c.country, c.note,
+             d.drawn_at, d.prize
+      FROM draw_claims c
+      JOIN giveaway_draws d ON d.id = c.draw_id
+      WHERE c.team_id = $1
+      ORDER BY c.created_at DESC LIMIT 500`, [teamId]);
+    // Reiner Zugriff auf Kontaktdaten gehört ins Protokoll (wie Archiv/DSGVO).
+    await audit({ teamId, actor: user, ip: null, action: 'claims_inbox_view', target: null,
+                  detail: { rows: r.rowCount } });
+    res.json({ team: teamId,
+               claims: r.rows.map(c => ({ ...c,
+                 overdue: c.status === 'pending' && new Date(c.deadline_at) < new Date() })) });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+const CLAIM_HANDLING = new Set(['contacted', 'shipped', 'done']);
+app.post('/api/claims/handling', express.json(), async (req, res) => {
+  try {
+    const user = reqUser(req);
+    const teamId = sanitizeTeamId(req.body && req.body.team);
+    const claimId = parseInt(req.body && req.body.claimId, 10);
+    const handling = req.body && req.body.handling ? String(req.body.handling) : null;
+    if (!user) return res.status(401).json({ error: 'unauthenticated' });
+    if (!await ownsTeam(user, teamId)) return res.status(403).json({ error: 'forbidden' });
+    if (!Number.isFinite(claimId) || (handling !== null && !CLAIM_HANDLING.has(handling))) {
+      return res.status(400).json({ error: 'bad_request' });
+    }
+    const r = await pg.query(`
+      UPDATE draw_claims SET handling=$1, handled_at=NOW(), handled_by=$2
+      WHERE id=$3 AND team_id=$4 RETURNING id, winner, handling`, [handling, user, claimId, teamId]);
+    if (!r.rowCount) return res.status(404).json({ error: 'not_found' });
+    await audit({ teamId, actor: user, ip: req.ip, action: 'claim_handling', target: r.rows[0].winner,
+                  detail: { claimId, handling } });
+    res.json({ ok: true, claimId, handling });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Kontaktdaten sofort löschen (Abwicklung fertig) — Ziehungsnachweis bleibt.
+app.post('/api/claims/purge', express.json(), async (req, res) => {
+  try {
+    const user = reqUser(req);
+    const teamId = sanitizeTeamId(req.body && req.body.team);
+    const claimId = parseInt(req.body && req.body.claimId, 10);
+    if (!user) return res.status(401).json({ error: 'unauthenticated' });
+    if (!await ownsTeam(user, teamId)) return res.status(403).json({ error: 'forbidden' });
+    if (!Number.isFinite(claimId)) return res.status(400).json({ error: 'bad_request' });
+    const r = await pg.query(`
+      UPDATE draw_claims
+      SET real_name=NULL, email=NULL, street=NULL, zip=NULL, city=NULL, country=NULL,
+          note=NULL, claim_ip=NULL, purged_at=NOW()
+      WHERE id=$1 AND team_id=$2 AND purged_at IS NULL RETURNING id, winner`, [claimId, teamId]);
+    if (!r.rowCount) return res.status(404).json({ error: 'not_found' });
+    await audit({ teamId, actor: user, ip: req.ip, action: 'claim_purge', target: r.rows[0].winner,
+                  detail: { claimId } });
+    res.json({ ok: true, claimId });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2297,6 +2404,12 @@ async function ensureSchema() {
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_claims_winner ON draw_claims(winner)`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_claims_team   ON draw_claims(team_id, created_at DESC)`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_claims_purge  ON draw_claims(purge_at) WHERE purge_at IS NOT NULL`);
+  // Gewinn-Abwicklung (Inbox): operativer Stand zusätzlich zum Claim-Status —
+  // status sagt, was der GEWINNER getan hat (pending/claimed/expired),
+  // handling sagt, was der VERANSTALTER getan hat (contacted/shipped/done).
+  await pg.query(`ALTER TABLE draw_claims ADD COLUMN IF NOT EXISTS handling   TEXT`);
+  await pg.query(`ALTER TABLE draw_claims ADD COLUMN IF NOT EXISTS handled_at TIMESTAMPTZ`);
+  await pg.query(`ALTER TABLE draw_claims ADD COLUMN IF NOT EXISTS handled_by TEXT`);
   // Chat-KI pro Team. ai_key_enc ist AES-256-GCM; Schluessel aus app_secrets.
   await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS ai_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
   await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS ai_provider TEXT`);

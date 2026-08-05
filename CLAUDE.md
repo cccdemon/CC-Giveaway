@@ -118,6 +118,7 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 - `services/giveaway/public/audit.html|js` — Audit-Seite (Filter, Verdichtung, tar.gz-Archiv)
 - `services/giveaway/public/archive.html|js` — vergangene Giveaways, volles Dossier je Sitzung
 - `services/giveaway/public/claim.html|js` — Gewinnermeldung (nur der Gewinner selbst)
+- `services/giveaway/public/claims.html|js` — Gewinn-Abwicklung/Inbox (nur Owner: Fristen, Stand kontaktiert/versendet/erledigt, Kontaktdaten-Löschung; `draw_claims.handling/handled_at/handled_by`)
 - `services/giveaway/targz.js` — minimaler ustar-Writer für die Archive (getestet)
 - `services/admin/server.js` — Login/OAuth, Teams, TOS-Gate, DSGVO, `PUB_DOCS`, Health
 - `services/admin/public/admin-shared.js` — `CC.validate`, Nav, Debug-Console, TOS-Overlay
@@ -134,6 +135,8 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 `GET audit` (Filter + Verdichtung + `before`-Cursor) · `GET audit/stats` · `GET audit/archive` (tar.gz)
 `GET archive` (Sitzungsliste) · `GET archive/:sid` (Dossier) · `GET archive/:sid/export` (tar.gz, Owner)
 `GET claim/mine` · `POST claim` (nur der eingeloggte Gewinner)
+`GET claims` (`?team=`, nur Owner — Inbox mit Kontaktdaten, Zugriff auditiert) · `POST claims/handling` (contacted/shipped/done) · `POST claims/purge` (Kontaktfelder sofort löschen, Nachweis bleibt)
+`POST contest/withdraw` (Einsender zieht eigene Einsendung zurück — Bild weg, Stimmen CASCADE; nur solange Instanz offen)
 `GET wager/state` · `POST wager` (nur der eingeloggte Zuschauer; auditiert `wager_set`/`wager_retract`)
 `GET contest/state` · `POST contest/entry` (Base64, max 2 MB, auditiert) · `POST contest/vote` (Rate-Limit) · `GET contest/image/:id`
 
@@ -142,7 +145,7 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 `gw_pause`/`gw_resume`/`gw_set_multiplier` (optional `giveawayId` → wirkt auf die Instanz)
 `gw_open_instance`(keyword, channels, core, windowSec, wagerCmd, announce) · `gw_close_instance` · `gw_list_giveaways` · `gw_set_announce`(giveawayId, on — CV-Chat-Ansagen stumm/laut, Gewinner-Ansage bleibt immer)
 `gw_add_prize`(giveawayId, title, wagerEndMinutes) · `gw_list_prizes` · `gw_set_wager_cmd`(giveawayId, command) · `gw_edit_prize`(prizeId, title/sponsor/description/wagerEndMinutes — nur offene) · `gw_cancel_prize`(prizeId — storniert + bucht alle Einsätze zurück)
-`gw_contest_voting`(giveawayId, action: open/pause/resume/close) · `gw_review_entry`(entryId, approve/reject) · `gw_list_entries`(giveawayId)
+`gw_contest_voting`(giveawayId, action: open/pause/resume/close) · `gw_review_entry`(entryId, approve/reject — auch Korrektur bereits entschiedener) · `gw_list_entries`(giveawayId) · `gw_announce_page`(giveawayId — sagt `/viewer/wager` bzw. `/viewer/contest` im Chat an)
 
 ## Data
 - **Redis:** team-weit `t:<team>:…` (open/paused, keyword, session id, banned, users, Presence/LastTick, Follows, chIndex, cfg:*, Abuse) + **je Giveaway** `t:<team>:g:<sid>:…` (watch/msgs/chat_ts je Kanal, registered, mult, open/paused/keyword/channels/core/win_end/wager_cmd der Instanz) + `t:<team>:giveaways` (Set aktiver Instanzen). Legacy-Keys werden beim ersten Zugriff ins Primary migriert (genau eine Quelle je Wert). `resetGiveaway`/`cleanupGiveawayInstance` räumen beide Namespaces.

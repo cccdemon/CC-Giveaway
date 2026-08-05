@@ -253,19 +253,20 @@
   var TOOLS = [
     { head:'Verwaltung' },
     { href:'/giveaway/archive.html', label:'Vergangene Giveaways', ic:'🗄' },
+    { href:'/giveaway/claims.html', label:'Gewinn-Abwicklung', ic:'📬' },
     { href:'/giveaway/audit.html', label:'Audit-Log', ic:'🧾' },
     { href:'/giveaway/claim.html', label:'Gewinn melden', ic:'🏆' },
     { href:'/giveaway/wager.html', label:'Lose setzen', ic:'🎟' },
     { href:'/giveaway/contest.html', label:'Screenshot-Contest', ic:'📸' },
-    { href:'/admin/users.html', label:'Benutzer', ic:'👥' },
-    { href:'/admin/datenschutz-admin.html', label:'Betroffenenrechte', ic:'🛡' },
+    { href:'/admin/users.html', label:'Benutzer', ic:'👥', admin:true },
+    { href:'/admin/datenschutz-admin.html', label:'Betroffenenrechte', ic:'🛡', admin:true },
     { href:'/viewer/help',      label:'Anleitung', ic:'📖' },
     { href:'/admin/setup.html', label:'Setup-Guide', ic:'⚙' },
     { href:'/admin/changelog.html', label:'Änderungsprotokoll', ic:'📋' },
     { href:'/admin/roadmap.html', label:'Roadmap', ic:'🧭' },
-    { head:'Diagnose' },
-    { href:'/admin/giveaway-test.html',     label:'Test Console', ic:'▶', sub:'DEV' },
-    { href:'/admin/tests/test-runner.html', label:'Test Suite',   ic:'✓', sub:'DEV' }
+    { head:'Diagnose', admin:true },
+    { href:'/admin/giveaway-test.html',     label:'Test Console', ic:'▶', sub:'DEV', admin:true },
+    { href:'/admin/tests/test-runner.html', label:'Test Suite',   ic:'✓', sub:'DEV', admin:true }
   ];
   var OBS = [
     { href:'/giveaway/giveaway-overlay.html', label:'Gewinner-Overlay', ic:'🎁' },
@@ -319,9 +320,11 @@
 
   function menu(list, obs){
     return list.map(function(x){
-      if(x.head) return '<div class="gwnav-head">'+e(x.head)+'</div>';
+      // admin:true → erst sichtbar, wenn /auth/me die Rolle superadmin meldet.
+      var adm = x.admin ? ' gwnav-adminonly" style="display:none' : '';
+      if(x.head) return '<div class="gwnav-head'+adm+'">'+e(x.head)+'</div>';
       if(obs) return '<div class="gwnav-obs"><a href="'+x.href+'" target="_blank" rel="noopener"><span class="ic">'+x.ic+'</span>'+e(x.label)+'</a><button class="gwnav-cpy" data-url="'+e(x.href)+'">URL</button></div>';
-      return '<a class="gwnav-di" href="'+x.href+'"><span class="ic">'+x.ic+'</span>'+e(x.label)+(x.sub?'<span class="sub">'+e(x.sub)+'</span>':'')+'</a>';
+      return '<a class="gwnav-di'+adm+'" href="'+x.href+'"><span class="ic">'+x.ic+'</span>'+e(x.label)+(x.sub?'<span class="sub">'+e(x.sub)+'</span>':'')+'</a>';
     }).join('');
   }
 
@@ -372,6 +375,11 @@
     document.getElementById('gwnav-uname').textContent = login;
     document.getElementById('gwnav-av').textContent = String(login).charAt(0).toUpperCase();
     var el = document.getElementById('gwnav-user'); if (el) el.style.display = 'flex';
+    // Plattform-Admin-Werkzeuge nur zeigen, wenn die Rolle sie auch trägt —
+    // sonst sind es Sackgassen (Server lehnt ohnehin ab).
+    if (u.role === 'superadmin') {
+      nav.querySelectorAll('.gwnav-adminonly').forEach(function(n){ n.style.display = ''; });
+    }
   }).catch(function(){});
 })();
 
