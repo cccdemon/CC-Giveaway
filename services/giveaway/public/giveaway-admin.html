@@ -29,6 +29,7 @@
   .sc-entry .st-pending { color:var(--gold,#f0a500); }
   .sc-entry .st-approved { color:#22e07a; }
   .sc-entry .st-rejected { color:rgba(200,220,232,.4); text-decoration:line-through; }
+  #cv-open-btn[disabled] { opacity:.35; cursor:not-allowed; filter:grayscale(1); }
 
   /* ── Instanz-Assistent (ersetzt die prompt()-Kette) ────── */
   .iw-overlay { position:fixed; inset:0; z-index:900; display:flex; align-items:center;
@@ -166,7 +167,7 @@
         <div class="manual-row">
           <input type="number" id="cv-window" value="1" min="0.5" max="60" step="0.5" class="in-narrow" title="Minuten (0,5 = 30 Sekunden)">
           <span class="mr-lbl">min</span>
-          <button class="btn btn-green btn-sm" onclick="cvOpenWindow()">FENSTER ÖFFNEN</button>
+          <button class="btn btn-green btn-sm" id="cv-open-btn" onclick="cvOpenWindow()">FENSTER ÖFFNEN</button>
         </div>
         <div class="cfg-hint">Das Fenster ist nur die <b>Anmeldephase</b> (Keyword + zuschauen). Es kann mehrfach
         geöffnet werden — Teilnehmer bleiben angemeldet. Gezogen wird <b>nicht automatisch</b>:

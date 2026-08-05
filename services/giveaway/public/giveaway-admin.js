@@ -345,15 +345,20 @@ document.getElementById('iw-overlay').addEventListener('click', function(e) {
 function cvOpenWindow() {
   // UI rechnet in Minuten, die API in Sekunden.
   var mins = CC.validate.sanitizeFloat(document.getElementById('cv-window').value, 0.5, 60, 1);
+  cvLockUntil = Date.now() + 5000;   // sperren, bis der Server-Stand (windowEndsAt) da ist
+  var btn = document.getElementById('cv-open-btn');
+  if (btn) btn.disabled = true;
   send({ event: 'gw_cmd', cmd: 'gw_instant_window', giveawayId: currentGiveaway, windowSec: Math.round(mins * 60) });
 }
+var cvLockUntil = 0;
 
 function cvUpdateState() {
   var badge = document.getElementById('cv-state');
   if (!badge) return;
   var g = giveawayList.find(function(x){ return x.gid === currentGiveaway; });
   var now = Math.floor(Date.now() / 1000);
-  if (g && g.windowEndsAt && g.windowEndsAt > now) {
+  var open = !!(g && g.windowEndsAt && g.windowEndsAt > now);
+  if (open) {
     var rest = g.windowEndsAt - now;
     badge.textContent = 'OFFEN · noch ' + (rest >= 60
       ? Math.floor(rest / 60) + ':' + String(rest % 60).padStart(2, '0') + ' min'
@@ -361,6 +366,10 @@ function cvUpdateState() {
   } else {
     badge.textContent = 'ZU';
   }
+  // Kein Doppel-Öffnen: Button gesperrt, solange das Fenster läuft
+  // (plus kurze lokale Sperre, bis der Server-Stand eingetroffen ist).
+  var btn = document.getElementById('cv-open-btn');
+  if (btn) btn.disabled = open || Date.now() < cvLockUntil;
 }
 setInterval(cvUpdateState, 1000);
 
