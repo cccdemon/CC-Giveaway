@@ -14,6 +14,46 @@
   .gw-app.core-contest #card-boost { display:none !important; }
   .gw-app.core-instant #btn-draw,
   .gw-app.core-instant #btn-verify { display:none !important; }
+
+  /* ── Instanz-Assistent (ersetzt die prompt()-Kette) ────── */
+  .iw-overlay { position:fixed; inset:0; z-index:900; display:flex; align-items:center;
+                justify-content:center; background:rgba(2,6,10,.74); backdrop-filter:blur(3px); }
+  .iw-modal { background:var(--panel,#0a0e16); border:1px solid rgba(0,212,255,.22);
+              border-radius:12px; width:min(580px,94vw); max-height:92vh; overflow-y:auto;
+              padding:18px 20px 16px; box-shadow:0 18px 60px rgba(0,0,0,.55);
+              animation:iw-in .16s ease-out; }
+  @media (prefers-reduced-motion: reduce) { .iw-modal { animation:none; } }
+  @keyframes iw-in { from { opacity:0; transform:translateY(8px) scale(.985); } to { opacity:1; transform:none; } }
+  .iw-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+  .iw-head span { font-size:12px; letter-spacing:2.5px; color:var(--cyan,#00d4ff); font-weight:700; }
+  .iw-x { background:none; border:0; color:rgba(200,220,232,.55); font-size:15px; cursor:pointer; padding:2px 6px; }
+  .iw-x:hover { color:#fff; }
+  .iw-cards { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
+  @media (max-width:480px) { .iw-cards { grid-template-columns:1fr; } }
+  .iw-card { --acc:var(--cyan,#00d4ff); text-align:left; cursor:pointer; border-radius:10px;
+             border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.02);
+             padding:11px 13px; color:inherit; font-family:inherit; transition:border-color .12s, background .12s; }
+  .iw-card:hover { border-color:rgba(255,255,255,.25); }
+  .iw-card:focus-visible { outline:2px solid var(--acc); outline-offset:2px; }
+  .iw-card.sel { border-color:var(--acc); box-shadow:0 0 0 1px var(--acc), inset 0 0 22px rgba(0,0,0,.25);
+                 background:color-mix(in srgb, var(--acc) 7%, transparent); }
+  .iw-card .ic { font-size:17px; display:block; margin-bottom:5px; }
+  .iw-card .nm { font-size:11px; font-weight:700; letter-spacing:1.6px; color:#e6f4fb; display:block; margin-bottom:3px; }
+  .iw-card.sel .nm { color:var(--acc); }
+  .iw-card .ds { font-size:10px; color:rgba(200,220,232,.55); line-height:1.5; display:block; }
+  .iw-sec { font-size:9px; letter-spacing:1.6px; color:rgba(200,220,232,.5); text-transform:uppercase; margin:12px 0 6px; }
+  .iw-field { margin-bottom:9px; }
+  .iw-field label { display:block; font-size:9px; letter-spacing:1.4px; color:rgba(200,220,232,.55);
+                    text-transform:uppercase; margin-bottom:4px; }
+  .iw-field input[type=text], .iw-field input[type=number] { width:100%; }
+  .iw-field .hint { font-size:10px; color:rgba(200,220,232,.45); margin-top:3px; line-height:1.5; }
+  .iw-chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .iw-chip { display:inline-flex; align-items:center; gap:5px; font-size:10.5px; cursor:pointer;
+             border:1px solid rgba(255,255,255,.12); border-radius:20px; padding:4px 10px; color:#c8dce8; }
+  .iw-chip input { accent-color:var(--cyan,#00d4ff); margin:0; }
+  .iw-chip:has(input:checked) { border-color:rgba(0,212,255,.55); background:rgba(0,212,255,.07); }
+  .iw-err { font-size:11px; color:var(--red,#ff4d6a); min-height:15px; margin:6px 0 2px; }
+  .iw-foot { display:flex; justify-content:flex-end; gap:8px; margin-top:8px; }
 </style>
 </head>
 <body>
@@ -207,6 +247,69 @@
         <div class="event-log" id="log"></div>
       </div>
 
+    </div>
+  </div>
+</div>
+
+<!-- ── Instanz-Assistent: neues Zusatz-Giveaway ─────────── -->
+<div class="iw-overlay" id="iw-overlay" style="display:none">
+  <div class="iw-modal" role="dialog" aria-modal="true" aria-labelledby="iw-title">
+    <div class="iw-head">
+      <span id="iw-title">NEUES GIVEAWAY STARTEN</span>
+      <button class="iw-x" onclick="iwClose()" aria-label="Schließen" title="Schließen (Esc)">✕</button>
+    </div>
+
+    <div class="iw-cards" id="iw-cards">
+      <button type="button" class="iw-card" data-type="campaign" style="--acc:#00d4ff" onclick="iwSelect('campaign')">
+        <span class="ic">📈</span><span class="nm">ZUSATZ-KAMPAGNE</span>
+        <span class="ds">Zuschauzeit &amp; Chat sammeln — Ziehung gewichtet nach Coins. Wie die Hauptkampagne, parallel dazu.</span>
+      </button>
+      <button type="button" class="iw-card" data-type="instant" style="--acc:#f0a500" onclick="iwSelect('instant')">
+        <span class="ic">⚡</span><span class="nm">SOFORTVERLOSUNG</span>
+        <span class="ds">Keyword im Zeitfenster + echte Anwesenheit. Gleiche Chance für alle, zieht automatisch nach Ablauf.</span>
+      </button>
+      <button type="button" class="iw-card" data-type="ticketbuy" style="--acc:#22e07a" onclick="iwSelect('ticketbuy')">
+        <span class="ic">🎟</span><span class="nm">LOS-GIVEAWAY</span>
+        <span class="ds">Zuschauzeit wird Los-Guthaben. Einsatz auf Preise per Chat-Befehl oder Web — Ziehung je Preis.</span>
+      </button>
+      <button type="button" class="iw-card" data-type="contest" style="--acc:#c77bff" onclick="iwSelect('contest')">
+        <span class="ic">📸</span><span class="nm">SCREENSHOT-CONTEST</span>
+        <span class="ds">Zuschauer senden Screenshots ein, die Community bewertet 1–10. Höchste Punktsumme gewinnt.</span>
+      </button>
+    </div>
+
+    <div id="iw-fields" style="display:none">
+      <div class="iw-sec" id="iw-fields-title">EINSTELLUNGEN</div>
+      <div class="iw-field" id="iw-f-keyword">
+        <label for="iw-keyword" id="iw-keyword-label">Keyword</label>
+        <input type="text" id="iw-keyword" maxlength="100" placeholder="z.B. !blitz">
+        <div class="hint" id="iw-keyword-hint"></div>
+      </div>
+      <div class="iw-field" id="iw-f-window">
+        <label for="iw-window">Zeitfenster (Sekunden)</label>
+        <input type="number" id="iw-window" min="10" max="3600" step="5" value="60">
+        <div class="hint">Nach Ablauf wird automatisch gezogen. 10–3600 Sekunden.</div>
+      </div>
+      <div class="iw-field" id="iw-f-wagercmd">
+        <label for="iw-wagercmd">Chat-Befehl zum Setzen</label>
+        <input type="text" id="iw-wagercmd" maxlength="30" value="!setzen">
+        <div class="hint">Zuschauer setzen mit „&lt;Befehl&gt; &lt;Preis-Nr&gt; &lt;Anzahl&gt;". Später änderbar (⌨).</div>
+      </div>
+      <div class="iw-field" id="iw-f-minwatch">
+        <label for="iw-minwatch">Mindest-Zuschauzeit (Minuten)</label>
+        <input type="number" id="iw-minwatch" min="0" max="6000" step="5" value="10">
+        <div class="hint">Für Einsenden und Bewerten. 0 = aus — hält Vote-Bots draußen.</div>
+      </div>
+
+      <div class="iw-sec">KANÄLE</div>
+      <div class="iw-chips" id="iw-channels"></div>
+      <div class="iw-field"><div class="hint">Auf welchen Kanälen dieses Giveaway läuft. Ohne Auswahl: alle Team-Kanäle.</div></div>
+
+      <div class="iw-err" id="iw-err"></div>
+      <div class="iw-foot">
+        <button class="btn btn-gold" onclick="iwClose()">ABBRECHEN</button>
+        <button class="btn btn-solid" id="iw-start" onclick="iwStart()">GIVEAWAY STARTEN</button>
+      </div>
     </div>
   </div>
 </div>

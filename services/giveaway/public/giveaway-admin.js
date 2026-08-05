@@ -208,42 +208,88 @@ function renderGiveawaySelect() {
   updateTicketBuyButtons();
 }
 
-function openInstance() {
-  var type = prompt('Typ des zusätzlichen Giveaways:\n\n1 = Zusatz-Kampagne (Zuschauzeit & Chat)\n2 = Sofortverlosung (Keyword-Fenster, zieht automatisch)\n3 = Los-Giveaway (Zuschauzeit wird Guthaben, Einsatz auf Preise)\n4 = Screenshot-Contest (Einsendungen + Community-Voting 1–10)', '1');
-  if (type === null) return;
-  type = String(type).trim();
-  var payload = { event: 'gw_cmd', cmd: 'gw_open_instance' };
+// ── Instanz-Assistent (Modal statt prompt()-Kette) ────────
+// Typ-Karte wählen → nur die Felder dieses Cores → starten.
+var iwType = null;
+var IW_TYPES = {
+  campaign:  { core: null,                      fields: { keyword: true } },
+  instant:   { core: 'CORE_CurrentViewers',     fields: { keyword: true, window: true } },
+  ticketbuy: { core: 'CORE_TicketBuy',          fields: { wagercmd: true } },
+  contest:   { core: 'CORE_ScreenshotContest',  fields: { minwatch: true } },
+};
 
-  if (type === '4') {
-    payload.core = 'CORE_ScreenshotContest';
-    payload.keyword = '';
-    var mw = CC.validate.sanitizeInt(prompt('Mindest-Zuschauzeit für Einsenden/Voten in Minuten (0 = aus):', '10') || '10', 0, 6000, 10);
-    payload.minWatchSec = mw * 60;
-    send(payload);
-    log('Screenshot-Contest wird gestartet … (Voting danach mit 🗳 öffnen)', 'cyan');
-    return;
+function openInstance() {
+  iwType = null;
+  document.querySelectorAll('.iw-card').forEach(function(c){ c.classList.remove('sel'); });
+  document.getElementById('iw-fields').style.display = 'none';
+  document.getElementById('iw-err').textContent = '';
+  // Kanal-Chips aus den Team-Kanälen (leer lassen = alle)
+  var chips = document.getElementById('iw-channels');
+  chips.innerHTML = (gwChannels || []).map(function(ch){
+    return '<label class="iw-chip"><input type="checkbox" value="' + esc(ch) + '">' + esc(ch) + '</label>';
+  }).join('') || '<span class="hint">Kanäle laden … (Team-Kanäle erscheinen nach dem ersten Datenabruf)</span>';
+  document.getElementById('iw-overlay').style.display = 'flex';
+}
+
+function iwClose() {
+  document.getElementById('iw-overlay').style.display = 'none';
+}
+
+function iwSelect(type) {
+  iwType = type;
+  document.querySelectorAll('.iw-card').forEach(function(c){
+    c.classList.toggle('sel', c.getAttribute('data-type') === type);
+  });
+  var f = IW_TYPES[type].fields;
+  document.getElementById('iw-f-keyword').style.display  = f.keyword  ? '' : 'none';
+  document.getElementById('iw-f-window').style.display   = f.window   ? '' : 'none';
+  document.getElementById('iw-f-wagercmd').style.display = f.wagercmd ? '' : 'none';
+  document.getElementById('iw-f-minwatch').style.display = f.minwatch ? '' : 'none';
+  if (f.keyword) {
+    document.getElementById('iw-keyword-label').textContent = type === 'instant' ? 'Keyword (Pflicht)' : 'Keyword (optional)';
+    document.getElementById('iw-keyword-hint').textContent = type === 'instant'
+      ? 'Wer es im Zeitfenster schreibt und zuschaut, ist im Topf.'
+      : 'Zuschauer melden sich damit im Chat an. Leer = ohne Chat-Anmeldung.';
   }
-  if (type === '3') {
-    payload.core = 'CORE_TicketBuy';
-    // Setz-Befehl ist konfigurierbar (landet als gWagerCmd an der Instanz).
-    var cmd = prompt('Chat-Befehl zum Setzen (konfigurierbar):', '!setzen');
-    if (cmd === null) return;
-    payload.wagerCmd = (cmd.trim() || '!setzen').toLowerCase();
-    payload.keyword = '';
-  } else {
-    var kw = prompt('Keyword' + (type === '2' ? ' (Pflicht bei Sofortverlosung)' : ' (leer = ohne Chat-Anmeldung)') + ':', '');
-    if (kw === null) return;
-    payload.keyword = kw.trim();
-    if (type === '2') {
-      if (!payload.keyword) { log('Sofortverlosung braucht ein Keyword', 'red'); return; }
-      var secs = CC.validate.sanitizeInt(prompt('Fensterdauer in Sekunden (10–3600):', '60') || '60', 10, 3600, 60);
-      payload.core = 'CORE_CurrentViewers';
-      payload.windowSec = secs;
+  document.getElementById('iw-err').textContent = '';
+  document.getElementById('iw-fields').style.display = '';
+  var first = f.keyword ? 'iw-keyword' : f.wagercmd ? 'iw-wagercmd' : 'iw-minwatch';
+  var el = document.getElementById(first); if (el) el.focus();
+}
+
+function iwStart() {
+  if (!iwType) return;
+  var t = IW_TYPES[iwType];
+  var err = document.getElementById('iw-err');
+  var payload = { event: 'gw_cmd', cmd: 'gw_open_instance', keyword: '' };
+  if (t.core) payload.core = t.core;
+
+  if (t.fields.keyword) {
+    payload.keyword = CC.validate.sanitize(document.getElementById('iw-keyword').value, 'keyword').trim();
+    if (iwType === 'instant' && !payload.keyword) {
+      err.textContent = 'Die Sofortverlosung braucht ein Keyword — ohne Anmeldung kein Teilnehmer.';
+      document.getElementById('iw-keyword').focus();
+      return;
     }
   }
+  if (t.fields.window)   payload.windowSec = CC.validate.sanitizeInt(document.getElementById('iw-window').value, 10, 3600, 60);
+  if (t.fields.wagercmd) payload.wagerCmd  = (document.getElementById('iw-wagercmd').value.trim() || '!setzen').toLowerCase();
+  if (t.fields.minwatch) payload.minWatchSec = CC.validate.sanitizeInt(document.getElementById('iw-minwatch').value, 0, 6000, 10) * 60;
+
+  var picked = Array.prototype.slice.call(document.querySelectorAll('#iw-channels input:checked')).map(function(c){ return c.value; });
+  if (picked.length) payload.channels = picked;
+
   send(payload);
+  iwClose();
   log('Instanz wird gestartet …', 'cyan');
 }
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && document.getElementById('iw-overlay').style.display !== 'none') iwClose();
+});
+document.getElementById('iw-overlay').addEventListener('click', function(e) {
+  if (e.target === this) iwClose();
+});
 
 // ── Phase 4b: Preise (nur für gewählte Los-Giveaway-Instanz) ──
 function addPrize() {

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Team Giveaway — Community-Giveaway nach Zuschauzeit für Twitch</title>
-<meta name="description" content="Giveaway nach echter Zuschauzeit — für einen Kanal oder ein ganzes Team. Alle Regeln frei einstellbar, Ziehung gewichtet und nachvollziehbar.">
+<meta name="description" content="Community-Giveaways nach echter Zuschauzeit — vier Mechaniken: Kampagne, Sofortverlosung, Los-Einsatz und Screenshot-Contest. Für einen Kanal oder ein ganzes Team, alle Regeln frei einstellbar, Ziehung nachvollziehbar.">
 <link rel="canonical" href="https://team.raumdock.org/">
 
 <!-- Link-Vorschau (Discord, WhatsApp, X, Slack …) -->
@@ -130,13 +130,28 @@
   footer{border-top:1px solid var(--edge);padding:22px;text-align:center;font-family:var(--mono);font-size:10px;letter-spacing:1px;color:var(--faint)}
   footer a{color:var(--mute)} footer a:hover{color:var(--cyan)}
 
+  /* Vier Mechaniken — je Karte eine Akzentfarbe (wie im Admin-Panel) */
+  .modes{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .mode{--acc:var(--cyan);background:var(--panel);border:1px solid var(--edge);border-radius:12px;
+    padding:18px 16px;position:relative;overflow:hidden;transition:border-color .15s,transform .15s}
+  .mode::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--acc);opacity:.85}
+  .mode:hover{border-color:var(--acc);transform:translateY(-2px)}
+  .mode .ic{font-size:20px;display:block;margin-bottom:9px}
+  .mode h3{font-family:var(--disp);font-weight:600;font-size:18px;margin-bottom:5px;color:var(--acc)}
+  .mode p{font-size:13px;color:var(--mute)}
+  .mode .who{display:block;margin-top:10px;padding-top:9px;border-top:1px dashed var(--edge2);
+    font-family:var(--mono);font-size:10px;letter-spacing:.8px;color:var(--faint)}
+  .mode .who::before{content:'▸ ';color:var(--acc)}
+
   @media(max-width:820px){
     .hero{grid-template-columns:1fr;gap:26px}
     .steps{grid-template-columns:1fr 1fr}.step::after{display:none}
     .feat{grid-template-columns:1fr}
+    .modes{grid-template-columns:1fr 1fr}
     .req{grid-template-columns:1fr}
     .top a.ghost{display:none}
   }
+  @media(max-width:480px){.modes{grid-template-columns:1fr}}
   @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -145,6 +160,7 @@
 <div class="top">
   <a class="logo" href="/"><svg width="15" height="15" viewBox="0 0 12 12" fill="none"><path d="M6 1L11 5.5V11H8V8H4V11H1V5.5L6 1Z" stroke="#00d4ff" stroke-width="1.2"/></svg>CHAOS<b>CREW</b></a>
   <div class="sp"></div>
+  <a class="ghost" href="#modes">Mechaniken</a>
   <a class="ghost" href="#how">So funktioniert's</a>
   <a class="ghost" href="#req">Voraussetzungen</a>
   <a class="tw" id="nav-cta" href="/admin/auth/twitch?next=/admin/">▶ Mit Twitch starten</a>
@@ -155,7 +171,7 @@
     <div>
       <span class="eyebrow">Multi-Channel Community-Giveaway</span>
       <h1>Ein Giveaway.<br>Ein Kanal oder <span class="c">das ganze Team</span>.<br>Faire <span class="g">Lose</span>.</h1>
-      <p class="lede">Deine Community sammelt Zuschauzeit — verwandelt in gewichtete Lose. Als <b>einzelner Streamer</b> oder mit mehreren Kanälen, die auf ein gemeinsames Konto einzahlen. Alle Regeln stellst du selbst ein. Keine Bots, keine Zufalls-Discords. Nachvollziehbar bis zur Ziehung.</p>
+      <p class="lede">Deine Community sammelt Zuschauzeit — verwandelt in gewichtete Lose. Als <b>einzelner Streamer</b> oder mit mehreren Kanälen, die auf ein gemeinsames Konto einzahlen. <b>Vier Mechaniken</b>, auch parallel: Kampagne, Sofortverlosung, Los-Einsatz, Screenshot-Contest. Alle Regeln stellst du selbst ein. Nachvollziehbar bis zur Ziehung.</p>
       <div class="cta">
         <a class="btn tw" id="hero-cta" href="/admin/auth/twitch?next=/admin/">▶ Kostenlos mit Twitch registrieren</a>
         <a class="btn ghost" href="#how">So funktioniert's</a>
@@ -195,6 +211,36 @@
       <div class="step"><div class="no">02</div><h3>Beitreten</h3><p>Per Keyword im Chat teilnehmen — das ist zugleich die Zustimmung zu den Bedingungen.<span class="cfg">Einstellbar: Keyword frei wählbar, jederzeit änderbar oder ganz aus</span></p></div>
       <div class="step"><div class="no">03</div><h3>Qualifizieren</h3><p>Kanälen folgen und genug Zuschauzeit sammeln. Vor der Ziehung per Twitch-Helix echt geprüft.<span class="cfg">Einstellbar: 0–10 Follows nötig <i>(Standard 2)</i>, Lostopf ab 1 Los</span></p></div>
       <div class="step"><div class="no">04</div><h3>Ziehen</h3><p>Zufall gewichtet nach Losen. Voller Audit-Snapshot.<span class="cfg">Einstellbar: Preis pro Ziehung, Testziehung, eigene Teilnahmebedingungen <i>(inkl. Meldefrist)</i></span></p></div>
+    </div>
+  </div>
+</section>
+
+<section id="modes">
+  <div class="wrap">
+    <div class="sec-label">Vier Mechaniken</div>
+    <h2>Für jeden Anlass das passende Giveaway</h2>
+    <p class="sec-sub">Vom wochenlangen Community-Event bis zur 60-Sekunden-Verlosung zwischen zwei Runden — <b>auch mehrere gleichzeitig</b>. Bezahlt wird immer nur mit echter Zuschauzeit, nie mit Geld.</p>
+    <div class="modes">
+      <div class="mode" style="--acc:var(--cyan)">
+        <span class="ic">📈</span><h3>Kampagne</h3>
+        <p>Das Langzeit-Giveaway: Zuschauzeit &amp; sinnvoller Chat werden zu Losen, Ziehung gewichtet nach Coins.</p>
+        <span class="who">Wochen-Event über alle Kanäle</span>
+      </div>
+      <div class="mode" style="--acc:var(--gold)">
+        <span class="ic">⚡</span><h3>Sofortverlosung</h3>
+        <p>Keyword im Zeitfenster + echte Anwesenheit im Stream. Gleiche Chance für alle, zieht automatisch nach Ablauf.</p>
+        <span class="who">Spontan, live, in 60 Sekunden</span>
+      </div>
+      <div class="mode" style="--acc:var(--green)">
+        <span class="ic">🎟</span><h3>Los-Giveaway</h3>
+        <p>Zuschauzeit wird Los-Guthaben, das erhalten bleibt. Gezielt auf Preise setzen — per Chat-Befehl oder Web. Ziehung je Preis, gewichtet nach Einsatz.</p>
+        <span class="who">Mehrere Preise, echte Taktik</span>
+      </div>
+      <div class="mode" style="--acc:var(--violet)">
+        <span class="ic">📸</span><h3>Screenshot-Contest</h3>
+        <p>Die Community sendet Screenshots ein und bewertet sie mit 1–10. Höchste Punktsumme gewinnt — der Streamer gibt jede Einsendung frei.</p>
+        <span class="who">Kreativ statt Zufall</span>
+      </div>
     </div>
   </div>
 </section>
