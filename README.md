@@ -13,8 +13,16 @@ Eigenständiges System — keine Abhängigkeit zu anderen Streamer-Tools.
   Viewtime"), gilt für Ticks und Chat-Bonus.
 - Teilnahme: einer konfigurierbaren Zahl teilnehmender Kanäle folgen + Keyword im
   Chat schreiben (= Zustimmung zu den Teilnahmebedingungen).
-- **Ziehung:** Zufall, gewichtet nach Coins. Voll nachvollziehbar — jede Ziehung
-  wird mit Teilnehmer-Snapshot, Zufallswert und Follow-Audit gespeichert.
+- **Drei Mechaniken, parallel kombinierbar** (max. 4 gleichzeitig je Team):
+  die **Kampagne** (oben beschrieben), die **Sofortverlosung** (Keyword im
+  Zeitfenster + echte Anwesenheit, gleiche Chance für alle, zieht automatisch)
+  und das **Los-Giveaway** (Zuschauzeit wird team-weites Los-Guthaben, Einsatz
+  auf konkrete Preise, Ziehung je Preis gewichtet nach Einsatz — Guthaben ist
+  nie käuflich). Architektur: austauschbare Cores, siehe
+  [docs/ARCHITEKTUR-CORES.md](docs/ARCHITEKTUR-CORES.md).
+- **Ziehung:** Zufall, gewichtet nach Coins bzw. Einsatz. Voll nachvollziehbar —
+  jede Ziehung wird mit Teilnehmer-Snapshot, Zufallswert, Mechanik-Stempel und
+  Follow-Audit gespeichert.
 - **Audit-Log:** jede Aktion mit Einfluss auf den Giveaway-Stand wird mit Actor,
   IP, Ziel und Vorher/Nachher protokolliert — inkl. abgelehnter Versuche.
 - **Streamermodus:** blendet Zuschauernamen und Ingest-Tokens im Admin-Panel aus,

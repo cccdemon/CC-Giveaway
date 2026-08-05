@@ -46,7 +46,10 @@ Der Token darf **nicht** im Klartext in der Action stehen. Setze ihn einmalig al
 3. Action **einmal manuell ausführen** (Test-Button). Danach kann sie gelöscht werden — der Wert bleibt persistent gespeichert.
 
 ## Schritt 5 — Actions importieren + Trigger
-Importiere die C#-Actions aus diesem Ordner (Streamerbot → **Import** oder Action anlegen + Code einfügen als **Execute C# Code**). Ordne die Trigger zu:
+Der Action-Code liegt im Repo unter `services/admin/actions/` (einzige Quelle)
+und wird eingeloggten Nutzern auf der Setup-Seite zum Kopieren angezeigt
+(`GET /admin/pub/actions`). Lege je Action eine **Execute C# Code**-Sub-Action
+an und füge den Code ein. Ordne die Trigger zu:
 
 | Action | Trigger in Streamerbot |
 |---|---|

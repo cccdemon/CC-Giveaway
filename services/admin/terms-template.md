@@ -57,6 +57,63 @@ immer der Stand, der dir im Chat über `!giveaway` und `!los` sowie auf deiner S
 angezeigt wird.** Änderungen wirken ab dem Zeitpunkt der Umstellung; bereits gesammelte
 Zuschauzeit bleibt dir erhalten.
 
+## § 4b Sofortverlosung
+Der Veranstalter kann zusätzlich **Sofortverlosungen** durchführen. Dabei gilt
+abweichend von § 4:
+1. Teilnahmeberechtigt ist, wer das angesagte **Keyword innerhalb des genannten
+   Zeitfensters** in den Chat schreibt **und** zu diesem Zeitpunkt **als
+   Zuschauer im Stream anwesend** ist. Nur den Chat geöffnet zu haben, genügt
+   nicht.
+2. **Alle Berechtigten haben dieselbe Gewinnchance** — Zuschauzeit, Chataktivität
+   oder Guthaben spielen keine Rolle; eine Vorleistung ist nicht erforderlich.
+3. Die Ziehung erfolgt **automatisch nach Ablauf des Zeitfensters**. Ist niemand
+   teilnahmeberechtigt, wird die Verlosung ohne Ziehung abgebrochen und im Chat
+   angesagt.
+
+## § 4c Los-Giveaway (Einsatz auf Preise)
+Der Veranstalter kann Giveaways mit **Los-Einsatz** durchführen. Dabei gilt
+ergänzend zu § 4:
+1. Deine Zuschauzeit (einschließlich Chat-Bonus) wird zu **Los-Guthaben**. Es
+   wird dir beim Abschluss des jeweiligen Los-Giveaways gutgeschrieben und
+   bleibt für künftige Los-Giveaways desselben Teams erhalten.
+2. Los-Guthaben entsteht **ausschließlich aus Zuschauzeit und Chataktivität**.
+   Es kann **nicht gekauft, nicht in Geld umgetauscht, nicht ausgezahlt und
+   nicht übertragen** werden und ist kein Zahlungsmittel. **Restguthaben
+   verfällt nach zwölf Monaten ohne Bewegung.**
+3. Du setzt Lose gezielt auf einzelne, vom Veranstalter angelegte **Preise** —
+   im Chat über den angesagten Befehl oder auf der Seite „Lose setzen". Bis zum
+   angegebenen **Einsatz-Ende** kannst du einen Einsatz vollständig
+   zurücknehmen; danach ist er gebunden.
+4. Gezogen wird **je Preis** per Zufall, **gewichtet nach dem Einsatz** auf
+   diesen Preis. Jedes gesetzte Los kann gewinnen; es gibt kein Höchstgebot und
+   keinen Kauf.
+5. **Mit der Ziehung eines Preises sind die darauf gesetzten Einsätze aller
+   Teilnehmer verbraucht** — auch die der Nichtgewinner.
+
+## § 4d Screenshot-Contest
+Der Veranstalter kann **Screenshot-Wettbewerbe** durchführen. Dabei gilt
+abweichend von § 4:
+1. **Einsenden** darf, wer einem der Contest-Kanäle **folgt** und die genannte
+   **Mindest-Zuschauzeit** erreicht hat. **Eine Einsendung pro Person**;
+   erneutes Einsenden ersetzt die eigene. **Achtung: beim Ersetzen verfallen
+   bereits abgegebene Stimmen für den vorherigen Screenshot** — darauf wird
+   vor dem Ersetzen hingewiesen.
+2. Mit der Einsendung versicherst du, dass du die **Rechte am Bild** hast, es
+   keine Rechte Dritter verletzt und keine unzulässigen Inhalte zeigt, und du
+   räumst dem Veranstalter das **einfache Nutzungsrecht** ein, das Bild im
+   Rahmen des Contests anzuzeigen (Contest-Seite, Stream). Jede Einsendung
+   wird vor der Sichtbarkeit **vom Veranstalter geprüft und freigegeben**;
+   eine Ablehnung ist endgültig und wird nicht begründet.
+3. **Bewerten** (Skala **1–10**) darf, wer die Mindest-Zuschauzeit erreicht
+   hat — im vom Veranstalter angesagten **Voting-Zeitraum** (er kann das
+   Voting öffnen, pausieren, fortsetzen und schließen). Je Person und
+   Screenshot zählt **genau eine Stimme**; erneutes Bewerten ersetzt die
+   eigene Stimme. Die eigene Einsendung kann nicht bewertet werden.
+4. Es gewinnt die Einsendung mit der **höchsten Punktsumme**. Bei
+   Punktgleichstand entscheidet das Los unter den punktgleichen Einsendungen.
+5. Manipulation des Votings (Bot-Stimmen, Mehrfachaccounts, Stimmenkauf)
+   führt zum Ausschluss nach § 6.
+
 ## § 5 Anerkennung der Chataktivität
 Die Chataktivität dient **ausschließlich als Nachweis aktiver Teilnahme**. Nicht gewertet werden insbesondere:
 Spam, wiederholte identische Nachrichten, Emoji-Spam, Ein-Wort-Nachrichten ohne

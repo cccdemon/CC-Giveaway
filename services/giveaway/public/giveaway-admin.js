@@ -11,6 +11,11 @@ function parseDec(v) {
 
 // ── State ─────────────────────────────────────────────────
 let currentTeam  = null;
+// Phase 2d: gewähltes Giveaway. null = Kampagne (Primary); sonst die
+// Session-ID einer Zusatz-Instanz. Diese Cmds wirken auf die Auswahl:
+let currentGiveaway = null;
+let giveawayList    = [];
+const GID_CMDS = { gw_pause:1, gw_resume:1, gw_set_multiplier:1, gw_get_multiplier:1, gw_draw_winner:1 };
 const TEAM_EVENTS = { gw_cmd:1, gw_get_all:1, gw_overlay:1, viewer_tick:1, chat_msg:1, time_cmd:1 };
 let participants = {};
 let gwChannels   = [];
@@ -79,6 +84,11 @@ function send(obj) {
     if (!currentTeam) { log('Kein Team gewählt', 'red'); return; }
     obj.teamId = currentTeam;
   }
+  // Auswahl einer Zusatz-Instanz: betroffene Cmds + Datenabruf zielen auf sie.
+  if (currentGiveaway) {
+    if (obj.event === 'gw_get_all') obj.giveawayId = currentGiveaway;
+    if (obj.event === 'gw_cmd' && GID_CMDS[obj.cmd]) obj.giveawayId = currentGiveaway;
+  }
   if (!CC.validate.validateWsPayload(obj)) { log('Payload blockiert: ' + JSON.stringify(obj).slice(0,60), 'red'); return; }
   if (gwWs && gwWs.readyState === 1) gwWs.send(JSON.stringify(obj));
   else log('WS nicht verbunden', 'red');
@@ -106,15 +116,149 @@ function onTeamChange() {
   var sel = document.getElementById('team-select');
   if (!sel) return;
   currentTeam = sel.value;
+  currentGiveaway = null;
+  giveawayList = [];
   participants = {};
   log('Team gewechselt: ' + currentTeam, 'cyan');
   refresh();
+}
+
+// ── Phase 2d: Giveaway-Auswahl (Kampagne / Zusatz-Instanzen) ──
+function onGiveawayChange() {
+  var sel = document.getElementById('gw-select');
+  if (!sel) return;
+  currentGiveaway = sel.value || null;
+  participants = {};
+  var btn = document.getElementById('gw-close-inst');
+  if (btn) btn.style.display = currentGiveaway ? '' : 'none';
+  updateTicketBuyButtons();
+  log(currentGiveaway ? 'Instanz gewählt: ' + currentGiveaway : 'Kampagne gewählt', 'cyan');
+  requestData();
+}
+
+// Typ-spezifische Buttons nur bei passender Instanz-Auswahl zeigen.
+function updateTicketBuyButtons() {
+  var g = giveawayList.find(function(x){ return x.gid === currentGiveaway; });
+  var isTb = !!(g && g.core === 'CORE_TicketBuy');
+  var isSc = !!(g && g.core === 'CORE_ScreenshotContest');
+  var p = document.getElementById('gw-add-prize'); if (p) p.style.display = isTb ? '' : 'none';
+  var w = document.getElementById('gw-wager-cmd'); if (w) w.style.display = isTb ? '' : 'none';
+  var e = document.getElementById('gw-entries');   if (e) e.style.display = isSc ? '' : 'none';
+  var v = document.getElementById('gw-voting');    if (v) v.style.display = isSc ? '' : 'none';
+}
+
+// ── Phase 6: Screenshot-Contest (Review + Voting-Steuerung) ──
+function listEntries() {
+  if (!currentGiveaway) return;
+  send({ event: 'gw_cmd', cmd: 'gw_list_entries', giveawayId: currentGiveaway });
+}
+
+function reviewEntry() {
+  if (!currentGiveaway) return;
+  listEntries();
+  var id = prompt('Einsendung-Nr. freigeben/ablehnen (Liste siehe Log):', '');
+  if (id === null || !id.trim()) return;
+  var ok = confirm('OK = FREIGEBEN · Abbrechen = ABLEHNEN');
+  send({ event: 'gw_cmd', cmd: 'gw_review_entry', entryId: parseInt(id, 10),
+         decision: ok ? 'approve' : 'reject' });
+}
+
+function contestVoting() {
+  if (!currentGiveaway) return;
+  var a = prompt('Voting-Steuerung: open / pause / resume / close', 'open');
+  if (a === null || !a.trim()) return;
+  send({ event: 'gw_cmd', cmd: 'gw_contest_voting', giveawayId: currentGiveaway,
+         action: a.trim().toLowerCase() });
+}
+
+function renderGiveawaySelect() {
+  var sel = document.getElementById('gw-select');
+  if (!sel) return;
+  var opts = ['<option value="">— Kampagne —</option>'];
+  giveawayList.forEach(function(g) {
+    if (g.primary) return;   // Kampagne ist die leere Auswahl
+    var label = (g.core === 'CORE_CurrentViewers' ? '⚡ ' : '')
+              + (g.keyword ? '„' + g.keyword + '" ' : '') + g.gid.replace(/^sess_/, '#')
+              + (g.paused ? ' ⏸' : '');
+    opts.push('<option value="' + esc(g.gid) + '">' + esc(label) + '</option>');
+  });
+  sel.innerHTML = opts.join('');
+  // Auswahl halten; verschwundene Instanz (geschlossen) → zurück zur Kampagne.
+  if (currentGiveaway && !giveawayList.some(function(g){ return g.gid === currentGiveaway && !g.primary; })) {
+    currentGiveaway = null;
+    var btn = document.getElementById('gw-close-inst');
+    if (btn) btn.style.display = 'none';
+    requestData();
+  }
+  sel.value = currentGiveaway || '';
+  updateTicketBuyButtons();
+}
+
+function openInstance() {
+  var type = prompt('Typ des zusätzlichen Giveaways:\n\n1 = Zusatz-Kampagne (Zuschauzeit & Chat)\n2 = Sofortverlosung (Keyword-Fenster, zieht automatisch)\n3 = Los-Giveaway (Zuschauzeit wird Guthaben, Einsatz auf Preise)\n4 = Screenshot-Contest (Einsendungen + Community-Voting 1–10)', '1');
+  if (type === null) return;
+  type = String(type).trim();
+  var payload = { event: 'gw_cmd', cmd: 'gw_open_instance' };
+
+  if (type === '4') {
+    payload.core = 'CORE_ScreenshotContest';
+    payload.keyword = '';
+    var mw = CC.validate.sanitizeInt(prompt('Mindest-Zuschauzeit für Einsenden/Voten in Minuten (0 = aus):', '10') || '10', 0, 6000, 10);
+    payload.minWatchSec = mw * 60;
+    send(payload);
+    log('Screenshot-Contest wird gestartet … (Voting danach mit 🗳 öffnen)', 'cyan');
+    return;
+  }
+  if (type === '3') {
+    payload.core = 'CORE_TicketBuy';
+    // Setz-Befehl ist konfigurierbar (landet als gWagerCmd an der Instanz).
+    var cmd = prompt('Chat-Befehl zum Setzen (konfigurierbar):', '!setzen');
+    if (cmd === null) return;
+    payload.wagerCmd = (cmd.trim() || '!setzen').toLowerCase();
+    payload.keyword = '';
+  } else {
+    var kw = prompt('Keyword' + (type === '2' ? ' (Pflicht bei Sofortverlosung)' : ' (leer = ohne Chat-Anmeldung)') + ':', '');
+    if (kw === null) return;
+    payload.keyword = kw.trim();
+    if (type === '2') {
+      if (!payload.keyword) { log('Sofortverlosung braucht ein Keyword', 'red'); return; }
+      var secs = CC.validate.sanitizeInt(prompt('Fensterdauer in Sekunden (10–3600):', '60') || '60', 10, 3600, 60);
+      payload.core = 'CORE_CurrentViewers';
+      payload.windowSec = secs;
+    }
+  }
+  send(payload);
+  log('Instanz wird gestartet …', 'cyan');
+}
+
+// ── Phase 4b: Preise (nur für gewählte Los-Giveaway-Instanz) ──
+function addPrize() {
+  if (!currentGiveaway) { log('Erst Los-Giveaway-Instanz wählen', 'red'); return; }
+  var title = prompt('Titel des Preises:', '');
+  if (title === null || !title.trim()) return;
+  var mins = CC.validate.sanitizeInt(prompt('Einsatz-Ende in Minuten (0 = offen bis zur Ziehung):', '0') || '0', 0, 20160, 0);
+  send({ event: 'gw_cmd', cmd: 'gw_add_prize', giveawayId: currentGiveaway,
+         title: title.trim(), wagerEndMinutes: mins });
+}
+
+function setWagerCmd() {
+  if (!currentGiveaway) { log('Erst Los-Giveaway-Instanz wählen', 'red'); return; }
+  var cmd = prompt('Neuer Setz-Befehl:', '!setzen');
+  if (cmd === null || !cmd.trim()) return;
+  send({ event: 'gw_cmd', cmd: 'gw_set_wager_cmd', giveawayId: currentGiveaway, command: cmd.trim().toLowerCase() });
+}
+
+function closeInstance() {
+  if (!currentGiveaway) { log('Keine Instanz gewählt', 'red'); return; }
+  if (!confirm('Instanz ' + currentGiveaway + ' schließen?')) return;
+  send({ event: 'gw_cmd', cmd: 'gw_close_instance', giveawayId: currentGiveaway });
 }
 
 function refresh() { requestData(); loadKeyword(); loadHistory(); loadAudit(); }
 
 function requestData() {
   send({ event: 'gw_get_all' });
+  send({ event: 'gw_cmd', cmd: 'gw_list_giveaways' });
   send({ event: 'gw_cmd', cmd: 'gw_get_multiplier' });
   send({ event: 'gw_cmd', cmd: 'gw_get_stream_settings' });
   send({ event: 'gw_cmd', cmd: 'gw_get_channels' });
@@ -136,6 +280,8 @@ function liveRefresh() {
 function handle(msg) {
   switch(msg.event) {
     case 'gw_data':
+      // Antwort für ein anderes als das gewählte Giveaway → veraltet, ignorieren.
+      if ((msg.giveawayId || null) !== currentGiveaway) break;
       participants = {};
       gwIsOpen = !!msg.open;
       gwPaused = !!msg.paused;
@@ -164,6 +310,8 @@ function handle(msg) {
       break;
 
     case 'gw_status':
+      // Broadcast betrifft die Kampagne — bei gewählter Instanz nicht anwenden.
+      if (currentGiveaway) { liveRefresh(); break; }
       gwPaused = msg.status === 'paused';
       gwIsOpen = msg.status === 'open' || msg.status === 'paused';
       updateGwStatus();
@@ -172,6 +320,21 @@ function handle(msg) {
     case 'gw_ack': {
       log(`ACK: ${msg.type} -> ${msg.user || msg.keyword || msg.winner || msg.channel || ''}`, 'cyan');
       // Read-only Antworten (NIE requestData → sonst Endlosschleife)
+      if (msg.type === 'giveaways')     { giveawayList = msg.giveaways || []; renderGiveawaySelect(); break; }
+      if (msg.type === 'entries')       {
+        log('Voting: ' + (msg.voting || 'closed'), 'gold');
+        (msg.entries || []).forEach(function(en){
+          log('#' + en.entryId + ' [' + en.status + '] „' + (en.title || '—') + '" von ' + maskName(en.username, en.username)
+            + ' · ' + en.score + ' Pkt / ' + en.votes + ' Stimmen', 'cyan');
+        });
+        if (!(msg.entries || []).length) log('Keine Einsendungen', 'gold');
+        break;
+      }
+      if (msg.type === 'prizes')        {
+        (msg.prizes || []).forEach(function(p){ log('Preis #' + p.id + ' „' + p.title + '" [' + p.status + '] Einsatz: ' + p.total_stake, 'cyan'); });
+        if (!(msg.prizes || []).length) log('Keine offenen Preise', 'gold');
+        break;
+      }
       if (msg.type === 'channels')      { ingestChannels = msg.channels || []; renderIngest(); break; }
       if (msg.type === 'ingest_tokens') { ingestTokens = {}; (msg.tokens || []).forEach(t => ingestTokens[t.channel] = t.token); renderIngest(); break; }
       if (msg.type === 'ingest_token')  { ingestTokens[msg.channel] = msg.token; renderIngest(); break; }
@@ -210,6 +373,16 @@ function handle(msg) {
         var uv = (msg.unverified||[]).length ? ' | unverifiziert: ' + msg.unverified.join(',') : '';
         log('Follows geprüft: ' + (msg.verified||[]).length + ' Kanäle, ' + (msg.mismatches||0) + ' Änderungen' + uv, uv ? 'gold' : 'cyan');
       }
+      if (msg.type === 'instance_opened') log('Zusatz-Giveaway gestartet: ' + (msg.giveawayId || '?')
+            + (msg.keyword ? ' (Keyword „' + msg.keyword + '")' : '')
+            + (msg.wagerCmd ? ' (Setzen: „' + msg.wagerCmd + '")' : ''), 'gold');
+      if (msg.type === 'prize_added')   log('Preis #' + msg.prizeId + ' angelegt: „' + (msg.title || '') + '"', 'gold');
+      if (msg.type === 'wager_cmd_set') log('Setz-Befehl geändert: „' + (msg.command || '') + '"', 'gold');
+      if (msg.type === 'contest_voting') log('Contest-Voting: ' + (msg.voting || '?'), 'gold');
+      if (msg.type === 'entry_reviewed') log('Einsendung #' + msg.entryId + ' → ' + (msg.decision === 'approve' ? 'FREIGEGEBEN' : 'abgelehnt'), 'gold');
+      if (msg.type === 'instance_closed') log('Instanz geschlossen: ' + (msg.giveawayId || '?'), 'gold');
+      if (msg.type === 'instance_paused')  log('Instanz pausiert: '   + (msg.giveawayId || '?'), 'gold');
+      if (msg.type === 'instance_resumed') log('Instanz läuft weiter: ' + (msg.giveawayId || '?'), 'cyan');
       if (msg.type === 'winner_drawn') { showWinnerAnimation(msg.winner, msg.watchSec, msg.coins, msg.prize); loadHistory(); }
       if (msg.type === 'no_winner') log('Keine Teilnehmer mit Coins im Pool!', 'red');
       if (msg.type === 'draw_error') log('ZIEHUNG FEHLGESCHLAGEN: ' + (msg.error || '?') + ' – nichts gespeichert, bitte erneut ziehen', 'red');
@@ -366,8 +539,13 @@ function genIngestToken(ch) {
 }
 
 // ── Giveaway Controls ─────────────────────────────────────
-function gwOpen()   { send({ event:'gw_cmd', cmd:'gw_open'   }); gwIsOpen=true; gwPaused=false; updateGwStatus(); log('Giveaway geoeffnet','cyan'); }
-function gwClose()  { send({ event:'gw_cmd', cmd:'gw_close'  }); gwIsOpen=false; gwPaused=false; updateGwStatus(); log('Giveaway geschlossen','gold'); }
+// OPEN/CLOSE gelten der Kampagne — bei gewählter Zusatz-Instanz blocken,
+// deren Lebenszyklus läuft über ＋/✕ (gw_open_instance/gw_close_instance).
+function gwOpen()   { if (currentGiveaway) { log('Instanz gewählt — Kampagne öffnen erst nach Wechsel auf „Kampagne"', 'red'); return; }
+                      send({ event:'gw_cmd', cmd:'gw_open'   }); gwIsOpen=true; gwPaused=false; updateGwStatus(); log('Giveaway geoeffnet','cyan'); }
+function gwClose()  { if (currentGiveaway) { log('Instanz gewählt — zum Schließen der Instanz ✕ benutzen', 'red'); return; }
+                      send({ event:'gw_cmd', cmd:'gw_close'  }); gwIsOpen=false; gwPaused=false; updateGwStatus(); log('Giveaway geschlossen','gold'); }
+// PAUSE/RESUME tragen die giveawayId (GID_CMDS) und wirken auf die Auswahl.
 function gwPause()  { send({ event:'gw_cmd', cmd:'gw_pause'  }); gwPaused=true;  updateGwStatus(); log('Giveaway pausiert','gold'); }
 function gwResume() { send({ event:'gw_cmd', cmd:'gw_resume' }); gwPaused=false; gwIsOpen=true; updateGwStatus(); log('Giveaway fortgesetzt','cyan'); }
 

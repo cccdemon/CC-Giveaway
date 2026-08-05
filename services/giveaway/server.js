@@ -16,15 +16,13 @@ const http      = require('http');
 const crypto    = require('crypto');
 const { Pool }  = require('pg');
 const { WatchtimeEngine, K, sanitizeUsername, sanitizeStr, sanitizeTeamId, sanitizeChannel, TICK_SEC, ABUSE, MIN_CHANNELS } = require('./watchtime.js');
-const kw2 = (n) => (n === 1 ? 'Kanal' : 'Kanälen');   // Grammatik-Helfer für Chat-Texte
-const fmtDur = (sec) => {                              // 7200→"2 Std", 1800→"30 Min"
-  sec = Math.max(0, Math.round(sec || 0));
-  if (sec % 3600 === 0) return `${sec / 3600} Std`;
-  if (sec >= 3600)      return `${(sec / 3600).toFixed(1)} Std`;
-  return `${Math.round(sec / 60)} Min`;
-};
+// Chat-Texte (!los/!giveaway/Anmelde-Antwort) und Format-Helfer kommen aus
+// dem Core — die Regeltexte gehören zur Mechanik (Phase 1, ARCHITEKTUR-CORES).
+const CORE = require('./cores/watchtime-chat.js');
+const CoreRegistry = require('./cores/index.js');
+const { fmtDur, kw2 } = CORE;
 const { Helix } = require('./helix.js');
-const { judgeMessage, listModels, encryptKey, decryptKey, PROVIDERS } = require('./chat-ai.js');
+const { judgeMessage, listModels, encryptKey, decryptKey, PROVIDERS } = require('./cores/chat-ai.js');
 const { targz } = require('./targz.js');
 
 function log(tag, ...args)    { console.log( `[${tag}]`, ...args); }
@@ -178,6 +176,8 @@ async function aiJudge(teamId, message) {
 }
 
 const wte = new WatchtimeEngine(redis, pg, aiJudge);
+const { CreditLedger, EXPIRE_MONTHS: CREDIT_EXPIRE_MONTHS } = require('./credit.js');
+const credit = new CreditLedger(pg);
 const helix = new Helix({
   clientId:     String(process.env.TWITCH_CLIENT_ID || '').replace(/^"|"$/g, ''),
   clientSecret: String(process.env.TWITCH_CLIENT_SECRET || '').replace(/^"|"$/g, ''),
@@ -249,7 +249,16 @@ async function memberChannel(login, teamId) {
 const AUDIT_SKIP = new Set([
   'gw_get_channels', 'gw_get_multiplier', 'gw_get_stream_settings',
   'gw_get_keyword', 'gw_get_ingest_tokens', 'gw_get_ai_settings', 'gw_list_ai_models',
+  'gw_list_giveaways', 'gw_list_prizes', 'gw_list_entries',
 ]);
+
+// Obergrenze gleichzeitiger Giveaways je Team (Entscheidung §10.2:
+// 3 langlaufende + 1 Sofortverlosung; die Typ-Trennung kommt mit den Cores,
+// bis dahin gilt die Summe). Konstante, per ENV überschreibbar — bewusst
+// nicht im Admin-Panel einstellbar.
+const MAX_PARALLEL_GIVEAWAYS = Math.max(1, parseInt(process.env.MAX_PARALLEL_GIVEAWAYS || '4', 10) || 4);
+
+const validGid = (s) => (typeof s === 'string' && /^sess_\d+$/i.test(s)) ? s : null;
 
 async function audit(entry) {
   const row = {
@@ -299,7 +308,7 @@ const IMPRINT_HINT = 'Kein Impressum hinterlegt. Trage unter MEINE TEAMS das Imp
 // Der Glueckspiel-Ausschluss der Nutzungsbedingungen bindet nur, wenn der
 // Veranstalter ihm zugestimmt hat. Ohne Zustimmung laeuft hier kein Giveaway.
 // Muss mit TOS_VERSION in services/admin/server.js uebereinstimmen.
-const TOS_VERSION = 1;
+const TOS_VERSION = 2;
 async function ownerAcceptedTos(teamId) {
   try {
     const r = await pg.query(
@@ -313,15 +322,17 @@ const TOS_HINT = 'Den Nutzungsbedingungen wurde noch nicht zugestimmt. Melde dic
 
 
 // Die Erklaerung, wie man mitmacht — identisch fuer !giveaway und die
-// Eroeffnungsansage. Ein Text, eine Stelle zum Pflegen.
+// Eroeffnungsansage. Text liegt im Core (infoText); hier nur Datensammlung.
+// Ohne Schema — Chat-Texte zeigen nur den Host (anders als publicHost()).
+const chatHost = () =>
+  (process.env.PUBLIC_URL || 'https://team.raumdock.org').replace(/^https?:\/\//, '').replace(/\/+$/, '');
 async function giveawayInfoText(teamId) {
-  const kw    = await redis.get(K.gwKeyword(teamId)) || '';
-  const host  = (process.env.PUBLIC_URL || 'https://team.raumdock.org').replace(/^https?:\/\//, '').replace(/\/+$/, '');
-  const kwTxt = kw ? `"${kw}"` : 'das Keyword';
-  const fm    = await wte.getFollowMin(teamId);
-  const dmSec = await wte.getDrawMinSec(teamId);
-  const dmTxt = dmSec > 0 ? ` + mind. 1 Punkt (${fmtDur(dmSec)} Zuschauzeit)` : '';
-  return `🎁 Team-Giveaway: schau auf EINEM der Team-Kanäle zu — die Zuschauzeit zählt zusammen (${fmtDur(dmSec)} = 1 Punkt), sinnvoller Chat (>3 Wörter) gibt Bonus. Mitmachen: schreib ${kwTxt} im Chat (= anmelden). Für den Lostopf: folge ≥${fm} ${kw2(fm)}${dmTxt}. Befehle: !los = dein Status & Chance · !giveaway = diese Info. Regeln: ${host}/viewer/terms?team=${teamId} | Status: ${host}/viewer/status`;
+  return CORE.infoText({
+    keyword:    await redis.get(K.gwKeyword(teamId)) || '',
+    followMin:  await wte.getFollowMin(teamId),
+    drawMinSec: await wte.getDrawMinSec(teamId),
+    host: chatHost(), teamId,
+  });
 }
 
 // Jeder Statuswechsel wird im Chat angesagt. Die Ansagen sitzen in diesen
@@ -332,15 +343,49 @@ async function openGiveaway(teamId, keyword) {
   await wte.openGiveaway(teamId, keyword, sid);
   await redis.del(K.gwAutoPaused(teamId));   // frischer Start ist nie auto-pausiert
   const chans = await wte.getChannels(teamId);
-  await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING`,
-    [sid, teamId, keyword || '', JSON.stringify(chans)]);
+  // core_config-Snapshot beim Öffnen: übernimmt die (Legacy-)Team-Werte aus
+  // Redis — inkl. cfgDrawMinSec — in die Giveaway-Instanz (§6 Alt-Key-Migration).
+  // Gelesen wird zur Laufzeit weiterhin aus Redis; der Snapshot dokumentiert,
+  // mit welcher Konfiguration dieses Giveaway gestartet ist.
+  const coreConfig = await snapshotCoreConfig(teamId);
+  await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels, core, status, core_config) VALUES ($1,$2,$3,$4,$5,'open',$6) ON CONFLICT (id) DO NOTHING`,
+    [sid, teamId, keyword || '', JSON.stringify(chans), CORE.id, JSON.stringify(coreConfig)]);
   broadcastTeam(teamId, { event: 'gw_status', status: 'open' });
   await announceTeam(teamId, '🎉 Das Giveaway ist ERÖFFNET! ' + await giveawayInfoText(teamId));
   log('GW', `[${teamId}] opened session ${sid}, kw="${keyword}", channels=${chans.join(',')}`);
   return sid;
 }
+// sessions.status spiegelt den Redis-Zustand (open/paused/closed) — rein
+// informativ fuer Archiv/Panel, das Verhalten haengt weiter an Redis.
+async function setSessionStatus(teamId, status) {
+  try {
+    const sid = await wte.getSessionId(teamId);
+    if (sid) await pg.query(`UPDATE sessions SET status=$1 WHERE id=$2`, [status, sid]);
+  } catch (e) { logErr('GW', 'setSessionStatus:', e.message); }
+}
+async function setSessionStatusById(gid, status) {
+  try { await pg.query(`UPDATE sessions SET status=$1 WHERE id=$2`, [status, gid]); }
+  catch (e) { logErr('GW', 'setSessionStatusById:', e.message); }
+}
+async function snapshotCoreConfig(teamId) {
+  return {
+    coinBaseSec: await wte.getCoinBaseSec(teamId),
+    followMin:   await wte.getFollowMin(teamId),
+    chat:        await wte.getChatConfig(teamId),
+  };
+}
+// Ansage nur in bestimmte Kanäle (Instanz mit Kanal-Teilmenge);
+// channels null = alle Team-Kanäle.
+async function announceChannels(teamId, channels, message) {
+  if (!Array.isArray(channels) || !channels.length) return announceTeam(teamId, message);
+  for (const ch of channels) {
+    redisPub.publish('ch:chat_reply', JSON.stringify({ event: 'chat_reply', channel: ch, message }));
+  }
+  return channels.length;
+}
 async function closeGiveaway(teamId) {
   const sid = await wte.getSessionId(teamId);
+  await setSessionStatus(teamId, 'closed');
   await wte.closeGiveaway(teamId, sid);
   await redis.del(K.gwOnline(teamId), K.gwAutoPaused(teamId));
   boostAnnounced.delete(teamId);
@@ -351,6 +396,7 @@ async function closeGiveaway(teamId) {
 }
 async function pauseGiveaway(teamId, { auto = false } = {}) {
   await wte.setPaused(teamId, true);
+  await setSessionStatus(teamId, 'paused');
   if (auto) await redis.set(K.gwAutoPaused(teamId), '1');
   else      await redis.del(K.gwAutoPaused(teamId));
   broadcastTeam(teamId, { event: 'gw_status', status: 'paused' });
@@ -360,6 +406,7 @@ async function pauseGiveaway(teamId, { auto = false } = {}) {
 }
 async function resumeGiveaway(teamId, { auto = false } = {}) {
   await wte.setPaused(teamId, false);
+  await setSessionStatus(teamId, 'open');
   await redis.del(K.gwAutoPaused(teamId));
   broadcastTeam(teamId, { event: 'gw_status', status: 'open' });
   await announceTeam(teamId, auto
@@ -506,15 +553,17 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => { clients.delete(clientId); log('WS', `Disconnected: ${clientId}`); });
 });
 
-async function sendTeamData(meta) {
+// gid optional (Phase 2d): Panel kann den Stand einer Sekundär-Instanz
+// abfragen; ohne gid gilt wie bisher das Primary.
+async function sendTeamData(meta, gid = null) {
   const send = (o) => meta.ws.readyState === WebSocket.OPEN && meta.ws.send(JSON.stringify(o));
   const teamId = meta.teamId;
-  const participants = await wte.getAllParticipants(teamId);
-  const open = await wte.isOpen(teamId);
-  const paused = await wte.isPaused(teamId);
-  const session = await wte.getSessionId(teamId);
+  const participants = await wte.getAllParticipants(teamId, gid || undefined);
+  const open = await wte.isOpen(teamId, gid || undefined);
+  const paused = await wte.isPaused(teamId, gid || undefined);
+  const session = gid || await wte.getSessionId(teamId);
   const channels = await wte.getChannels(teamId);
-  send({ event: 'gw_data', teamId, open, paused, session, participants, channels });
+  send({ event: 'gw_data', teamId, giveawayId: gid, open, paused, session, participants, channels });
 }
 
 async function handleClientMessage(meta, msg) {
@@ -537,7 +586,7 @@ async function handleClientMessage(meta, msg) {
       const teamId = sanitizeTeamId(msg.teamId);
       if (!await isMember(meta.authUser, teamId)) { send({ event: 'gw_ack', type: 'forbidden' }); return; }
       meta.teamId = teamId;
-      await sendTeamData(meta);
+      await sendTeamData(meta, validGid(msg.giveawayId));
       break;
     }
     case 'gw_cmd':
@@ -584,6 +633,7 @@ const MEMBER_CMDS = new Set([
   'gw_get_channels', 'gw_get_multiplier', 'gw_get_stream_settings', 'gw_get_keyword',
   'gw_get_ingest_tokens', 'gw_gen_ingest_token', 'gw_get_ai_settings',
   'gw_open', 'gw_pause', 'gw_resume', 'gw_set_multiplier',
+  'gw_list_giveaways', 'gw_list_prizes', 'gw_list_entries',
 ]);
 
 // Abgelehnte Versuche gehoeren ins Protokoll — aber das Admin-Panel pollt die
@@ -656,16 +706,235 @@ async function runAdminCmd(send, msg, meta, ctx) {
       await closeGiveaway(teamId);
       send({ event: 'gw_status', status: 'closed' });
       break;
-    case 'gw_pause':
+    case 'gw_pause': {
+      // Mit giveawayId: nur diese Sekundär-Instanz pausieren.
+      const gid = validGid(msg.giveawayId);
+      if (gid && gid !== await sid()) {
+        await wte.setPaused(teamId, true, gid);
+        await setSessionStatusById(gid, 'paused');
+        Object.assign(outcome, { giveawayId: gid });
+        send({ event: 'gw_ack', type: 'instance_paused', giveawayId: gid });
+        break;
+      }
       await pauseGiveaway(teamId);               // manuell, nicht auto
       send({ event: 'gw_status', status: 'paused' });
       log('GW', `[${teamId}] paused`);
       break;
-    case 'gw_resume':
+    }
+    case 'gw_resume': {
+      const gid = validGid(msg.giveawayId);
+      if (gid && gid !== await sid()) {
+        await wte.setPaused(teamId, false, gid);
+        await setSessionStatusById(gid, 'open');
+        Object.assign(outcome, { giveawayId: gid });
+        send({ event: 'gw_ack', type: 'instance_resumed', giveawayId: gid });
+        break;
+      }
       await resumeGiveaway(teamId);
       send({ event: 'gw_status', status: 'open' });
       log('GW', `[${teamId}] resumed`);
       break;
+    }
+    // ── Phase 2d: Parallel-Instanzen (z.B. Sofortverlosung neben Kampagne) ──
+    case 'gw_list_giveaways': {
+      send({ event: 'gw_ack', type: 'giveaways', giveaways: await wte.listGiveaways(teamId),
+             maxParallel: MAX_PARALLEL_GIVEAWAYS });
+      break;
+    }
+    case 'gw_open_instance': {
+      // Dieselben Rechts-Gates wie gw_open — jede Instanz ist ein Gewinnspiel.
+      if (!await ownerAcceptedTos(teamId)) {
+        Object.assign(outcome, { blocked: 'no_tos' });
+        send({ event: 'gw_ack', type: 'open_blocked', error: TOS_HINT });
+        break;
+      }
+      if (!await hasImprint(teamId)) {
+        Object.assign(outcome, { blocked: 'no_imprint' });
+        send({ event: 'gw_ack', type: 'open_blocked', error: IMPRINT_HINT });
+        break;
+      }
+      const running = await wte.listGiveaways(teamId);
+      if (running.length >= MAX_PARALLEL_GIVEAWAYS) {
+        Object.assign(outcome, { blocked: 'limit', running: running.length });
+        send({ event: 'gw_ack', type: 'open_blocked',
+               error: `Maximal ${MAX_PARALLEL_GIVEAWAYS} gleichzeitige Giveaways je Team.` });
+        break;
+      }
+      const keyword = sanitizeStr(msg.keyword || '', 100);
+      // Phase 3: Instanz kann einen anderen Core fahren (Registry-validiert).
+      const coreId = CoreRegistry.CORES[msg.core] ? msg.core : CoreRegistry.DEFAULT_CORE_ID;
+      const coreMod = CoreRegistry.getCore(coreId);
+      let windowSec = 0;
+      if (coreId === 'CORE_CurrentViewers') {   // Sofortverlosung
+        if (!keyword) {
+          Object.assign(outcome, { blocked: 'no_keyword', core: coreId });
+          send({ event: 'gw_ack', type: 'open_blocked',
+                 error: 'Eine Sofortverlosung braucht ein Keyword — ohne Opt-in kein Teilnehmer.' });
+          break;
+        }
+        const wc = coreMod.config.windowSec;
+        windowSec = Math.max(wc.min, Math.min(wc.max, parseInt(msg.windowSec, 10) || wc.def));
+      }
+      // TicketBuy: Setz-Befehl kommt aus der WebUI (Default aus der Core-Config).
+      let wagerCmd = '';
+      if (coreId === 'CORE_TicketBuy') {
+        wagerCmd = sanitizeStr(msg.wagerCmd || '', 30).trim().toLowerCase() || coreMod.config.wagerCmd.def;
+      }
+      // Contest: Mindest-Viewtime für Einsenden/Voten (WebUI-konfigurierbar).
+      let minWatchSec = null;
+      if (coreId === 'CORE_ScreenshotContest') {
+        const mc = coreMod.config.minWatchSec;
+        minWatchSec = Math.max(mc.min, Math.min(mc.max,
+          Number.isFinite(parseInt(msg.minWatchSec, 10)) ? parseInt(msg.minWatchSec, 10) : mc.def));
+      }
+      const teamChans = await wte.getChannels(teamId);
+      const wanted = Array.isArray(msg.channels) ? msg.channels.map(sanitizeChannel).filter(Boolean) : [];
+      const channels = wanted.filter(ch => teamChans.includes(ch));   // nur eigene Kanäle
+      const gid = `sess_${Date.now()}`;
+      const coreConfig = coreId === 'CORE_CurrentViewers' ? { windowSec }
+                       : coreId === 'CORE_ScreenshotContest' ? { minWatchSec }
+                       : coreId === 'CORE_TicketBuy' ? { ...(await snapshotCoreConfig(teamId)), wagerCmd }
+                       : await snapshotCoreConfig(teamId);
+      await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels, core, status, core_config)
+                      VALUES ($1,$2,$3,$4,$5,'open',$6) ON CONFLICT (id) DO NOTHING`,
+        [gid, teamId, keyword, JSON.stringify(channels.length ? channels : teamChans), coreId, JSON.stringify(coreConfig)]);
+      await wte.openGiveawayInstance(teamId, gid, { keyword, channels: channels.length ? channels : null,
+                                                    core: coreId, windowSec, wagerCmd, minWatchSec });
+      Object.assign(outcome, { giveawayId: gid, keyword, core: coreId, windowSec: windowSec || undefined,
+                               wagerCmd: wagerCmd || undefined, channels: channels.length ? channels : 'alle' });
+      await announceChannels(teamId, channels.length ? channels : null,
+        coreId === 'CORE_CurrentViewers' ? coreMod.infoText({ keyword, windowSec })
+        : coreId === 'CORE_ScreenshotContest' ? coreMod.infoText()
+        : coreId === 'CORE_TicketBuy' ? coreMod.infoText({ cmd: wagerCmd })
+        : '🎁 Zusätzliches Giveaway gestartet!' + (keyword ? ` Mitmachen: schreib "${keyword}" im Chat.` : ''));
+      send({ event: 'gw_ack', type: 'instance_opened', giveawayId: gid, keyword, core: coreId,
+             windowSec: windowSec || null, wagerCmd: wagerCmd || null,
+             channels: channels.length ? channels : null });
+      break;
+    }
+    case 'gw_close_instance': {
+      const gid = validGid(msg.giveawayId);
+      const known = gid ? (await wte.listGiveaways(teamId)).find(g => g.gid === gid && !g.primary) : null;
+      if (!known) {
+        Object.assign(outcome, { error: 'unknown_instance', giveawayId: msg.giveawayId || null });
+        send({ event: 'gw_ack', type: 'error', error: 'Unbekannte Giveaway-Instanz.' });
+        break;
+      }
+      await wte.closeGiveawayInstance(teamId, gid);
+      await setSessionStatusById(gid, 'closed');
+      Object.assign(outcome, { giveawayId: gid });
+      if (known.core === 'CORE_TicketBuy') {
+        // Erspielten Stand als Guthaben gutschreiben (§10.1) + aufräumen.
+        const settled = await wte.settleTicketBuyInstance(teamId, gid);
+        Object.assign(outcome, { settledUsers: settled.users, settledCredit: settled.total });
+        await announceChannels(teamId, known.channels,
+          `🎟 Los-Giveaway beendet — eure Zuschauzeit ist jetzt Los-Guthaben (${settled.users} Konten gutgeschrieben). `
+          + 'Es bleibt erhalten und zählt beim nächsten Los-Giveaway weiter.');
+      } else {
+        await announceChannels(teamId, known.channels,
+          '🔒 Das zusätzliche Giveaway ist geschlossen — Ziehung folgt.');
+      }
+      send({ event: 'gw_ack', type: 'instance_closed', giveawayId: gid });
+      break;
+    }
+    // ── Phase 4b: Preise (CORE_TicketBuy) ──────────────────
+    case 'gw_add_prize': {
+      const gid = validGid(msg.giveawayId);
+      const inst = gid ? (await wte.listGiveaways(teamId)).find(g => g.gid === gid && g.core === 'CORE_TicketBuy') : null;
+      if (!inst) {
+        Object.assign(outcome, { error: 'no_ticketbuy_instance' });
+        send({ event: 'gw_ack', type: 'error', error: 'Preise brauchen eine laufende Los-Giveaway-Instanz.' });
+        break;
+      }
+      const title = sanitizeStr(msg.title || '', 100).trim();
+      if (!title) {
+        Object.assign(outcome, { error: 'no_title' });
+        send({ event: 'gw_ack', type: 'error', error: 'Preis braucht einen Titel.' });
+        break;
+      }
+      const endMin = Math.max(0, parseInt(msg.wagerEndMinutes, 10) || 0);
+      const wagerEndTs = endMin ? Math.floor(Date.now() / 1000) + endMin * 60 : null;
+      const prizeId = await wte.addPrize(teamId, gid, {
+        title, description: sanitizeStr(msg.description || '', 500), wagerEndTs });
+      Object.assign(outcome, { prizeId, title, giveawayId: gid, wagerEndMinutes: endMin || null });
+      const cmd = (await redis.get(K.gWagerCmd(teamId, gid))) || 'setzen-Befehl';
+      await announceChannels(teamId, inst.channels,
+        `🎁 Neuer Preis #${prizeId}: „${title}" — Lose setzen mit dem ${cmd === 'setzen-Befehl' ? cmd : `Befehl „${cmd} ${prizeId} <anzahl>"`}`
+        + (endMin ? ` (Einsatz-Ende in ${endMin} min).` : '.'));
+      send({ event: 'gw_ack', type: 'prize_added', prizeId, title });
+      break;
+    }
+    case 'gw_list_prizes': {
+      send({ event: 'gw_ack', type: 'prizes', prizes: await wte.listPrizes(teamId, { openOnly: !!msg.openOnly }) });
+      break;
+    }
+    case 'gw_set_wager_cmd': {
+      const gid = validGid(msg.giveawayId);
+      const inst = gid ? (await wte.listGiveaways(teamId)).find(g => g.gid === gid && g.core === 'CORE_TicketBuy') : null;
+      const cmd = sanitizeStr(msg.command || '', 30).trim().toLowerCase();
+      if (!inst || !cmd) {
+        Object.assign(outcome, { error: 'bad_request' });
+        send({ event: 'gw_ack', type: 'error', error: 'Instanz oder Befehl fehlt.' });
+        break;
+      }
+      const before = await redis.get(K.gWagerCmd(teamId, gid));
+      await redis.set(K.gWagerCmd(teamId, gid), cmd);
+      Object.assign(outcome, { giveawayId: gid, cmdBefore: before, cmdAfter: cmd });
+      await announceChannels(teamId, inst.channels, `🎟 Lose setzen geht ab jetzt mit „${cmd} <preis-nr> <anzahl>".`);
+      send({ event: 'gw_ack', type: 'wager_cmd_set', giveawayId: gid, command: cmd });
+      break;
+    }
+    // ── Phase 6: Screenshot-Contest ────────────────────────
+    case 'gw_contest_voting': {
+      // Voting öffnen / pausieren / fortsetzen / schließen (Pflicht-Steuerung).
+      const gid = validGid(msg.giveawayId);
+      const inst = gid ? (await wte.listGiveaways(teamId)).find(g => g.gid === gid && g.core === 'CORE_ScreenshotContest') : null;
+      const action = String(msg.action || '');
+      const map = { open: 'open', resume: 'open', pause: 'paused', close: 'closed' };
+      if (!inst || !map[action]) {
+        Object.assign(outcome, { error: 'bad_request' });
+        send({ event: 'gw_ack', type: 'error', error: 'Contest-Instanz oder Aktion (open/pause/resume/close) fehlt.' });
+        break;
+      }
+      const before = await wte.getContestVoting(teamId, gid);
+      const state = await wte.setContestVoting(teamId, gid, map[action]);
+      Object.assign(outcome, { giveawayId: gid, votingBefore: before, votingAfter: state });
+      const texts = {
+        open:   '📸 Das VOTING ist offen! Bewerte die Screenshots mit 1–10 auf der Contest-Seite (Login mit Twitch).',
+        paused: '📸 Voting pausiert — abgegebene Stimmen bleiben erhalten.',
+        closed: '📸 Voting beendet — die Auswertung folgt!',
+      };
+      if (before !== state) await announceChannels(teamId, inst.channels, texts[state]);
+      send({ event: 'gw_ack', type: 'contest_voting', giveawayId: gid, voting: state });
+      break;
+    }
+    case 'gw_review_entry': {
+      const entryId = parseInt(msg.entryId, 10);
+      const approve = msg.decision === 'approve';
+      if (!Number.isFinite(entryId) || !['approve', 'reject'].includes(msg.decision)) {
+        Object.assign(outcome, { error: 'bad_request' });
+        send({ event: 'gw_ack', type: 'error', error: 'entryId und decision (approve/reject) nötig.' });
+        break;
+      }
+      const r = await wte.reviewContestEntry(teamId, entryId, approve);
+      if (r.error) {
+        Object.assign(outcome, { error: r.error, entryId });
+        send({ event: 'gw_ack', type: 'error', error: 'Einsendung nicht gefunden.' });
+        break;
+      }
+      Object.assign(outcome, { entryId, decision: msg.decision, entrant: r.username });
+      send({ event: 'gw_ack', type: 'entry_reviewed', entryId, decision: msg.decision, username: r.username });
+      break;
+    }
+    case 'gw_list_entries': {
+      const gid = validGid(msg.giveawayId);
+      if (!gid) { send({ event: 'gw_ack', type: 'error', error: 'giveawayId fehlt.' }); break; }
+      send({ event: 'gw_ack', type: 'entries',
+             giveawayId: gid,
+             voting: await wte.getContestVoting(teamId, gid),
+             entries: await wte.getContestStandings(teamId, gid, { all: true }) });
+      break;
+    }
     case 'gw_set_stream_settings': {
       const ap = !!msg.autoPause, ar = !!msg.autoResume;
       if (ap) await redis.set(K.cfgAutoPause(teamId), '1'); else await redis.del(K.cfgAutoPause(teamId));
@@ -826,8 +1095,11 @@ async function runAdminCmd(send, msg, meta, ctx) {
       break;
     }
     case 'gw_set_multiplier': {
-      const prev = await wte.multiplierState(teamId);
-      const r = await wte.setMultiplier(teamId, msg.factor, (parseInt(msg.minutes) || 0) * 60);
+      // Mit giveawayId: Boost für genau diese Instanz („Boost für 15 Minuten"
+      // muss ein Giveaway meinen, nicht das Team — §6).
+      const mGid = validGid(msg.giveawayId) || undefined;
+      const prev = await wte.multiplierState(teamId, mGid);
+      const r = await wte.setMultiplier(teamId, msg.factor, (parseInt(msg.minutes) || 0) * 60, mGid);
       Object.assign(outcome, { factorBefore: prev.factor, factorAfter: r.factor, seconds: r.seconds });
       broadcastTeam(teamId, { event: 'gw_multiplier', factor: r.factor, secondsLeft: r.seconds });
       // Ein Boost, den keiner mitbekommt, bringt niemanden zum Zuschauen.
@@ -844,7 +1116,7 @@ async function runAdminCmd(send, msg, meta, ctx) {
       break;
     }
     case 'gw_get_multiplier': {
-      const st = await wte.multiplierState(teamId);
+      const st = await wte.multiplierState(teamId, validGid(msg.giveawayId) || undefined);
       send({ event: 'gw_multiplier', factor: st.factor, secondsLeft: st.secondsLeft });
       break;
     }
@@ -879,7 +1151,9 @@ async function runAdminCmd(send, msg, meta, ctx) {
       try {
         // Vor echter Ziehung Follows via Helix verifizieren (Phase 4).
         if (!msg.test) { try { await verifyFollows(teamId); } catch(e) { logErr('Helix', 'pre-draw verify:', e.message); } }
-        const result = await wte.drawWinner(teamId, await sid(), { test: !!msg.test, prize: msg.prize });
+        // Mit giveawayId zieht die Instanz, sonst das Primary.
+        const drawGid = validGid(msg.giveawayId) || await sid();
+        const result = await wte.drawWinner(teamId, drawGid, { test: !!msg.test, prize: msg.prize, prizeId: msg.prizeId });
         if (!result) { outcome.winner = null; send({ event: 'gw_ack', type: 'no_winner' }); break; }
         Object.assign(outcome, { winner: result.winner, winnerCoins: result.coins, drawId: result.drawId,
                                  eligibleCount: result.eligibleCount, totalCoins: result.total,
@@ -921,46 +1195,30 @@ function subscribeToGiveaway() {
         const u = sanitizeUsername(msg.user);
         if (result && result.isNew) {
           broadcastTeam(teamId, { event: 'gw_join', user: u });
-          let reply;
-          if (result.eligible) {
-            reply = `@${u} Du bist dabei & im Lostopf ✅ (${result.coins.toFixed(2)} Punkte). Weiter zuschauen + sinnvoll chatten erhöht deine Chance!`;
-          } else {
-            const need = [];
-            if (result.channelsFollowed < result.followMin) need.push(`folge mind. ${result.followMin} ${kw2(result.followMin)}`);
-            if ((result.totalWatchSec || 0) < result.drawMinSec) need.push(`sammle ${fmtDur(result.drawMinSec)} Zuschauzeit (zuschauen + sinnvoll chatten)`);
-            reply = need.length
-              ? `@${u} Angemeldet ✅ — für den Lostopf noch nötig: ${need.join(' + ')}. Stand: !los`
-              : `@${u} Du bist dabei & im Lostopf ✅`;
-          }
+          const reply = CORE.joinReply({ username: u, agg: result });
           redisPub.publish('ch:chat_reply', JSON.stringify({ event: 'chat_reply', channel: msg.channel, message: reply }));
         }
         if (result && result.added) broadcastTeam(teamId, { event: 'wt_update', user: u, channel: result.channel, watchSec: result.watchSec, coins: result.coins });
+        // Phase 4b: Antwort auf Setz-Befehle (Bestätigung, Hilfe, Fehler).
+        if (result && result.chatReply) {
+          redisPub.publish('ch:chat_reply', JSON.stringify({ event: 'chat_reply', channel: msg.channel, message: result.chatReply }));
+        }
         break;
       }
       case 'time_cmd': {
+        // Text liegt im Core (statusText); hier nur Datensammlung.
         const u = sanitizeUsername(msg.user);
-        let reply;
-        if (!await wte.isOpen(teamId)) reply = `@${u} Kein Giveaway aktiv.`;
-        else {
-          const a = await wte.getUserAggregate(teamId, u);
-          const kw = await redis.get(K.gwKeyword(teamId)) || '';
-          if (a.eligible) {
+        const open = await wte.isOpen(teamId);
+        let agg = null, poolTotal = 0, keyword = '';
+        if (open) {
+          agg = await wte.getUserAggregate(teamId, u);
+          keyword = await redis.get(K.gwKeyword(teamId)) || '';
+          if (agg.eligible) {
             const all = await wte.getAllParticipants(teamId);
-            const pool = all.filter(p => p.eligible).reduce((s, p) => s + p.totalCoins, 0);
-            const chance = pool > 0 ? (a.totalCoins / pool * 100) : 0;
-            reply = `@${u} 🎟 ${a.totalCoins.toFixed(2)} Punkte | folgt ${a.channelsQualified}/${a.followMin} ✓ | Chance ${chance.toFixed(1)}% | im Lostopf ✅`;
-          } else if (!a.registered) {
-            reply = `@${u} 🎟 ${a.totalCoins.toFixed(2)} Punkte – schreib "${kw || 'das Keyword'}" um dich anzumelden. Für den Lostopf: folge ≥${a.followMin} ${kw2(a.followMin)}${a.drawMinSec > 0 ? ` + ${fmtDur(a.drawMinSec)} Viewtime` : ''}.`;
-          } else if (a.channelsQualified < a.followMin) {
-            reply = `@${u} 🎟 ${a.totalCoins.toFixed(2)} Punkte – du folgst erst ${a.channelsQualified}/${a.followMin} ${kw2(a.followMin)}. Folge mind. ${a.followMin} zum Mitmachen!`;
-          } else if (a.totalWatchSec < a.drawMinSec) {
-            reply = `@${u} 🎟 ${a.totalCoins.toFixed(2)} Punkte, folgst ${a.channelsQualified}/${a.followMin} ✓ – für den Lostopf noch ${fmtDur(a.drawMinSec - a.totalWatchSec)} Viewtime sammeln (zuschauen + sinnvoll chatten).`;
-          } else {
-            reply = `@${u} 🎟 ${a.totalCoins.toFixed(2)} Punkte – schau zu (egal welcher Kanal) & folge ≥${a.followMin} ${kw2(a.followMin)}.`;
+            poolTotal = all.filter(p => p.eligible).reduce((s, p) => s + p.totalCoins, 0);
           }
         }
-        const host = (process.env.PUBLIC_URL || 'https://team.raumdock.org').replace(/^https?:\/\//, '').replace(/\/+$/, '');
-        reply += ` | Status: ${host}/viewer/status | Regeln: ${host}/viewer/terms?team=${teamId}`;
+        const reply = CORE.statusText({ username: u, open, agg, keyword, poolTotal, host: chatHost(), teamId });
         redisPub.publish('ch:chat_reply', JSON.stringify({ event: 'chat_reply', channel: msg.channel, message: reply }));
         break;
       }
@@ -1243,6 +1501,155 @@ app.get('/api/audit/archive', async (req, res) => {
 // fremde Adressdaten hinterlegen.
 const CLAIM_FIELDS = { real_name: 120, email: 190, street: 140, zip: 20, city: 90, country: 60, note: 500 };
 
+// ── Phase 4c: Lose setzen (CORE_TicketBuy) ────────────────
+// Identität kommt ausschließlich aus der Twitch-Session (X-Auth-User via
+// Caddy forward_auth) — wie bei der Gewinnermeldung, nie per Fremdeingabe.
+app.get('/api/wager/state', async (req, res) => {
+  try {
+    const user = reqUser(req);
+    if (!user) return res.status(401).json({ error: 'unauthenticated' });
+    const out = [];
+    for (const t of await wte.getUserTeams(user)) {
+      const prizes = await wte.listPrizes(t);
+      const available = await wte.availableCredit(t, user);
+      if (!prizes.length && available <= 0) continue;   // nichts zu zeigen
+      const withStake = [];
+      for (const p of prizes) withStake.push({ ...p, myStake: await wte.prizeStake(p.id, user) });
+      let wagerCmd = null;   // Chat-Befehl der laufenden Los-Instanz (Hinweistext)
+      for (const g of await wte.listGiveaways(t)) {
+        if (g.core === 'CORE_TicketBuy' && g.gid) {
+          wagerCmd = (await redis.get(K.gWagerCmd(t, g.gid))) || '!setzen';
+          break;
+        }
+      }
+      out.push({ teamId: t, available, prizes: withStake, wagerCmd });
+    }
+    res.json({ user, teams: out });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/wager', express.json(), async (req, res) => {
+  try {
+    const user = reqUser(req);
+    if (!user) return res.status(401).json({ error: 'unauthenticated' });
+    const teamId = sanitizeTeamId(req.body && req.body.team);
+    const prizeId = parseInt(req.body && req.body.prizeId, 10);
+    const amtRaw = req.body ? req.body.amount : undefined;
+    const amount = parseInt(amtRaw, 10);
+    if (!teamId || !Number.isFinite(prizeId) || prizeId <= 0
+        || amtRaw === undefined || amtRaw === null || !Number.isFinite(amount) || amount < 0) {
+      return res.status(400).json({ error: 'bad_request' });
+    }
+    const r = await wte.placeWager(teamId, null, user, prizeId, amount);
+    if (r.error) return res.status(409).json({ error: r.error });
+    // Zustandsändernd ausserhalb der Admin-WS → eigener Audit-Eintrag.
+    await audit({ teamId, actor: user, ip: req.ip, action: amount === 0 ? 'wager_retract' : 'wager_set',
+                  target: user, detail: { prizeId, amount: amount || undefined,
+                                          refunded: r.refunded, stake: r.stake } });
+    res.json(r);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Phase 6: Screenshot-Contest (nur eingeloggte Zuschauer) ──
+// Anti-Votebot: Twitch-Session + UNIQUE(entry, voter) + Viewtime-Schwelle
+// + Rate-Limit. Identität ausschließlich aus X-Auth-User.
+async function contestInstance(teamId) {
+  return (await wte.listGiveaways(teamId)).find(g => g.core === 'CORE_ScreenshotContest' && g.gid) || null;
+}
+
+app.get('/api/contest/state', async (req, res) => {
+  try {
+    const user = reqUser(req);
+    if (!user) return res.status(401).json({ error: 'unauthenticated' });
+    const teamId = sanitizeTeamId(req.query.team || '');
+    const teams = teamId ? [teamId] : await wte.getUserTeams(user);
+    const out = [];
+    for (const t of teams) {
+      const inst = await contestInstance(t);
+      if (!inst) continue;
+      const elig = await wte._contestEligibility(t, inst.gid, user);
+      const standings = await wte.getContestStandings(t, inst.gid, { all: true });
+      const mine = standings.find(s => s.username === user) || null;
+      // Sichtbar für Voter: nur approved; eigene Einsendung immer.
+      const entries = [];
+      for (const s of standings) {
+        if (s.status !== 'approved' && s.username !== user) continue;
+        const v = await pg.query(`SELECT score FROM contest_votes WHERE entry_id=$1 AND voter=$2`, [s.entryId, user]);
+        entries.push({ ...s, myScore: v.rowCount ? v.rows[0].score : null, own: s.username === user });
+      }
+      out.push({ teamId: t, giveawayId: inst.gid,
+                 voting: await wte.getContestVoting(t, inst.gid),
+                 canSubmit: elig.followsHost && elig.watchOk,
+                 canVote: elig.watchOk,
+                 minWatch: elig.minWatch, watchSec: Math.round(elig.watchSec),
+                 followsHost: elig.followsHost,
+                 myEntry: mine ? { entryId: mine.entryId, title: mine.title, status: mine.status, votes: mine.votes } : null,
+                 entries });
+    }
+    res.json({ user, contests: out });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/contest/entry', express.json({ limit: '4mb' }), async (req, res) => {
+  try {
+    const user = reqUser(req);
+    if (!user) return res.status(401).json({ error: 'unauthenticated' });
+    const teamId = sanitizeTeamId(req.body && req.body.team);
+    const inst = teamId ? await contestInstance(teamId) : null;
+    if (!inst) return res.status(404).json({ error: 'no_contest' });
+    const ContestCore = CoreRegistry.getCore('CORE_ScreenshotContest');
+    const mime = String(req.body.mime || '');
+    if (!ContestCore.IMAGE_MIMES.includes(mime)) return res.status(400).json({ error: 'bad_mime' });
+    let image;
+    try { image = Buffer.from(String(req.body.imageBase64 || ''), 'base64'); } catch { image = null; }
+    if (!image || !image.length) return res.status(400).json({ error: 'no_image' });
+    if (image.length > ContestCore.IMAGE_MAX_BYTES) return res.status(413).json({ error: 'image_too_large' });
+    const r = await wte.submitContestEntry(teamId, inst.gid, user, {
+      title: req.body.title, mime, image, confirmReplace: !!req.body.confirmReplace });
+    if (r.error) return res.status(r.error === 'votes_would_be_lost' ? 409 : 403).json(r);
+    await audit({ teamId, actor: user, ip: req.ip, action: 'contest_submit', target: user,
+                  detail: { giveawayId: inst.gid, replaced: r.replaced, bytes: image.length } });
+    res.json(r);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/contest/vote', express.json(), async (req, res) => {
+  try {
+    const user = reqUser(req);
+    if (!user) return res.status(401).json({ error: 'unauthenticated' });
+    const teamId = sanitizeTeamId(req.body && req.body.team);
+    const inst = teamId ? await contestInstance(teamId) : null;
+    if (!inst) return res.status(404).json({ error: 'no_contest' });
+    const ContestCore = CoreRegistry.getCore('CORE_ScreenshotContest');
+    const score = ContestCore.clampScore(req.body.score);
+    const entryId = parseInt(req.body.entryId, 10);
+    if (!score || !Number.isFinite(entryId)) return res.status(400).json({ error: 'bad_request' });
+    // Rate-Limit: max. 1 Vote/Sekunde je Nutzer (Bot-Bremse, UX-neutral).
+    const rl = await redis.set(`t:${teamId}:contest:rl:${user}`, '1', 'EX', 1, 'NX');
+    if (rl !== 'OK') return res.status(429).json({ error: 'rate_limited' });
+    const r = await wte.castContestVote(teamId, inst.gid, user, entryId, score);
+    if (r.error) return res.status(403).json(r);
+    res.json(r);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/contest/image/:id', async (req, res) => {
+  try {
+    const user = reqUser(req);
+    if (!user) return res.status(401).json({ error: 'unauthenticated' });
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).end();
+    const r = await pg.query(`SELECT team_id, username, mime, image, status FROM contest_entries WHERE id=$1`, [id]);
+    if (!r.rowCount) return res.status(404).end();
+    const e = r.rows[0];
+    // approved sehen alle Eingeloggten; pending/rejected nur Einsender + Team-Mitglieder.
+    if (e.status !== 'approved' && e.username !== user && !await isMember(user, e.team_id)) {
+      return res.status(403).end();
+    }
+    res.set('Content-Type', e.mime).set('Cache-Control', 'private, max-age=300').send(e.image);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/claim/mine', async (req, res) => {
   try {
     const user = sanitizeUsername(reqUser(req) || '');
@@ -1506,6 +1913,81 @@ async function ensureSchema() {
   // Multi-tenant + multi-channel columns.
   await pg.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS channels JSONB`);
   await pg.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS team_id TEXT`);
+  // Phase 2 (Cores, docs/ARCHITEKTUR-CORES.md §7): sessions ist die
+  // Giveaway-Instanz. Bestandszeilen bekommen den heutigen Core als Default
+  // und laufen unveraendert weiter — keine Datenmigration.
+  await pg.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS core TEXT NOT NULL DEFAULT 'CORE_WatchtimeChatActivity'`);
+  await pg.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS core_config JSONB`);
+  await pg.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS status TEXT`);
+  await pg.query(`ALTER TABLE giveaway_draws ADD COLUMN IF NOT EXISTS core TEXT`);
+  await pg.query(`ALTER TABLE giveaway_draws ADD COLUMN IF NOT EXISTS prize_id BIGINT`);
+  // Phase 4a (CORE_TicketBuy, §5.2/§10.1): team-weites Guthaben-Journal,
+  // append-only. Kontostand = SUM(amount); Korrekturen nur per Gegenbuchung.
+  // Personenbezogen → collectSubjectData()/eraseSubject() im admin-Service
+  // und runRetention() (Verfall nach Inaktivität) sind mitgezogen.
+  await pg.query(`
+    CREATE TABLE IF NOT EXISTS credit_ledger (
+      id BIGSERIAL PRIMARY KEY,
+      team_id     TEXT NOT NULL,
+      username    TEXT NOT NULL,
+      entry_type  TEXT NOT NULL,
+      amount      NUMERIC(12,4) NOT NULL,
+      ref_session TEXT,
+      ref_prize   BIGINT,
+      detail      JSONB,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_credit_user ON credit_ledger(team_id, username, created_at DESC)`);
+  // Phase 4b (CORE_TicketBuy): Preise + Einsätze. prize_wagers ist append-only
+  // (Rücknahme = negative Zeile) und personenbezogen → DSGVO-Pfade im
+  // admin-Service sind mitgezogen.
+  await pg.query(`
+    CREATE TABLE IF NOT EXISTS giveaway_prizes (
+      id BIGSERIAL PRIMARY KEY,
+      team_id     TEXT NOT NULL,
+      session_id  TEXT,
+      title       TEXT NOT NULL,
+      description TEXT,
+      wager_end   TIMESTAMPTZ,
+      status      TEXT NOT NULL DEFAULT 'open',
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_prizes_team ON giveaway_prizes(team_id, status)`);
+  await pg.query(`
+    CREATE TABLE IF NOT EXISTS prize_wagers (
+      id BIGSERIAL PRIMARY KEY,
+      prize_id   BIGINT NOT NULL REFERENCES giveaway_prizes(id) ON DELETE CASCADE,
+      team_id    TEXT NOT NULL,
+      username   TEXT NOT NULL,
+      amount     NUMERIC(12,4) NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_wagers_prize ON prize_wagers(prize_id, username)`);
+  // Phase 6 (CORE_ScreenshotContest, §5.4): Einsendungen (Bild als BYTEA,
+  // Backup-Container sichert mit) + Votes. UNIQUE(session_id, username) =
+  // eine Einsendung pro Person; UNIQUE(entry_id, voter) = eine Stimme je
+  // (Voter, Screenshot) — strukturell max. n Votes bei n Votern.
+  await pg.query(`
+    CREATE TABLE IF NOT EXISTS contest_entries (
+      id BIGSERIAL PRIMARY KEY,
+      team_id    TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      username   TEXT NOT NULL,
+      title      TEXT,
+      mime       TEXT NOT NULL,
+      image      BYTEA NOT NULL,
+      status     TEXT NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (session_id, username))`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_entries_session ON contest_entries(session_id, status)`);
+  await pg.query(`
+    CREATE TABLE IF NOT EXISTS contest_votes (
+      id BIGSERIAL PRIMARY KEY,
+      entry_id   BIGINT NOT NULL REFERENCES contest_entries(id) ON DELETE CASCADE,
+      team_id    TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      voter      TEXT NOT NULL,
+      score      INTEGER NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (entry_id, voter))`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_votes_session ON contest_votes(session_id, voter)`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_sessions_team ON sessions(team_id)`);
   await pg.query(`ALTER TABLE watchtime_events ADD COLUMN IF NOT EXISTS channel TEXT`);
   await pg.query(`ALTER TABLE watchtime_events ADD COLUMN IF NOT EXISTS team_id TEXT`);
@@ -1611,6 +2093,7 @@ async function main() {
   await loadMasterSecret();
   subscribeToGiveaway();
   startWatchtimeTicker();
+  startInstantWatcher();
   startRetentionJob();
   server.listen(CFG.port, () => log('Giveaway', `Service on port ${CFG.port}`));
 }
@@ -1633,11 +2116,69 @@ function startWatchtimeTicker() {
   setInterval(async () => {
     try {
       const updates = await wte.tickPresentUsers();
-      for (const u of updates) broadcastTeam(u.teamId, { event: 'wt_update', user: u.username, channel: u.channel, watchSec: u.watchSec, coins: u.coins });
+      // Das Panel zeigt die Primary-Ansicht — nur deren Stände broadcasten.
+      // Sekundär-Instanzen buchen still und bekommen ihre Anzeige in Phase 2d.
+      for (const u of updates) {
+        if (!u.primary) continue;
+        broadcastTeam(u.teamId, { event: 'wt_update', user: u.username, channel: u.channel,
+                                  watchSec: u.watchSec, coins: u.coins });
+      }
       await watchBoostExpiry();
     } catch(e) { logErr('Tick', e.message); }
   }, TICK_SEC * 1000);
   log('Tick', `Ticker started (${TICK_SEC}s)`);
+}
+
+// ── Phase 3: Sofortverlosungs-Watcher ─────────────────────
+// Fensterende steht in Redis (gWinEnd, deploy-/restart-sicher) — kein
+// setTimeout im Speicher. Alle 5s: abgelaufene Fenster schließen, ziehen,
+// ansagen, aufräumen. Leer-Zug (Ingest hängt / niemand berechtigt) bricht
+// mit klarer Ansage ab statt still leer zu ziehen (§5.3-Risiko).
+let instantBusy = false;
+function startInstantWatcher() {
+  setInterval(async () => {
+    if (instantBusy) return;   // kein Überlappen bei langsamer Runde
+    instantBusy = true;
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      for (const t of await wte.listOpenTeams()) {
+        for (const g of await wte.listGiveaways(t)) {
+          if (g.primary || !g.windowEndsAt || g.windowEndsAt > now) continue;
+          await finishInstantDraw(t, g);
+        }
+      }
+    } catch(e) { logErr('Instant', e.message); }
+    finally { instantBusy = false; }
+  }, 5000);
+  log('Instant', 'Sofortverlosungs-Watcher gestartet (5s)');
+}
+
+async function finishInstantDraw(teamId, g) {
+  // Erst schließen (Fenster zu, kein Doppel-Zug über zwei Watcher-Runden),
+  // dann ziehen — getInstantParticipants hängt nicht am open-Flag.
+  await wte.closeGiveawayInstance(teamId, g.gid);
+  await setSessionStatusById(g.gid, 'closed');
+  const CV = CoreRegistry.getCore(g.core);
+  let result = null, error = null;
+  try { result = await wte.drawWinner(teamId, g.gid, { test: false }); }
+  catch(e) { error = e.message; logErr('Instant', 'draw failed:', e.message); }
+  if (result) {
+    const claim = await createClaim(teamId, result);
+    broadcastTeam(teamId, { event: 'gw_overlay', winner: result.winner, coins: result.coins });
+    await announceChannels(teamId, g.channels, CV.winnerText({ winner: result.winner })
+      + ` Melde dich innerhalb von ${CLAIM_DEADLINE_DAYS} Tagen unter ${publicHost()}/viewer/claim (Login mit Twitch).`);
+    void claim;
+  } else {
+    await announceChannels(teamId, g.channels, CV.emptyDrawText());
+  }
+  // Auto-Pfad = zustandsändernd ohne Admin → eigener Audit-Eintrag.
+  await audit({ teamId, actor: 'system:instant', ip: null, action: 'auto_instant_draw',
+                target: result ? result.winner : null,
+                result: error ? 'error' : (result ? 'ok' : 'empty'),
+                detail: { giveawayId: g.gid, keyword: g.keyword,
+                          eligibleCount: result ? result.eligibleCount : 0,
+                          drawId: result ? result.drawId : null, error: error || undefined } });
+  await wte.cleanupGiveawayInstance(teamId, g.gid);
 }
 
 // ── Aufbewahrung (DSGVO Art. 5 Abs. 1 lit. e) ─────────────
@@ -1707,6 +2248,11 @@ async function runRetention() {
       `UPDATE draw_claims SET status='expired'
        WHERE status='pending' AND deadline_at < NOW()`);
     anonymized.draw_claims_expired = ex.rowCount;
+
+    // Guthaben (CORE_TicketBuy): nach 12 Monaten ohne Bewegung verfaellt der
+    // Restsaldo per Gegenbuchung (§10.1) — das Journal bleibt vollstaendig.
+    try { anonymized.credit_expired = await credit.expireInactive(CREDIT_EXPIRE_MONTHS); }
+    catch (e) { logErr('Retention', 'credit expire:', e.message); }
 
     const totalDel = Object.values(deleted).reduce((a, b) => a + b, 0);
     const totalAnon = Object.values(anonymized).reduce((a, b) => a + b, 0);

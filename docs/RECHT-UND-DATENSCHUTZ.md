@@ -1,5 +1,15 @@
 # Recht & Datenschutz — technische Umsetzung
 
+> **Stand 4. August 2026:** erweitert um die neuen Mechaniken
+> (Sofortverlosung, Los-Giveaway): Nutzungsbedingungen **Fassung 2**
+> (`TOS_VERSION = 2` in beiden Services — Klarstellung, dass erspieltes
+> Los-Guthaben kein Zahlungsmittel ist), Teilnahmebedingungen § 4b/§ 4c
+> (Doc + `terms-template.md`), Datenschutzerklärung um Guthaben-Journal,
+> Einsätze und Anwesenheit ergänzt. Neue personenbezogene Tabellen
+> `credit_ledger` und `prize_wagers` sind in Selbstauskunft, Löschung
+> (Ausbuchung + Pseudonymisierung, s.u.) und Aufbewahrung
+> (12-Monats-Verfall in `runRetention()`) verdrahtet.
+
 Wie die rechtlichen Anforderungen im Code verankert sind. Für die Texte selbst
 siehe `services/admin/public-docs/`.
 
@@ -127,8 +137,13 @@ enthält dann `konto_behalten`, die Selbstlöschung bricht mit **HTTP 409** ab u
 nennt den Grund.
 
 **Pseudonymisiert statt gelöscht** werden Ziehungsnachweise —
-`giveaway_draws.winner`, `eligible_snapshot` (per `REPLACE` auf `::text`) und
-`audit_log.target`. Ersetzt durch:
+`giveaway_draws.winner`, `eligible_snapshot` (per `REPLACE` auf `::text`),
+`audit_log.target` sowie (seit dem Core-Umbau) `credit_ledger.username` und
+`prize_wagers.username`: das Guthaben-Journal und die Einsätze sind Teil des
+Ziehungsnachweises beim Los-Giveaway (gewichteter Pool). Vor der
+Pseudonymisierung wird ein positiver Restsaldo je Team per `erase`-Buchung
+ausgebucht — das Journal bleibt in sich schlüssig, ein herrenloses Konto
+entsteht nicht. Ersetzt durch:
 
 ```js
 'geloescht_' + crypto.createHash('sha256').update(login).digest('hex').slice(0, 8)

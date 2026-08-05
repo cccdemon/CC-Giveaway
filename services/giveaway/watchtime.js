@@ -13,6 +13,15 @@
 
 const { randomInt, createHash } = require('crypto');
 
+// Mechanik-Regeln (Coin-Formel, Eligibility, Pool, Chat-Urteil) liegen seit
+// Phase 1 des Core-Umbaus im Core (docs/ARCHITEKTUR-CORES.md). Die Engine
+// sammelt Rohdaten aus Redis/PG und delegiert die Regeln dorthin.
+// Phase 3: Instanzen können einen anderen Core fahren (getCore-Registry);
+// CORE bleibt der Default (Primary + Bestand).
+const CORE = require('./cores/watchtime-chat');
+const { getCore } = require('./cores/index.js');
+const { CreditLedger } = require('./credit.js');
+
 // ── Anti-Abuse: deterministische, reproduzierbare Schwellen ──
 const ABUSE = {
   HIST_LEN: 20, TIMES_LEN: 30,
@@ -22,14 +31,11 @@ const ABUSE = {
   NEW_ACCOUNT_DAYS: 30,     // Twitch-Account jünger als 30 Tage → new_account
 };
 
-const SECS_PER_COIN  = 7200;
-const CHAT_BONUS_SEC = 2;    // sinnvolle Chatnachricht (>3 Wörter) = +2s Viewtime
-const CHAT_COOLDOWN  = 10;
-const CHAT_MIN_WORDS = 4;    // >3 Wörter
+// Mechanik-Defaults kommen aus dem Core; Re-Export unten erhält die alte API.
+const { SECS_PER_COIN, CHAT_BONUS_SEC, CHAT_COOLDOWN, CHAT_MIN_WORDS,
+        MIN_CHANNELS, JOIN_MIN_COINS } = CORE.defaults;
 const TICK_SEC       = 60;
 const PRESENCE_TTL   = 600;
-const JOIN_MIN_COINS = 1;
-const MIN_CHANNELS   = 2;
 const CHANNELS_TTL   = 30;   // Cache der Team-Kanäle (s)
 
 const TP = (t) => `t:${t}:`;
@@ -61,6 +67,31 @@ const K = {
   chMsgs:     (t, ch, u) => `${TP(t)}gw:ch:${ch}:msgs:${u}`,
   chFollows:  (t, ch, u) => `${TP(t)}gw:ch:${ch}:follows:${u}`,
   chIndex:    (t, ch)    => `${TP(t)}gw:ch:${ch}:index`,
+  // ── Phase 2b: Giveaway-Dimension (docs/ARCHITEKTUR-CORES.md §6) ──
+  // Accrual-Zustand liegt je Giveaway (gid = Session-ID) unter t:<team>:g:<gid>:.
+  // Team-weit BLEIBEN bewusst: Presence/LastTick (Anwesenheit), Follows
+  // (Zuschauer-Eigenschaft), Index, Users, Banned, Keyword, cfg:* (Migration
+  // nach core_config folgt). Alte Schlüssel werden beim ersten Zugriff in den
+  // g:-Namespace migriert (Rename) — ein laufendes Giveaway übersteht den Deploy.
+  GP:        (t, g) => `${TP(t)}g:${g}:`,
+  gWatch:    (t, g, ch, u) => `${K.GP(t, g)}ch:${ch}:watch:${u}`,
+  gChatTs:   (t, g, ch, u) => `${K.GP(t, g)}ch:${ch}:chat_ts:${u}`,
+  gMsgs:     (t, g, ch, u) => `${K.GP(t, g)}ch:${ch}:msgs:${u}`,
+  gReg:      (t, g, u)     => `${K.GP(t, g)}registered:${u}`,
+  gMult:     (t, g)        => `${K.GP(t, g)}mult`,
+  // Phase 2c: Parallelbetrieb — Set aktiver Giveaways + Zustand je Instanz.
+  // Der Legacy-Single-Pfad (gwOpen/gwSessionId/gwKeyword) bleibt das
+  // "Primary"-Giveaway; Sekundär-Instanzen leben ausschließlich hier.
+  gwSet:     (t) => `${TP(t)}giveaways`,
+  gOpen:     (t, g) => `${K.GP(t, g)}open`,
+  gPaused:   (t, g) => `${K.GP(t, g)}paused`,
+  gKw:       (t, g) => `${K.GP(t, g)}keyword`,
+  gChanList: (t, g) => `${K.GP(t, g)}channels`,
+  gCore:     (t, g) => `${K.GP(t, g)}core`,      // Core-ID der Instanz (Phase 3)
+  gWinEnd:   (t, g) => `${K.GP(t, g)}win_end`,   // Fensterende (Unix-Sek., Sofortverlosung)
+  gWagerCmd: (t, g) => `${K.GP(t, g)}wager_cmd`, // Setz-Befehl (Phase 4b, WebUI-konfigurierbar)
+  gMinWatch: (t, g) => `${K.GP(t, g)}min_watch`, // Contest: Mindest-Viewtime Einsenden/Voten (Phase 6)
+  gVoteState:(t, g) => `${K.GP(t, g)}vote_state`,// Contest: Voting closed|open|paused (Phase 6)
   abuseHist:  (t, u) => `${TP(t)}gw:abuse:hist:${u}`,     // letzte Msg-Hashes
   abuseTimes: (t, u) => `${TP(t)}gw:abuse:times:${u}`,    // letzte Timestamps (Rate)
 };
@@ -93,20 +124,10 @@ function matchesKeyword(message, keyword) {
   return false;
 }
 
-function countWords(msg) {
-  let count = 0, inWord = false;
-  for (const ch of msg) {
-    if (ch === ' ' || ch === '\t') { inWord = false; }
-    else if (!inWord) { inWord = true; count++; }
-  }
-  return count;
-}
-
-// Coin-Basis ist per-Team konfigurierbar (getCoinBaseSec). SECS_PER_COIN = Default.
-function coinsFromSec(watchSec, baseSec) {
-  const base = (Number.isFinite(baseSec) && baseSec > 0) ? baseSec : SECS_PER_COIN;
-  return Math.round((watchSec / base) * 10000) / 10000;
-}
+// Formeln liegen im Core; Aliase hier erhalten die bestehende API
+// (Tests und server.js importieren sie weiter aus watchtime.js).
+const countWords   = CORE.countWords;
+const coinsFromSec = CORE.coinsFromSec;
 
 function sanitizeTeamId(t) {
   return String(t || '').replace(/[^a-zA-Z0-9_]/g, '').slice(0, 40);
@@ -119,6 +140,7 @@ class WatchtimeEngine {
     this.redis   = redis;
     this.pg      = pg;
     this.aiJudge = aiJudge;
+    this.credit  = new CreditLedger(pg);   // Guthaben-Konto (CORE_TicketBuy)
   }
 
   // ── Team-Kanäle (aus team_members, gecacht) ─────────────
@@ -141,9 +163,18 @@ class WatchtimeEngine {
     return (await this.getChannels(teamId))[0] || '';
   }
 
-  // ── Multiplier ──────────────────────────────────────────
-  async getMultiplier(teamId) {
-    const f = parseFloat(await this.redis.get(K.gwMult(sanitizeTeamId(teamId))) || '1');
+  // ── Multiplier (per Giveaway, Legacy-Fallback nur Primary) ──
+  // Sekundär-Instanzen lesen strikt ihren eigenen Schlüssel — ein Alt-Boost
+  // darf nie in ein fremdes Giveaway leaken.
+  async getMultiplier(teamId, gid = undefined) {
+    const t = sanitizeTeamId(teamId);
+    const primary = await this.redis.get(K.gwSessionId(t));
+    const g = gid === undefined ? primary : gid;
+    let raw;
+    if (!g)                   raw = await this.redis.get(K.gwMult(t));
+    else if (!primary || g === primary) raw = await this._readMech(K.gMult(t, g), K.gwMult(t));
+    else                      raw = await this.redis.get(K.gMult(t, g));
+    const f = parseFloat(raw || '1');
     return (isFinite(f) && f > 0) ? f : 1;
   }
   // Teilnahmebedingung: wie vielen Kanälen muss man folgen (per-Team, default MIN_CHANNELS).
@@ -153,7 +184,8 @@ class WatchtimeEngine {
   }
   async setFollowMin(teamId, n) {
     const t = sanitizeTeamId(teamId);
-    const v = Math.max(0, Math.min(10, parseInt(n, 10) || 0));
+    const c = CORE.config.followMin;   // Grenzen aus der Core-Deklaration
+    const v = Math.max(c.min, Math.min(c.max, parseInt(n, 10) || 0));
     await this.redis.set(K.cfgFollowMin(t), String(v));
     return v;
   }
@@ -167,7 +199,8 @@ class WatchtimeEngine {
   }
   async setCoinBaseSec(teamId, sec) {
     const t = sanitizeTeamId(teamId);
-    const v = Math.max(60, Math.min(360000, Math.round(parseFloat(sec) || 0)));  // 1min..100h
+    const c = CORE.config.coinBaseSec;   // 1min..100h, aus der Core-Deklaration
+    const v = Math.max(c.min, Math.min(c.max, Math.round(parseFloat(sec) || 0)));
     await this.redis.set(K.cfgDrawMinSec(t), String(v));
     return v;
   }
@@ -182,10 +215,11 @@ class WatchtimeEngine {
       const v = parseFloat(await this.redis.get(key(t)));
       return (Number.isFinite(v) && v >= min && v <= max) ? v : def;
     };
+    const cc = CORE.config;   // Defaults + Grenzen aus der Core-Deklaration
     return {
-      bonusSec: await num(K.cfgChatBonus, CHAT_BONUS_SEC, 0, 300),
-      minWords: await num(K.cfgChatWords, CHAT_MIN_WORDS, 1, 50),
-      cooldown: await num(K.cfgChatCool,  CHAT_COOLDOWN,  0, 3600),
+      bonusSec: await num(K.cfgChatBonus, cc.chatBonusSec.def, cc.chatBonusSec.min, cc.chatBonusSec.max),
+      minWords: await num(K.cfgChatWords, cc.chatMinWords.def, cc.chatMinWords.min, cc.chatMinWords.max),
+      cooldown: await num(K.cfgChatCool,  cc.chatCooldown.def, cc.chatCooldown.min, cc.chatCooldown.max),
     };
   }
   async setChatConfig(teamId, cfg = {}) {
@@ -197,35 +231,126 @@ class WatchtimeEngine {
       v = Math.max(min, Math.min(max, round ? Math.round(v) : v));
       await this.redis.set(key(t), String(v));
     };
-    await put(K.cfgChatBonus, cfg.bonusSec, 0, 300, false);
-    await put(K.cfgChatWords, cfg.minWords, 1, 50, true);
-    await put(K.cfgChatCool,  cfg.cooldown, 0, 3600, true);
+    const cc = CORE.config;
+    await put(K.cfgChatBonus, cfg.bonusSec, cc.chatBonusSec.min, cc.chatBonusSec.max, false);
+    await put(K.cfgChatWords, cfg.minWords, cc.chatMinWords.min, cc.chatMinWords.max, true);
+    await put(K.cfgChatCool,  cfg.cooldown, cc.chatCooldown.min, cc.chatCooldown.max, true);
     return this.getChatConfig(t);
   }
-  async setMultiplier(teamId, factor, seconds) {
+  async setMultiplier(teamId, factor, seconds, explicitGid = undefined) {
     const t = sanitizeTeamId(teamId);
+    const primary = await this._gid(t);
+    const gid = explicitGid === undefined ? primary : explicitGid;
+    const isPrimary = !gid || gid === primary;   // Legacy-Key gehört NUR dem Primary
+    const key = gid ? K.gMult(t, gid) : K.gwMult(t);
     const f = Math.max(1, Math.min(10, parseFloat(factor) || 1));
     const s = Math.max(1, Math.min(86400, parseInt(seconds) || 0));
-    if (f <= 1 || !s) { await this.redis.del(K.gwMult(t)); return { factor: 1, seconds: 0 }; }
-    await this.redis.set(K.gwMult(t), String(f), 'EX', s);
+    if (f <= 1 || !s) {
+      await this.redis.del(key);
+      if (isPrimary) await this.redis.del(K.gwMult(t));   // Altbestand nie parallel weiterlaufen lassen
+      return { factor: 1, seconds: 0 };
+    }
+    await this.redis.set(key, String(f), 'EX', s);
+    if (gid && isPrimary) await this.redis.del(K.gwMult(t));
     return { factor: f, seconds: s };
   }
-  async multiplierState(teamId) {
+  async multiplierState(teamId, gid = undefined) {
     const t = sanitizeTeamId(teamId);
-    const f = await this.getMultiplier(t);
-    const ttl = f > 1 ? await this.redis.ttl(K.gwMult(t)) : 0;
+    const f = await this.getMultiplier(t, gid);
+    if (f <= 1) return { factor: f, secondsLeft: 0 };
+    const g = gid === undefined ? await this._gid(t) : gid;
+    let ttl = g ? await this.redis.ttl(K.gMult(t, g)) : -2;
+    if (ttl < 0) ttl = await this.redis.ttl(K.gwMult(t));
     return { factor: f, secondsLeft: ttl > 0 ? ttl : 0 };
   }
 
   _followAllowed(val) { return val !== '0'; }
 
-  async isOpen(teamId)      { return await this.redis.get(K.gwOpen(sanitizeTeamId(teamId))) === 'true'; }
-  async isPaused(teamId)    { return await this.redis.get(K.gwPaused(sanitizeTeamId(teamId))) === 'true'; }
-  // Aktiv = offen UND nicht pausiert → nur dann läuft Accrual.
-  async isActive(teamId)    { const t = sanitizeTeamId(teamId);
-    return await this.redis.get(K.gwOpen(t)) === 'true' && await this.redis.get(K.gwPaused(t)) !== 'true'; }
-  async setPaused(teamId, paused) {
+  // ── Phase 2b: Giveaway-Dimension ────────────────────────
+  // gid = Session-ID des laufenden Giveaways. Ohne offene Session (gid null)
+  // laufen alle Zugriffe wie bisher auf den Legacy-Schlüsseln.
+  async _gid(teamId) { return await this.redis.get(K.gwSessionId(teamId)); }
+
+  // Lesen: neuer g:-Schlüssel gewinnt, sonst Altbestand (Deploy-Überleben).
+  async _readMech(gKey, legacyKey) {
+    const v = await this.redis.get(gKey);
+    return (v !== null && v !== undefined) ? v : await this.redis.get(legacyKey);
+  }
+  // Vor dem Schreiben: Altbestand einmalig in den g:-Namespace verschieben,
+  // damit es je Wert genau EINE Quelle gibt (nie beide addieren/lesen).
+  async _migrateKey(gKey, legacyKey) {
+    const cur = await this.redis.get(gKey);
+    if (cur !== null && cur !== undefined) return;
+    const legacy = await this.redis.get(legacyKey);
+    if (legacy !== null && legacy !== undefined) {
+      await this.redis.set(gKey, legacy);
+      await this.redis.del(legacyKey);
+    }
+  }
+
+  // ── Phase 2c: aktive Giveaways eines Teams ──────────────
+  // Primary = Legacy-Zustand (auch ohne Session-ID, Altbestand/Tests);
+  // Sekundär-Instanzen aus dem gwSet mit eigenem open/paused/Kanalliste.
+  // channels null = alle Team-Kanäle.
+  async _activeGiveaways(teamId) {
     const t = sanitizeTeamId(teamId);
+    const out = [];
+    const legacySid = await this.redis.get(K.gwSessionId(t));
+    if (await this.redis.get(K.gwOpen(t)) === 'true' && await this.redis.get(K.gwPaused(t)) !== 'true') {
+      out.push({ gid: legacySid || null, primary: true, core: CORE.id, channels: null });
+    }
+    for (const g of await this.redis.smembers(K.gwSet(t))) {
+      if (g === legacySid) continue;   // Primary ist schon drin
+      if (await this.redis.get(K.gOpen(t, g)) !== 'true') continue;
+      if (await this.redis.get(K.gPaused(t, g)) === 'true') continue;
+      let chans = null;
+      try { const raw = await this.redis.get(K.gChanList(t, g)); if (raw) chans = JSON.parse(raw); } catch { /* alle */ }
+      out.push({ gid: g, primary: false,
+                 core: await this.redis.get(K.gCore(t, g)) || CORE.id,
+                 channels: Array.isArray(chans) && chans.length ? chans.map(sanitizeChannel).filter(Boolean) : null });
+    }
+    return out;
+  }
+
+  async getCoreId(teamId, gid) {
+    if (!gid) return CORE.id;
+    const t = sanitizeTeamId(teamId);
+    if (gid === await this.redis.get(K.gwSessionId(t))) return CORE.id;   // Primary = Default-Core
+    return await this.redis.get(K.gCore(t, gid)) || CORE.id;
+  }
+
+  // Schlüsselwahl: gid null = Legacy (kein Giveaway-Kontext).
+  _kWatch(t, g, ch, u)  { return g ? K.gWatch(t, g, ch, u)  : K.chWatch(t, ch, u); }
+  _kMsgs(t, g, ch, u)   { return g ? K.gMsgs(t, g, ch, u)   : K.chMsgs(t, ch, u); }
+  _kChatTs(t, g, ch, u) { return g ? K.gChatTs(t, g, ch, u) : K.chChatTs(t, ch, u); }
+  _kReg(t, g, u)        { return g ? K.gReg(t, g, u)        : K.gwRegistered(t, u); }
+
+  // Nachricht zählt je Giveaway; Migration nur für das Primary (nur dort
+  // kann Altbestand existieren).
+  async _bumpMsgs(t, gid, ch, u, primaryGid) {
+    const key = this._kMsgs(t, gid, ch, u);
+    if (gid && gid === primaryGid) await this._migrateKey(key, K.chMsgs(t, ch, u));
+    await this.redis.incr(key);
+  }
+
+  // gid optional (Phase 2c): ohne gid gilt der Legacy-/Primary-Zustand.
+  async isOpen(teamId, gid = undefined)   { const t = sanitizeTeamId(teamId);
+    if (gid && gid !== await this.redis.get(K.gwSessionId(t))) return await this.redis.get(K.gOpen(t, gid)) === 'true';
+    return await this.redis.get(K.gwOpen(t)) === 'true'; }
+  async isPaused(teamId, gid = undefined) { const t = sanitizeTeamId(teamId);
+    if (gid && gid !== await this.redis.get(K.gwSessionId(t))) return await this.redis.get(K.gPaused(t, gid)) === 'true';
+    return await this.redis.get(K.gwPaused(t)) === 'true'; }
+  // Aktiv = offen UND nicht pausiert → nur dann läuft Accrual.
+  async isActive(teamId, gid = undefined) {
+    return await this.isOpen(teamId, gid) && !await this.isPaused(teamId, gid); }
+  async setPaused(teamId, paused, gid = undefined) {
+    const t = sanitizeTeamId(teamId);
+    const primary = await this.redis.get(K.gwSessionId(t));
+    if (gid && gid !== primary) {   // Sekundär-Instanz: nur deren Zustand
+      if (paused) await this.redis.set(K.gPaused(t, gid), 'true');
+      else await this.redis.del(K.gPaused(t, gid));
+      return;
+    }
     if (paused) await this.redis.set(K.gwPaused(t), 'true');
     else await this.redis.del(K.gwPaused(t));
   }
@@ -259,22 +384,39 @@ class WatchtimeEngine {
     const teams = await this.listOpenTeams();
     const updates = [];
     for (const t of teams) {
-      if (await this.redis.get(K.gwOpen(t)) !== 'true') { await this.redis.srem(K.openTeams(), t); continue; }
-      if (await this.redis.get(K.gwPaused(t)) === 'true') continue;   // pausiert: kein Accrual, bleibt offen
-      const sid = await this.redis.get(K.gwSessionId(t));
+      // Phase 2c: ein Tick geht an JEDES aktive Giveaway des Teams, dessen
+      // Kanalliste den Kanal enthält. Zustand (Presence/Bann/Follow) wird
+      // einmal gelesen und verteilt — Redis-Last wächst nicht mit n (§6).
+      const active = await this._activeGiveaways(t);
+      if (!active.length) {
+        const stillThere = await this.redis.get(K.gwOpen(t)) === 'true'
+                        || (await this.redis.smembers(K.gwSet(t))).length > 0;
+        if (!stillThere) await this.redis.srem(K.openTeams(), t);
+        continue;   // pausiert: kein Accrual, bleibt offen
+      }
       const channels = await this.getChannels(t);
-      const mult = await this.getMultiplier(t);
       const base = await this.getCoinBaseSec(t);
-      const inc  = TICK_SEC * mult;
+      const multByGid = new Map();   // je Giveaway einmal lesen
+      for (const g of active) multByGid.set(g.gid, await this.getMultiplier(t, g.gid));
       for (const ch of channels) {
+        // Nur Cores mit Watchtime-Accrual (Sofortverlosung: accrual 'none').
+        const targets = active.filter(g => (!g.channels || g.channels.includes(ch))
+                                        && getCore(g.core).accrual !== 'none');
+        if (!targets.length) continue;
         const users = await this.redis.smembers(K.chIndex(t, ch));
         for (const u of users) {
           if (await this.redis.get(K.gwBanned(t, u)) === '1') continue;
           if (!await this.redis.get(K.chPresent(t, ch, u))) continue;
           if (!this._followAllowed(await this.redis.get(K.chFollows(t, ch, u)))) continue;
-          const newSec = parseFloat(await this.redis.incrbyfloat(K.chWatch(t, ch, u), inc));
-          await this._logEvent(t, u, 'tick', inc, sid, ch);
-          updates.push({ teamId: t, username: u, channel: ch, watchSec: newSec, coins: coinsFromSec(newSec, base) });
+          for (const g of targets) {
+            const inc  = CORE.tickDelta({ tickSec: TICK_SEC, multiplier: multByGid.get(g.gid) });
+            const wKey = this._kWatch(t, g.gid, ch, u);
+            if (g.primary && g.gid) await this._migrateKey(wKey, K.chWatch(t, ch, u));
+            const newSec = parseFloat(await this.redis.incrbyfloat(wKey, inc));
+            await this._logEvent(t, u, 'tick', inc, g.gid, ch);
+            updates.push({ teamId: t, giveawayId: g.gid, primary: g.primary, username: u,
+                           channel: ch, watchSec: newSec, coins: coinsFromSec(newSec, base) });
+          }
         }
       }
     }
@@ -286,73 +428,118 @@ class WatchtimeEngine {
     const t = sanitizeTeamId(teamId);
     const u = sanitizeUsername(username);
     if (!t || !u) return null;
-    // Nur bei aktivem (offen + nicht pausiert) Giveaway zählt Chat.
-    if (await this.redis.get(K.gwOpen(t)) !== 'true' || await this.redis.get(K.gwPaused(t)) === 'true') return null;
+    // Phase 2c: die Nachricht zählt für JEDES aktive Giveaway, dessen
+    // Kanalliste den Kanal enthält. Rückgabe bleibt der Primary-Kontrakt
+    // (Join-Reply/wt_update im Server); Sekundär-Instanzen buchen still.
+    const active = await this._activeGiveaways(t);
+    if (!active.length) return null;
+    const primaryGid = await this.redis.get(K.gwSessionId(t));
 
     const ch = await this.resolveChannel(t, channel);
     if (!ch) return null;
     const cleanMsg = sanitizeStr(message, 500).trim();
-    const sid = await this.redis.get(K.gwSessionId(t));
 
     await this.redis.set(K.chPresent(t, ch, u), '1', 'EX', PRESENCE_TTL);
     if (follows !== undefined) await this.redis.set(K.chFollows(t, ch, u), follows ? '1' : '0');
     await this._touchUser(t, u);
     await this.redis.sadd(K.chIndex(t, ch), u);
 
-    const keyword = await this.redis.get(K.gwKeyword(t));
-    if (matchesKeyword(cleanMsg, keyword)) {
-      await this.redis.incr(K.chMsgs(t, ch, u));
-      return this._tryRegister(t, u, username);
+    const targets = active.filter(g => !g.channels || g.channels.includes(ch));
+    if (!targets.length) return null;
+
+    // Phase 4b: Setz-Befehl (per Instanz konfigurierbar — WebUI/gWagerCmd).
+    // Ein Kommando ist keine Chat-Aktivität: zählt weder als Nachricht noch
+    // für den Bonus; es wird gebucht und direkt beantwortet.
+    for (const g of targets) {
+      if (!g.gid || getCore(g.core).id !== 'CORE_TicketBuy') continue;
+      const TB = getCore(g.core);
+      const cmd = (await this.redis.get(K.gWagerCmd(t, g.gid))) || TB.config.wagerCmd.def;
+      const w = TB.parseWager(cleanMsg, cmd);
+      if (!w) continue;
+      if (await this.redis.get(K.gwBanned(t, u)) === '1') return null;
+      if (w.help) return { chatReply: TB.helpText(cmd, await this.listPrizes(t)), channel: ch };
+      const res = await this.placeWager(t, g.gid, u, w.prizeId, w.amount);
+      if (res.error) return { chatReply: TB.wagerErrText(u, res.error), channel: ch };
+      if (res.refunded !== undefined) {
+        return { chatReply: TB.retractOkText({ username: u, prizeTitle: res.prizeTitle,
+                 refunded: res.refunded, balance: res.balance }), channel: ch };
+      }
+      return { chatReply: TB.wagerOkText({ username: u, prizeTitle: res.prizeTitle,
+               amount: res.amount, stake: res.stake, balance: res.balance }), channel: ch };
     }
 
+    // Keyword-Anmeldung je Giveaway (Keyword kann je Instanz abweichen;
+    // Primary nutzt den Legacy-Schlüssel).
+    let regResult = null, matchedAny = false;
+    for (const g of targets) {
+      const kw = g.primary ? await this.redis.get(K.gwKeyword(t))
+                           : await this.redis.get(K.gKw(t, g.gid));
+      if (!matchesKeyword(cleanMsg, kw)) continue;
+      matchedAny = true;
+      await this._bumpMsgs(t, g.gid, ch, u, primaryGid);
+      const r = await this._tryRegister(t, u, username, g.gid);
+      if (g.primary) regResult = r;
+    }
+    if (matchedAny) return regResult;
+
     if (await this.redis.get(K.gwBanned(t, u)) === '1') return null;
-    await this.redis.incr(K.chMsgs(t, ch, u));
-    await this._detectAbuse(t, u, cleanMsg);   // Spam-Signale (flaggt, bannt nicht)
+    // Msgs/Bonus nur für Cores mit Watchtime-Accrual — die Sofortverlosung
+    // kennt weder Nachrichtenzähler noch Chat-Bonus.
+    const accrualTargets = targets.filter(g => getCore(g.core).accrual !== 'none');
+    for (const g of accrualTargets) await this._bumpMsgs(t, g.gid, ch, u, primaryGid);
+    await this._detectAbuse(t, u, cleanMsg);   // Spam-Signale (flaggt, bannt nicht) — einmal je Nachricht
 
     if (!this._followAllowed(await this.redis.get(K.chFollows(t, ch, u)))) return { channel: ch, followed: false };
 
     const chatCfg = await this.getChatConfig(t);
     if (!chatCfg.bonusSec) return null;                      // Bonus abgeschaltet
 
-    // Sinnhaftigkeit: KI wenn konfiguriert, sonst (und bei jedem KI-Fehler) Wortzählung.
-    const byWords = countWords(cleanMsg) >= chatCfg.minWords;
-    let meaningful = byWords, judgedBy = 'words';
-    if (this.aiJudge) {
-      const verdict = await this.aiJudge(t, cleanMsg);
-      if (verdict && verdict.meaningful !== null && verdict.meaningful !== undefined) {
-        meaningful = verdict.meaningful;
-        judgedBy = verdict.source === 'cache' ? 'ai_cache' : 'ai';
-      }
-    }
+    // Sinnhaftigkeit entscheidet der Core: KI-Urteil wenn konfiguriert,
+    // sonst (und bei jedem KI-Fehler) Wortzählung. Einmal je Nachricht.
+    const aiVerdict = this.aiJudge ? await this.aiJudge(t, cleanMsg) : null;
+    const { meaningful, judgedBy } = CORE.chatMeaningful({
+      message: cleanMsg, minWords: chatCfg.minWords, aiVerdict });
     if (!meaningful) return null;
 
-    const chatKey = K.chChatTs(t, ch, u);
     const now = Math.floor(Date.now() / 1000);
-    const lastTs = await this.redis.get(chatKey);
-    if (lastTs && (now - parseInt(lastTs)) < chatCfg.cooldown) return null;
+    let primaryResult = null;
+    for (const g of accrualTargets) {
+      const chatKey = this._kChatTs(t, g.gid, ch, u);
+      if (g.primary && g.gid) await this._migrateKey(chatKey, K.chChatTs(t, ch, u));   // Cooldown läuft weiter
+      const lastTs = await this.redis.get(chatKey);
+      if (lastTs && (now - parseInt(lastTs)) < chatCfg.cooldown) continue;   // Cooldown je Giveaway
 
-    const mult = await this.getMultiplier(t);
-    const inc  = chatCfg.bonusSec * mult;
-    await this.redis.set(chatKey, String(now), 'EX', 86400);
-    const newSec = parseFloat(await this.redis.incrbyfloat(K.chWatch(t, ch, u), inc));
-    await this._logEvent(t, u, 'chat_bonus', inc, sid, ch);
-
-    return { added: inc, channel: ch, watchSec: newSec, judgedBy,
-             coins: coinsFromSec(newSec, await this.getCoinBaseSec(t)) };
+      const mult = await this.getMultiplier(t, g.gid);
+      const inc  = CORE.chatDelta({ bonusSec: chatCfg.bonusSec, multiplier: mult });
+      await this.redis.set(chatKey, String(now), 'EX', 86400);
+      const wKey = this._kWatch(t, g.gid, ch, u);
+      if (g.primary && g.gid) await this._migrateKey(wKey, K.chWatch(t, ch, u));
+      const newSec = parseFloat(await this.redis.incrbyfloat(wKey, inc));
+      await this._logEvent(t, u, 'chat_bonus', inc, g.gid, ch);
+      if (g.primary) {
+        primaryResult = { added: inc, channel: ch, watchSec: newSec, judgedBy,
+                          coins: coinsFromSec(newSec, await this.getCoinBaseSec(t)) };
+      }
+    }
+    return primaryResult;
   }
 
-  async _tryRegister(teamId, username, displayName) {
+  async _tryRegister(teamId, username, displayName, explicitGid = undefined) {
     // Opt-in per Keyword: JEDER kann sich anmelden (= Zustimmung Regeln).
     // Für den Lostopf zählt separat die Berechtigung (Follows + ≥2h Viewtime),
     // siehe getUserAggregate.eligible.
-    const already = await this.redis.get(K.gwRegistered(teamId, username));
-    await this.redis.set(K.gwRegistered(teamId, username), '1');
+    const primary = await this._gid(teamId);
+    const gid = explicitGid === undefined ? primary : explicitGid;
+    const regKey = this._kReg(teamId, gid, username);
+    if (gid && gid === primary) await this._migrateKey(regKey, K.gwRegistered(teamId, username));
+    const already = await this.redis.get(regKey);
+    await this.redis.set(regKey, '1');
     await this._touchUser(teamId, username);
     await this.pg.query(`
       INSERT INTO users (username, display) VALUES ($1, $2)
       ON CONFLICT (username) DO UPDATE SET display = EXCLUDED.display, last_seen = NOW()
     `, [username, sanitizeStr(displayName, 50) || username]);
-    const agg = await this.getUserAggregate(teamId, username);
+    const agg = await this.getUserAggregate(teamId, username, gid);
     return { ...agg, registered: true, isNew: !already };
   }
 
@@ -360,7 +547,8 @@ class WatchtimeEngine {
     const t = sanitizeTeamId(teamId);
     const u = sanitizeUsername(username);
     if (!t || !u) return null;
-    await this.redis.set(K.gwRegistered(t, u), '1');
+    const gid = await this._gid(t);
+    await this.redis.set(gid ? K.gReg(t, gid, u) : K.gwRegistered(t, u), '1');
     await this._touchUser(t, u);
     await this.pg.query(`INSERT INTO users (username, display) VALUES ($1,$1)
                          ON CONFLICT (username) DO UPDATE SET last_seen = NOW()`, [u]);
@@ -375,8 +563,10 @@ class WatchtimeEngine {
     const sid = await this.redis.get(K.gwSessionId(t));
     await this._touchUser(t, u);
     await this.redis.sadd(K.chIndex(t, ch), u);
-    let after = parseFloat(await this.redis.incrbyfloat(K.chWatch(t, ch, u), deltaSec));
-    if (after < 0) { await this.redis.set(K.chWatch(t, ch, u), '0'); after = 0; }
+    const wKey = sid ? K.gWatch(t, sid, ch, u) : K.chWatch(t, ch, u);
+    if (sid) await this._migrateKey(wKey, K.chWatch(t, ch, u));
+    let after = parseFloat(await this.redis.incrbyfloat(wKey, deltaSec));
+    if (after < 0) { await this.redis.set(wKey, '0'); after = 0; }
     await this._logEvent(t, u, deltaSec >= 0 ? 'admin_add' : 'admin_sub', deltaSec, sid, ch);
     return { username: u, channel: ch, watchSec: after };
   }
@@ -389,45 +579,50 @@ class WatchtimeEngine {
   }
 
   // ── Aggregation ─────────────────────────────────────────
-  async getUserAggregate(teamId, username) {
+  // Engine sammelt Rohdaten aus Redis, der Core rechnet die Regeln
+  // (Coins, Eligibility) — CORE.aggregate ist die zentrale Regelfunktion.
+  // explicitGid: Stand eines bestimmten Giveaways; Default = Primary.
+  // Legacy-Fallback nur für das Primary — Sekundär-Instanzen lesen strikt
+  // ihren eigenen Namespace (kein Altbestand leakt hinein).
+  async getUserAggregate(teamId, username, explicitGid = undefined) {
     const t = sanitizeTeamId(teamId);
     const u = sanitizeUsername(username);
     const channels = await this.getChannels(t);
-    const base = await this.getCoinBaseSec(t);
-    const perChannel = {};
-    let totalWatch = 0, totalMsgs = 0, followed = 0;
+    const primary = await this._gid(t);
+    const gid = explicitGid === undefined ? primary : explicitGid;
+    const strict = !!(gid && primary && gid !== primary);
+    const rd = (gKey, lKey) => !gid ? this.redis.get(lKey)
+                             : strict ? this.redis.get(gKey)
+                             : this._readMech(gKey, lKey);
+    const perChannelRaw = {};
     for (const ch of channels) {
-      const watchSec = parseFloat(await this.redis.get(K.chWatch(t, ch, u)) || '0');
-      const msgs     = parseInt(await this.redis.get(K.chMsgs(t, ch, u)) || '0');
-      // Follow-Gate STRIKT: nur bestätigte Follows (Live-Event '1' oder Helix) zählen.
-      // (Viewtime-Accrual bleibt permissiv, siehe tickPresentUsers.)
-      const follows  = (await this.redis.get(K.chFollows(t, ch, u))) === '1';
-      const coins    = coinsFromSec(watchSec, base);
-      perChannel[ch] = { watchSec, coins, msgs, follows };
-      totalWatch += watchSec; totalMsgs += msgs;
-      if (follows) followed++;   // Follow zählt UNABHÄNGIG vom Gucken
+      perChannelRaw[ch] = {
+        watchSec: parseFloat((await rd(K.gWatch(t, gid, ch, u), K.chWatch(t, ch, u))) || '0'),
+        msgs:     parseInt((await rd(K.gMsgs(t, gid, ch, u), K.chMsgs(t, ch, u))) || '0'),
+        // Follow-Gate STRIKT: nur bestätigte Follows (Live-Event '1' oder Helix) zählen.
+        // (Viewtime-Accrual bleibt permissiv, siehe tickPresentUsers.)
+        // Follows bleiben team-weit — Eigenschaft des Zuschauers, nicht des Giveaways.
+        follows:  (await this.redis.get(K.chFollows(t, ch, u))) === '1',
+      };
     }
-    const totalCoins = coinsFromSec(totalWatch, base);
-    const followMin  = await this.getFollowMin(t);
-    const drawMinSec = base;   // Lostopf-Schwelle == 1 Coin == Coin-Basis
-    const registered = await this.redis.get(K.gwRegistered(t, u)) === '1';
-    const banned     = await this.redis.get(K.gwBanned(t, u)) === '1';
-    // Lostopf: Keyword + folgt ≥followMin Kanälen + ≥1 Coin (irgendwo geguckt).
-    const eligible   = registered && !banned && followed >= followMin && totalCoins >= 1;
-    return {
-      username: u, perChannel, totalWatchSec: totalWatch, totalCoins,
-      channelsQualified: followed, channelsFollowed: followed, followMin, drawMinSec, coinBaseSec: base,
-      registered, banned, eligible,
-      coins: totalCoins, watchSec: totalWatch, msgs: totalMsgs,
-    };
+    return CORE.aggregate({
+      username: u,
+      perChannelRaw,
+      registered: (await rd(K.gReg(t, gid, u), K.gwRegistered(t, u))) === '1',
+      banned:     await this.redis.get(K.gwBanned(t, u)) === '1',
+      cfg: {
+        coinBaseSec: await this.getCoinBaseSec(t),
+        followMin:   await this.getFollowMin(t),
+      },
+    });
   }
   async getUserState(teamId, username) { return this.getUserAggregate(teamId, username); }
 
-  async getAllParticipants(teamId) {
+  async getAllParticipants(teamId, explicitGid = undefined) {
     const t = sanitizeTeamId(teamId);
     const users = await this.redis.smembers(K.gwUsers(t));
     const result = [];
-    for (const u of users) result.push(await this.getUserAggregate(t, u));
+    for (const u of users) result.push(await this.getUserAggregate(t, u, explicitGid));
     const flags = await this.getFlagsMap(t);
     for (const p of result) p.flags = flags[p.username] || [];
     return result.sort((a, b) => b.totalCoins - a.totalCoins);
@@ -513,22 +708,384 @@ class WatchtimeEngine {
     // Restart). Ändern jederzeit über gw_set_keyword (auch bei laufendem GW).
     if (keyword) await this.redis.set(K.gwKeyword(t), keyword);
     await this.redis.set(K.gwSessionId(t), sessionId);
+    // Phase 2c: das Primary steht auch im Giveaway-Set (Spiegel), damit
+    // die Verteilung nur eine Quelle für "aktive Giveaways" kennt.
+    await this.redis.sadd(K.gwSet(t), sessionId);
+    await this.redis.set(K.gOpen(t, sessionId), 'true');
+    await this.redis.del(K.gPaused(t, sessionId));
     await this.redis.del(K.gwChannels(t)); // Kanal-Cache invalidieren
     console.log(`[WTE] [${t}] opened, keyword="${keyword}", session=${sessionId}`);
+  }
+
+  // ── Phase 2c: Sekundär-Instanz (z.B. Sofortverlosung neben der Kampagne) ──
+  // Läuft ausschließlich im g:-Namespace; channels = Teilmenge der
+  // Team-Kanäle (leer/null = alle).
+  async openGiveawayInstance(teamId, gid, { keyword = '', channels = null, core = null, windowSec = 0, wagerCmd = '', minWatchSec = null } = {}) {
+    const t = sanitizeTeamId(teamId);
+    this.validateSessionId(gid);
+    if (!t) throw new Error('Invalid teamId');
+    await this.redis.sadd(K.gwSet(t), gid);
+    await this.redis.set(K.gOpen(t, gid), 'true');
+    await this.redis.del(K.gPaused(t, gid));
+    if (keyword) await this.redis.set(K.gKw(t, gid), sanitizeStr(keyword, 100));
+    if (Array.isArray(channels) && channels.length) {
+      await this.redis.set(K.gChanList(t, gid), JSON.stringify(channels.map(sanitizeChannel).filter(Boolean)));
+    }
+    // Phase 3: Instanz kann einen anderen Core fahren; Sofortverlosungen
+    // tragen ihr Fensterende, der Server-Watcher zieht danach automatisch.
+    if (core && core !== CORE.id) await this.redis.set(K.gCore(t, gid), sanitizeStr(core, 60));
+    const win = parseInt(windowSec, 10);
+    if (Number.isFinite(win) && win > 0) {
+      await this.redis.set(K.gWinEnd(t, gid), String(Math.floor(Date.now() / 1000) + win));
+    }
+    if (wagerCmd) await this.redis.set(K.gWagerCmd(t, gid), sanitizeStr(wagerCmd, 30).toLowerCase());
+    if (minWatchSec !== null && Number.isFinite(parseInt(minWatchSec, 10))) {
+      await this.redis.set(K.gMinWatch(t, gid), String(Math.max(0, parseInt(minWatchSec, 10))));
+    }
+    await this.redis.sadd(K.openTeams(), t);
+    console.log(`[WTE] [${t}] instance ${gid} opened, core=${core || CORE.id}, keyword="${keyword}"`);
+  }
+
+  // ── Phase 3: Teilnehmer einer Sofortverlosung ───────────
+  // Berechtigt = Keyword geschrieben (gReg) UND als Zuschauer gemeldet:
+  // viewer_tick (chLastTick) innerhalb PRESENCE_TTL auf einem Instanz-Kanal.
+  // Chat setzt chPresent, aber NICHT chLastTick — wer nur den Chat offen
+  // hat, gilt hier nicht als anwesend (§5.3).
+  async getInstantParticipants(teamId, gid) {
+    const t = sanitizeTeamId(teamId);
+    let channels = null;
+    try { const raw = await this.redis.get(K.gChanList(t, gid)); if (raw) channels = JSON.parse(raw); } catch { /* alle */ }
+    if (!Array.isArray(channels) || !channels.length) channels = await this.getChannels(t);
+    const core = getCore(await this.getCoreId(t, gid));
+    const now = Math.floor(Date.now() / 1000);
+    const result = [];
+    for (const u of await this.redis.smembers(K.gwUsers(t))) {
+      const registered = await this.redis.get(K.gReg(t, gid, u)) === '1';
+      if (!registered) continue;   // ohne Keyword-Opt-in nie im Topf
+      let present = false;
+      for (const ch of channels) {
+        const ts = parseInt(await this.redis.get(K.chLastTick(t, ch, u)), 10);
+        if (Number.isFinite(ts) && now - ts < PRESENCE_TTL) { present = true; break; }
+      }
+      result.push(core.aggregate({
+        username: u, registered,
+        banned: await this.redis.get(K.gwBanned(t, u)) === '1',
+        present,
+      }));
+    }
+    return result;
+  }
+
+  // Alle offenen Giveaways (inkl. pausierter) mit Metadaten — fürs Panel.
+  async listGiveaways(teamId) {
+    const t = sanitizeTeamId(teamId);
+    const out = [];
+    const legacySid = await this.redis.get(K.gwSessionId(t));
+    if (await this.redis.get(K.gwOpen(t)) === 'true') {
+      out.push({ gid: legacySid || null, primary: true, core: CORE.id,
+                 paused: await this.redis.get(K.gwPaused(t)) === 'true',
+                 keyword: await this.redis.get(K.gwKeyword(t)) || '',
+                 channels: null, windowEndsAt: null });
+    }
+    for (const g of await this.redis.smembers(K.gwSet(t))) {
+      if (g === legacySid) continue;
+      if (await this.redis.get(K.gOpen(t, g)) !== 'true') continue;
+      let chans = null;
+      try { const raw = await this.redis.get(K.gChanList(t, g)); if (raw) chans = JSON.parse(raw); } catch { /* alle */ }
+      out.push({ gid: g, primary: false,
+                 core: await this.redis.get(K.gCore(t, g)) || CORE.id,
+                 paused: await this.redis.get(K.gPaused(t, g)) === 'true',
+                 keyword: await this.redis.get(K.gKw(t, g)) || '',
+                 channels: Array.isArray(chans) && chans.length ? chans : null,
+                 windowEndsAt: parseInt(await this.redis.get(K.gWinEnd(t, g)), 10) || null });
+    }
+    return out;
+  }
+
+  async closeGiveawayInstance(teamId, gid) {
+    const t = sanitizeTeamId(teamId);
+    await this.redis.set(K.gOpen(t, gid), 'false');
+    await this.redis.srem(K.gwSet(t), gid);
+    if (!(await this._activeGiveaways(t)).length && await this.redis.get(K.gwOpen(t)) !== 'true') {
+      await this.redis.srem(K.openTeams(), t);
+    }
+    console.log(`[WTE] [${t}] instance ${gid} closed`);
+  }
+
+  // ── Phase 4b: CORE_TicketBuy — Preise, Einsätze, Guthaben ──
+  async addPrize(teamId, gid, { title, description = '', wagerEndTs = null } = {}) {
+    const t = sanitizeTeamId(teamId);
+    const r = await this.pg.query(
+      `INSERT INTO giveaway_prizes (team_id, session_id, title, description, wager_end)
+       VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+      [t, gid || null, sanitizeStr(title, 100), sanitizeStr(description, 500),
+       wagerEndTs ? new Date(wagerEndTs * 1000) : null]);
+    return r.rows[0].id;
+  }
+
+  async listPrizes(teamId, { openOnly = true } = {}) {
+    const t = sanitizeTeamId(teamId);
+    const r = await this.pg.query(
+      `SELECT p.id, p.session_id, p.title, p.description, p.wager_end, p.status,
+              COALESCE((SELECT SUM(w.amount) FROM prize_wagers w WHERE w.prize_id = p.id), 0) AS total_stake
+       FROM giveaway_prizes p WHERE p.team_id=$1` + (openOnly ? ` AND p.status='open'` : '') +
+      ` ORDER BY p.id`, [t]);
+    return r.rows;
+  }
+
+  async prizeStake(prizeId, username) {
+    const r = await this.pg.query(
+      `SELECT COALESCE(SUM(amount),0) AS stake FROM prize_wagers WHERE prize_id=$1 AND username=$2`,
+      [prizeId, username]);
+    return Math.round((parseFloat(r.rows[0].stake) || 0) * 10000) / 10000;
+  }
+
+  // Verfügbares Guthaben = Ledger-Saldo + live erspielter Stand laufender
+  // TicketBuy-Instanzen. Der Live-Anteil wird beim Close als earn gebucht
+  // (settleTicketBuyInstance) — bis dahin darf der Ledger-Saldo durch
+  // Einsätze entsprechend ins Minus gehen, die Summe bleibt ≥ 0.
+  async availableCredit(teamId, username) {
+    const t = sanitizeTeamId(teamId), u = sanitizeUsername(username);
+    let avail = await this.credit.balance(t, u);
+    const base = await this.getCoinBaseSec(t);
+    for (const g of await this._activeGiveaways(t)) {
+      if (getCore(g.core).id !== 'CORE_TicketBuy' || !g.gid) continue;
+      const channels = g.channels || await this.getChannels(t);
+      let sec = 0;
+      for (const ch of channels) sec += parseFloat(await this.redis.get(K.gWatch(t, g.gid, ch, u)) || '0');
+      avail += coinsFromSec(sec, base);
+    }
+    return Math.round(avail * 10000) / 10000;
+  }
+
+  // Einsatz setzen (amount ≥ 1) oder komplett zurücknehmen (amount === 0).
+  // Bucht Ledger UND prize_wagers — beides append-only, eine Stelle.
+  async placeWager(teamId, gid, username, prizeId, amount) {
+    const t = sanitizeTeamId(teamId), u = sanitizeUsername(username);
+    const pr = await this.pg.query(
+      `SELECT id, title, status, wager_end FROM giveaway_prizes WHERE id=$1 AND team_id=$2`, [prizeId, t]);
+    if (!pr.rowCount || pr.rows[0].status !== 'open') return { error: 'no_prize' };
+    const prize = pr.rows[0];
+    if (prize.wager_end && new Date(prize.wager_end).getTime() < Date.now()) return { error: 'wager_closed' };
+
+    if (amount === 0) {   // Rücknahme: kompletter Einsatz zurück (bis Einsatz-Ende)
+      const stake = await this.prizeStake(prizeId, u);
+      if (stake <= 0) return { error: 'nothing_to_refund' };
+      await this.pg.query(`INSERT INTO prize_wagers (prize_id, team_id, username, amount) VALUES ($1,$2,$3,$4)`,
+        [prizeId, t, u, -stake]);
+      await this.credit.book(t, u, 'refund', stake, { refPrize: prizeId });
+      return { refunded: stake, prizeTitle: prize.title, balance: await this.availableCredit(t, u) };
+    }
+
+    const amt = Math.floor(amount);
+    if (!Number.isFinite(amt) || amt <= 0) return { error: 'no_prize' };
+    if (await this.availableCredit(t, u) < amt) return { error: 'no_credit' };
+    await this.pg.query(`INSERT INTO prize_wagers (prize_id, team_id, username, amount) VALUES ($1,$2,$3,$4)`,
+      [prizeId, t, u, amt]);
+    await this.credit.book(t, u, 'wager', amt, { refPrize: prizeId });
+    await this._touchUser(t, u);
+    return { amount: amt, stake: await this.prizeStake(prizeId, u), prizeTitle: prize.title,
+             balance: await this.availableCredit(t, u) };
+  }
+
+  // Pool je Preis: Einsatzsumme je User (> 0). Gewicht = Einsatz (§5.2).
+  async getPrizeStakes(teamId, prizeId) {
+    const t = sanitizeTeamId(teamId);
+    const r = await this.pg.query(
+      `SELECT username, SUM(amount) AS stake FROM prize_wagers
+       WHERE prize_id=$1 AND team_id=$2 GROUP BY username HAVING SUM(amount) > 0`, [prizeId, t]);
+    return r.rows.map(x => ({ username: x.username, stake: Math.round(parseFloat(x.stake) * 10000) / 10000 }));
+  }
+
+  // Close einer TicketBuy-Instanz: erspielten Stand als earn ins Ledger
+  // („Guthaben wandert", §10.1), danach Instanz-Keys vollständig abräumen —
+  // der Zustand lebt ab jetzt ausschließlich im Journal.
+  async settleTicketBuyInstance(teamId, gid) {
+    const t = sanitizeTeamId(teamId);
+    const base = await this.getCoinBaseSec(t);
+    let channels = null;
+    try { const raw = await this.redis.get(K.gChanList(t, gid)); if (raw) channels = JSON.parse(raw); } catch { /* alle */ }
+    if (!Array.isArray(channels) || !channels.length) channels = await this.getChannels(t);
+    let users = 0, total = 0;
+    for (const u of await this.redis.smembers(K.gwUsers(t))) {
+      let sec = 0;
+      for (const ch of channels) sec += parseFloat(await this.redis.get(K.gWatch(t, gid, ch, u)) || '0');
+      const coins = coinsFromSec(sec, base);
+      if (coins <= 0) continue;
+      await this.credit.book(t, u, 'earn', coins, { refSession: gid });
+      users++; total += coins;
+    }
+    await this.cleanupGiveawayInstance(t, gid);
+    console.log(`[WTE] [${t}] ticketbuy ${gid} settled: ${users} Konten, +${total.toFixed(2)} Lose`);
+    return { users, total: Math.round(total * 10000) / 10000 };
+  }
+
+  // ── Phase 6: CORE_ScreenshotContest ─────────────────────
+  // Berechtigung Einsenden: bestätigter Follow auf einem Instanz-Kanal UND
+  // Mindest-Viewtime (Kampagnenstand des Teams). Voten: Mindest-Viewtime.
+  async _contestEligibility(teamId, gid, username) {
+    const t = sanitizeTeamId(teamId);
+    const minWatch = parseInt(await this.redis.get(K.gMinWatch(t, gid)), 10) || 0;
+    const agg = await this.getUserAggregate(t, username);   // Kampagnen-/Team-Stand
+    let chans = null;
+    try { const raw = await this.redis.get(K.gChanList(t, gid)); if (raw) chans = JSON.parse(raw); } catch { /* alle */ }
+    if (!Array.isArray(chans) || !chans.length) chans = await this.getChannels(t);
+    const followsHost = chans.some(ch => agg.perChannel[ch] && agg.perChannel[ch].follows);
+    return {
+      watchOk: agg.totalWatchSec >= minWatch,
+      followsHost,
+      minWatch,
+      watchSec: agg.totalWatchSec,
+    };
+  }
+
+  // Einsenden/Ersetzen. EINE Einsendung pro Person (UNIQUE); Ersetzen löscht
+  // die bereits abgegebenen Stimmen für den alten Screenshot — deshalb wird
+  // ohne confirmReplace abgebrochen, wenn Stimmen existieren (UI warnt).
+  async submitContestEntry(teamId, gid, username, { title = '', mime, image, confirmReplace = false } = {}) {
+    const t = sanitizeTeamId(teamId), u = sanitizeUsername(username);
+    if (await this.redis.get(K.gOpen(t, gid)) !== 'true') return { error: 'contest_closed' };
+    if (await this.redis.get(K.gwBanned(t, u)) === '1') return { error: 'banned' };
+    const elig = await this._contestEligibility(t, gid, u);
+    if (!elig.followsHost) return { error: 'not_following', minWatch: elig.minWatch };
+    if (!elig.watchOk)     return { error: 'not_enough_watchtime', minWatch: elig.minWatch, watchSec: elig.watchSec };
+
+    const existing = await this.pg.query(
+      `SELECT id FROM contest_entries WHERE session_id=$1 AND username=$2`, [gid, u]);
+    if (existing.rowCount) {
+      const votes = await this.pg.query(
+        `SELECT COUNT(*)::int AS n FROM contest_votes WHERE entry_id=$1`, [existing.rows[0].id]);
+      const n = votes.rows[0].n || 0;
+      if (n > 0 && !confirmReplace) return { error: 'votes_would_be_lost', votes: n };
+      // Neueinsendung: alte Stimmen verfallen (der bewertete Inhalt existiert
+      // nicht mehr) — Warnung/Bestätigung ist oben erzwungen.
+      await this.pg.query(`DELETE FROM contest_votes WHERE entry_id=$1`, [existing.rows[0].id]);
+    }
+    await this.pg.query(`
+      INSERT INTO contest_entries (team_id, session_id, username, title, mime, image, status)
+      VALUES ($1,$2,$3,$4,$5,$6,'pending')
+      ON CONFLICT (session_id, username) DO UPDATE SET
+        title=EXCLUDED.title, mime=EXCLUDED.mime, image=EXCLUDED.image,
+        status='pending', created_at=NOW()
+    `, [t, gid, u, sanitizeStr(title, 100), mime, image]);
+    await this._touchUser(t, u);
+    return { ok: true, replaced: existing.rowCount > 0 };
+  }
+
+  async reviewContestEntry(teamId, entryId, approve) {
+    const t = sanitizeTeamId(teamId);
+    const r = await this.pg.query(
+      `UPDATE contest_entries SET status=$3 WHERE id=$1 AND team_id=$2 RETURNING username, title`,
+      [entryId, t, approve ? 'approved' : 'rejected']);
+    return r.rowCount ? { ok: true, ...r.rows[0] } : { error: 'no_entry' };
+  }
+
+  // Voting-Steuerung: closed (Default) | open | paused. Nur 'open' nimmt Stimmen an.
+  async setContestVoting(teamId, gid, state) {
+    const t = sanitizeTeamId(teamId);
+    if (!['open', 'paused', 'closed'].includes(state)) throw new Error('Ungültiger Voting-Zustand');
+    await this.redis.set(K.gVoteState(t, gid), state);
+    return state;
+  }
+  async getContestVoting(teamId, gid) {
+    return await this.redis.get(K.gVoteState(sanitizeTeamId(teamId), gid)) || 'closed';
+  }
+
+  // Eine Stimme je (Voter, Screenshot); erneutes Voten überschreibt (UPSERT).
+  // Eigene Einsendung ist nicht votebar.
+  async castContestVote(teamId, gid, voter, entryId, score) {
+    const t = sanitizeTeamId(teamId), u = sanitizeUsername(voter);
+    if (await this.getContestVoting(t, gid) !== 'open') return { error: 'voting_not_open' };
+    if (await this.redis.get(K.gwBanned(t, u)) === '1') return { error: 'banned' };
+    const elig = await this._contestEligibility(t, gid, u);
+    if (!elig.watchOk) return { error: 'not_enough_watchtime', minWatch: elig.minWatch, watchSec: elig.watchSec };
+    const entry = await this.pg.query(
+      `SELECT id, username, status FROM contest_entries WHERE id=$1 AND session_id=$2 AND team_id=$3`,
+      [entryId, gid, t]);
+    if (!entry.rowCount || entry.rows[0].status !== 'approved') return { error: 'no_entry' };
+    if (entry.rows[0].username === u) return { error: 'own_entry' };
+    await this.pg.query(`
+      INSERT INTO contest_votes (entry_id, team_id, session_id, voter, score)
+      VALUES ($1,$2,$3,$4,$5)
+      ON CONFLICT (entry_id, voter) DO UPDATE SET score=EXCLUDED.score, created_at=NOW()
+    `, [entryId, t, gid, u, score]);
+    return { ok: true, score };
+  }
+
+  // Ranking: Punktsumme + Stimmenzahl je Einsendung (approved für die Ziehung;
+  // all=true liefert auch pending/rejected fürs Admin-Review).
+  async getContestStandings(teamId, gid, { all = false } = {}) {
+    const t = sanitizeTeamId(teamId);
+    const r = await this.pg.query(
+      `SELECT e.id AS entry_id, e.username, e.title, e.status,
+              COALESCE(SUM(v.score),0)::int AS score, COUNT(v.id)::int AS votes
+       FROM contest_entries e
+       LEFT JOIN contest_votes v ON v.entry_id = e.id
+       WHERE e.session_id=$1 AND e.team_id=$2` + (all ? '' : ` AND e.status='approved'`) +
+      ` GROUP BY e.id, e.username, e.title, e.status
+       ORDER BY score DESC, votes DESC, e.id`, [gid, t]);
+    return r.rows.map(x => ({ entryId: parseInt(x.entry_id), username: x.username, title: x.title || '',
+                              status: x.status, score: x.score, votes: x.votes }));
+  }
+
+  // Räumt eine (gezogene/geschlossene) Instanz vollständig aus Redis —
+  // keine g:-Leichen (§6). Nach der Auto-Ziehung der Sofortverlosung
+  // aufgerufen; für manuell geschlossene Instanzen erst nach der Ziehung.
+  async cleanupGiveawayInstance(teamId, gid) {
+    const t = sanitizeTeamId(teamId);
+    const channels = await this.getChannels(t);
+    const users = await this.redis.smembers(K.gwUsers(t));
+    const pipeline = this.redis.pipeline();
+    for (const u of users) {
+      pipeline.del(K.gReg(t, gid, u));
+      for (const ch of channels) {
+        pipeline.del(K.gWatch(t, gid, ch, u), K.gChatTs(t, gid, ch, u), K.gMsgs(t, gid, ch, u));
+      }
+    }
+    pipeline.del(K.gOpen(t, gid), K.gPaused(t, gid), K.gKw(t, gid), K.gChanList(t, gid),
+                 K.gCore(t, gid), K.gWinEnd(t, gid), K.gMult(t, gid), K.gWagerCmd(t, gid),
+                 K.gMinWatch(t, gid), K.gVoteState(t, gid));
+    pipeline.srem(K.gwSet(t), gid);
+    await pipeline.exec();
+    console.log(`[WTE] [${t}] instance ${gid} cleaned`);
   }
 
   async drawWinner(teamId, sessionId, opts = {}) {
     const t = sanitizeTeamId(teamId);
     const isTest = !!opts.test;
     const prize  = opts.prize ? sanitizeStr(opts.prize, 100) : null;
-    const participants = await this.getAllParticipants(t);
-    const eligible = participants.filter(p => p.eligible);
-    if (!eligible.length) return null;
+    // Pool-Bildung (Filter + Gewicht) macht der Core; Zufall, Snapshot und
+    // Persistenz bleiben hier — genau EINE Stelle, die reproduzierbar zieht.
+    // Gezogen wird der Stand DIESES Giveaways (sessionId = Giveaway-ID) mit
+    // DESSEN Core (Phase 3: Sofortverlosung hat weder Coins noch Follows).
+    const drawCoreId = await this.getCoreId(t, sessionId);
+    const drawCore = getCore(drawCoreId);
+    let poolSource, drawPrizeId = null;
+    if (drawCoreId === 'CORE_TicketBuy') {
+      // TicketBuy zieht JE PREIS: Gewicht = gesetzte Lose (§5.2).
+      drawPrizeId = parseInt(opts.prizeId, 10);
+      if (!Number.isFinite(drawPrizeId) || drawPrizeId <= 0) {
+        throw new Error('CORE_TicketBuy zieht je Preis — prizeId fehlt');
+      }
+      poolSource = await this.getPrizeStakes(t, drawPrizeId);
+    } else if (drawCoreId === 'CORE_ScreenshotContest') {
+      // Deterministisch: buildPool liefert nur die Führenden (weight 1);
+      // bei Punktgleichstand lost der normale Engine-Zufall aus. Voting zu.
+      await this.setContestVoting(t, sessionId, 'closed');
+      poolSource = await this.getContestStandings(t, sessionId);
+    } else if (drawCore.accrual === 'none') {
+      poolSource = await this.getInstantParticipants(t, sessionId);
+    } else {
+      poolSource = await this.getAllParticipants(t, sessionId || undefined);
+    }
+    const pool = drawCore.buildPool(poolSource);
+    if (!pool.length) return null;
+    const eligible = pool.map(e => e.meta);
 
-    const total = eligible.reduce((s, p) => s + p.totalCoins, 0);
+    const total = pool.reduce((s, e) => s + e.weight, 0);
     const rand  = (randomInt(0, 2 ** 31) / (2 ** 31)) * total;
     let acc = 0, winner = eligible[eligible.length - 1];
-    for (const p of eligible) { acc += p.totalCoins; if (rand < acc) { winner = p; break; } }
+    for (const e of pool) { acc += e.weight; if (rand < acc) { winner = e.meta; break; } }
 
     const snapshot = eligible.map(p => ({
       u: p.username, c: p.totalCoins, q: p.channelsQualified,
@@ -550,10 +1107,11 @@ class WatchtimeEngine {
       const ins = await client.query(`
         INSERT INTO giveaway_draws
           (session_id, winner, winner_coins, winner_watch_sec, total_coins,
-           eligible_count, rand_value, draw_index, is_test, prize, eligible_snapshot)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id
-      `, [sessionId || null, winner.username, winner.totalCoins, Math.round(winner.totalWatchSec),
-          totalRounded, eligible.length, randRounded, drawIndex, isTest, prize, JSON.stringify(snapshot)]);
+           eligible_count, rand_value, draw_index, is_test, prize, eligible_snapshot, core, prize_id)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id
+      `, [sessionId || null, winner.username, winner.totalCoins, Math.round(winner.totalWatchSec || 0),
+          totalRounded, eligible.length, randRounded, drawIndex, isTest, prize, JSON.stringify(snapshot),
+          drawCoreId, drawPrizeId]);   // Mechanik + Preis — Nachvollziehbarkeit (§7)
       drawId = ins.rows[0].id;
       if (!isTest) {
         let prevWinner = null;
@@ -565,7 +1123,11 @@ class WatchtimeEngine {
                               [winner.username, winner.username]);
         }
         if (sessionId) await client.query(`UPDATE sessions SET winner=$1, winner_watch_sec=$2, winner_coins=$3 WHERE id=$4`,
-                                           [winner.username, Math.round(winner.totalWatchSec), winner.totalCoins, sessionId]);
+                                           [winner.username, Math.round(winner.totalWatchSec || 0), winner.totalCoins, sessionId]);
+        // afterDraw (§5.2, in DERSELBEN Transaktion): der Preis ist gezogen,
+        // damit sind die Einsätze ALLER Setzer gebunden — keine Rücknahme
+        // mehr möglich (placeWager prüft status='open').
+        if (drawPrizeId) await client.query(`UPDATE giveaway_prizes SET status='drawn' WHERE id=$1`, [drawPrizeId]);
       }
       await client.query('COMMIT');
     } catch (e) {
@@ -573,17 +1135,22 @@ class WatchtimeEngine {
     } finally { client.release(); }
 
     console.log(`[WTE] [${t}] Draw #${drawId}: ${winner.username} won, coins=${winner.totalCoins}, eligible=${eligible.length}, test=${isTest}`);
-    return { winner: winner.username, coins: winner.totalCoins, watchSec: Math.round(winner.totalWatchSec),
+    return { winner: winner.username, coins: winner.totalCoins, watchSec: Math.round(winner.totalWatchSec || 0),
              drawId, drawIndex, sessionId, eligibleCount: eligible.length,
-             total: totalRounded, rand: randRounded, isTest, prize };
+             total: totalRounded, rand: randRounded, isTest, prize, prizeId: drawPrizeId };
   }
 
   async closeGiveaway(teamId, sessionId) {
     const t = sanitizeTeamId(teamId);
     await this.redis.set(K.gwOpen(t), 'false');
-    await this.redis.srem(K.openTeams(), t);
+    if (sessionId) {
+      await this.redis.set(K.gOpen(t, sessionId), 'false');
+      await this.redis.srem(K.gwSet(t), sessionId);
+    }
+    // Team bleibt im Scan-Set, solange noch eine Sekundär-Instanz läuft.
+    if (!(await this._activeGiveaways(t)).length) await this.redis.srem(K.openTeams(), t);
     if (!sessionId) return;
-    const participants = await this.getAllParticipants(t);
+    const participants = await this.getAllParticipants(t, sessionId);
     const active = participants.filter(p => !p.banned);
     const totalCoins = active.reduce((s, p) => s + p.totalCoins, 0);
     const channels = await this.getChannels(t);
@@ -625,15 +1192,19 @@ class WatchtimeEngine {
     const t = sanitizeTeamId(teamId);
     const channels = await this.getChannels(t);
     const users = await this.redis.smembers(K.gwUsers(t));
+    const gid = await this.redis.get(K.gwSessionId(t));   // vor dem Löschen merken
     const pipeline = this.redis.pipeline();
     for (const u of users) {
       pipeline.del(K.gwRegistered(t, u));
+      if (gid) pipeline.del(K.gReg(t, gid, u));
       pipeline.del(K.gwBanned(t, u));
       pipeline.srem(K.userTeams(u), t);
       pipeline.del(K.abuseHist(t, u), K.abuseTimes(t, u));
       for (const ch of channels) {
         pipeline.del(K.chWatch(t, ch, u), K.chChatTs(t, ch, u), K.chPresent(t, ch, u),
                      K.chLastTick(t, ch, u), K.chMsgs(t, ch, u), K.chFollows(t, ch, u));
+        // g:-Namespace vollständig mitwegräumen — keine Redis-Leichen (§6).
+        if (gid) pipeline.del(K.gWatch(t, gid, ch, u), K.gChatTs(t, gid, ch, u), K.gMsgs(t, gid, ch, u));
       }
     }
     for (const ch of channels) pipeline.del(K.chIndex(t, ch));
@@ -644,6 +1215,7 @@ class WatchtimeEngine {
     pipeline.del(K.gwKeyword(t));
     pipeline.del(K.gwSessionId(t));
     pipeline.del(K.gwMult(t));
+    if (gid) pipeline.del(K.gMult(t, gid));
     pipeline.del(K.gwChannels(t));
     await pipeline.exec();
     console.log(`[WTE] [${t}] reset`);
@@ -658,20 +1230,24 @@ class WatchtimeEngine {
     if (!t) throw new Error('Invalid teamId');
     const channels = await this.getChannels(t);
     const users = await this.redis.smembers(K.gwUsers(t));
+    const gid = await this._gid(t);
 
     const participants = [];
     for (const u of users) {
       const perChannel = {};
       for (const ch of channels) {
-        const watchSec = parseFloat(await this.redis.get(K.chWatch(t, ch, u)) || '0');
-        const msgs     = parseInt(await this.redis.get(K.chMsgs(t, ch, u)) || '0');
+        const watchSec = parseFloat((gid ? await this._readMech(K.gWatch(t, gid, ch, u), K.chWatch(t, ch, u))
+                                         : await this.redis.get(K.chWatch(t, ch, u))) || '0');
+        const msgs     = parseInt((gid ? await this._readMech(K.gMsgs(t, gid, ch, u), K.chMsgs(t, ch, u))
+                                       : await this.redis.get(K.chMsgs(t, ch, u))) || '0');
         const follows  = await this.redis.get(K.chFollows(t, ch, u));
         if (!watchSec && !msgs && follows === null) continue;   // nie aktiv gewesen
         perChannel[ch] = { watchSec, msgs, follows };
       }
       participants.push({
         username: u,
-        registered: await this.redis.get(K.gwRegistered(t, u)) === '1',
+        registered: (gid ? await this._readMech(K.gReg(t, gid, u), K.gwRegistered(t, u))
+                         : await this.redis.get(K.gwRegistered(t, u))) === '1',
         banned:     await this.redis.get(K.gwBanned(t, u)) === '1',
         perChannel,
       });
@@ -721,13 +1297,17 @@ class WatchtimeEngine {
     if (cfg.autoPause)  await this.redis.set(K.cfgAutoPause(t), '1');
     if (cfg.autoResume) await this.redis.set(K.cfgAutoResume(t), '1');
 
+    // Beim Merge in ein laufendes Giveaway muss auf dessen g:-Keys gebucht
+    // werden — sonst forken Import und Live-Stand. Nach replace ist gid null
+    // (Reset), geschrieben wird Legacy; der Fallback liest das korrekt.
+    const gid = await this._gid(t);
     let users = 0, channelsTouched = new Set();
     for (const p of data.participants) {
       const u = sanitizeUsername(p && p.username);
       if (!u) continue;
       users++;
       await this._touchUser(t, u);
-      if (p.registered) await this.redis.set(K.gwRegistered(t, u), '1');
+      if (p.registered) await this.redis.set(gid ? K.gReg(t, gid, u) : K.gwRegistered(t, u), '1');
       if (p.banned)     await this.redis.set(K.gwBanned(t, u), '1');
       for (const [rawCh, v] of Object.entries(p.perChannel || {})) {
         const ch = sanitizeChannel(rawCh);
@@ -736,12 +1316,15 @@ class WatchtimeEngine {
         await this.redis.sadd(K.chIndex(t, ch), u);
         const watchSec = Math.max(0, parseFloat(v.watchSec) || 0);
         const msgs     = Math.max(0, parseInt(v.msgs) || 0);
+        const wKey = gid ? K.gWatch(t, gid, ch, u) : K.chWatch(t, ch, u);
+        const mKey = gid ? K.gMsgs(t, gid, ch, u)  : K.chMsgs(t, ch, u);
+        if (gid) { await this._migrateKey(wKey, K.chWatch(t, ch, u)); await this._migrateKey(mKey, K.chMsgs(t, ch, u)); }
         if (mode === 'merge') {
-          if (watchSec) await this.redis.incrbyfloat(K.chWatch(t, ch, u), watchSec);
-          if (msgs)     await this.redis.incrby(K.chMsgs(t, ch, u), msgs);
+          if (watchSec) await this.redis.incrbyfloat(wKey, watchSec);
+          if (msgs)     await this.redis.incrby(mKey, msgs);
         } else {
-          await this.redis.set(K.chWatch(t, ch, u), String(watchSec));
-          await this.redis.set(K.chMsgs(t, ch, u), String(msgs));
+          await this.redis.set(wKey, String(watchSec));
+          await this.redis.set(mKey, String(msgs));
         }
         // follows: null bedeutet "nie gesehen" und bleibt null (permissiv),
         // '0'/'1' sind bestätigte Zustände und werden übernommen.

@@ -6,6 +6,7 @@
 <link rel="stylesheet" href="chaos-crew-admin.css">
 </head>
 <body>
+<script src="cc-defs.js"></script>
 <script src="giveaway-shared.js"></script>
 
 <div class="gw-app">
@@ -14,6 +15,13 @@
   <div class="cmdbar">
     <div class="cb-left">
       <select id="team-select" onchange="onTeamChange()" title="Team"><option>— lädt —</option></select>
+      <select id="gw-select" onchange="onGiveawayChange()" title="Giveaway (Kampagne oder Zusatz-Instanz)"><option value="">— Kampagne —</option></select>
+      <button class="btn btn-cyan btn-sm" onclick="openInstance()" title="Zusätzliches Giveaway parallel starten (z.B. Sofortverlosung)">＋</button>
+      <button class="btn btn-red btn-sm" id="gw-close-inst" onclick="closeInstance()" title="Gewählte Zusatz-Instanz schließen" style="display:none;">✕</button>
+      <button class="btn btn-gold btn-sm" id="gw-add-prize" onclick="addPrize()" title="Preis für das gewählte Los-Giveaway anlegen" style="display:none;">🎁</button>
+      <button class="btn btn-cyan btn-sm" id="gw-wager-cmd" onclick="setWagerCmd()" title="Setz-Befehl des Los-Giveaways ändern" style="display:none;">⌨</button>
+      <button class="btn btn-gold btn-sm" id="gw-entries" onclick="reviewEntry()" title="Contest-Einsendungen freigeben/ablehnen" style="display:none;">🖼</button>
+      <button class="btn btn-cyan btn-sm" id="gw-voting" onclick="contestVoting()" title="Contest-Voting öffnen/pausieren/fortsetzen/schließen" style="display:none;">🗳</button>
       <div class="state-chip idle" id="gw-txt">IDLE</div>
     </div>
     <div class="cb-stats">

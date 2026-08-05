@@ -5,6 +5,85 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ---
 
+## 5. August 2026
+
+### Neu: Screenshot-Contest
+
+Vierter Giveaway-Typ: die Community sendet Screenshots ein und bewertet sie —
+**1 (schlecht) bis 10 (SUPER!)**. Die höchste Punktsumme gewinnt; bei
+Gleichstand entscheidet das Los. Einsenden und Bewerten können nur echte
+Zuschauer (Follow + Mindest-Zuschauzeit — das hält auch Vote-Bots draußen),
+je Person zählt **eine Einsendung** und **eine Stimme pro Bild** (erneutes
+Bewerten ändert die eigene Wertung, das eigene Bild ist tabu). Jede
+Einsendung wird vor der Sichtbarkeit vom Streamer geprüft und freigegeben.
+
+Der Streamer steuert das Voting ausdrücklich: **öffnen, pausieren,
+fortsetzen, schließen** — jede Änderung wird im Chat angesagt. Wer seinen
+Screenshot ersetzt, verliert die dafür schon abgegebenen Stimmen und wird
+vorher deutlich gewarnt.
+
+---
+
+## 4. August 2026
+
+### Neu: Los-Giveaway — Zuschauzeit wird Guthaben, Einsatz auf Preise
+
+Dritter Giveaway-Typ: beim **Los-Giveaway** wird Zuschauzeit zu
+Los-Guthaben, das beim Ende des Giveaways deinem Konto gutgeschrieben wird
+und **beim nächsten Los-Giveaway erhalten bleibt**. Der Streamer legt
+konkrete Preise an; du setzt deine Lose gezielt darauf — im Chat mit einem
+Befehl (Standard „!setzen", der Streamer kann ihn umbenennen):
+„!setzen 3 2" = 2 Lose auf Preis 3, „!setzen 3 0" = Einsatz zurückholen
+(bis zum Einsatz-Ende). Gezogen wird je Preis, gewichtet nach Einsatz —
+jedes Los kann gewinnen. Nach der Ziehung sind die Einsätze aller
+Teilnehmer dieses Preises verbraucht.
+
+Neben dem Chat gibt es die Seite **„Lose setzen"** (Login mit Twitch):
+Guthaben je Team, alle offenen Preise mit deinem Einsatz, Setzen und
+Rücknahme per Klick.
+
+Guthaben entsteht ausschließlich aus Zuschauzeit: es ist nicht kaufbar,
+nicht auszahlbar, nicht übertragbar, und verfällt nach 12 Monaten ohne
+Bewegung. Alle Bewegungen stehen in „Meine Daten".
+
+### Neu: Sofortverlosung
+
+Neben der langlaufenden Kampagne gibt es jetzt die **Sofortverlosung**: der
+Streamer startet sie mit Keyword und Zeitfenster (z.B. 60 Sekunden), alle die
+das Keyword schreiben **und gerade zuschauen** sind im Topf — gleiches Los für
+alle, kein Punktesammeln. Nach Ablauf zieht das System automatisch und sagt
+den Gewinner im Chat an. Nur den Chat offen zu haben reicht nicht: wer nicht
+als Zuschauer gemeldet ist, nimmt nicht teil. Meldet niemand Anwesenheit,
+wird die Verlosung mit klarer Ansage abgebrochen statt leer gezogen.
+
+### Mehrere Giveaways gleichzeitig
+
+Ein Team kann jetzt **neben der laufenden Kampagne zusätzliche Giveaways**
+starten — etwa eine spontane Verlosung mit eigenem Keyword, auch nur auf
+einzelnen Kanälen. Im Dashboard gibt es dafür eine Giveaway-Auswahl neben der
+Team-Auswahl (＋ startet eine Zusatz-Instanz, ✕ schließt sie). Boost, Pause
+und Ziehung wirken auf das jeweils gewählte Giveaway. Zuschauzeit zählt
+gleichzeitig für alle laufenden Giveaways, deren Kanäle man schaut.
+Obergrenze: 4 gleichzeitige Giveaways je Team.
+
+### Jedes Giveaway hat jetzt seinen eigenen Stand
+
+Punktestände, Anmeldungen und Boosts gehören ab jetzt zum **einzelnen
+Giveaway**, nicht mehr zum Team. Ein laufendes Giveaway übernimmt seinen
+bisherigen Stand automatisch — für Zuschauer ändert sich nichts.
+
+**Für Veranstalter wichtig:** Wer ein Giveaway schließt und ein neues öffnet,
+startet das neue **bei null** — auch ohne vorheriges Zurücksetzen. Bisher
+liefen alte Punktestände in so einem Fall stillschweigend weiter. Der Stand
+des alten Giveaways bleibt bis zum Zurücksetzen erhalten (z.B. für Ziehungen
+nach dem Schließen). Ein zeitlich begrenzter Boost gilt ebenfalls nur noch
+für das Giveaway, in dem er gestartet wurde.
+
+Das ist die Grundlage dafür, dass künftig **mehrere Giveaways gleichzeitig**
+laufen können — siehe Roadmap.
+
+---
+
 ## 3. August 2026
 
 ### Gewinnchancen wurden zu niedrig angezeigt — behoben

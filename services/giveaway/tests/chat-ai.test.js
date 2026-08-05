@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { judgeMessage, encryptKey, decryptKey, PROVIDERS } = require('../chat-ai.js');
+const { judgeMessage, encryptKey, decryptKey, PROVIDERS } = require('../cores/chat-ai.js');
 
 // Antwort-Stub je Provider — so wie die echten APIs den Text verpacken.
 const bodyFor = {

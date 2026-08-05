@@ -1,6 +1,12 @@
 # Nutzungsbedingungen
 
-**Fassung 1 — Stand: 20. Juli 2026**
+**Fassung 2 — Stand: 4. August 2026**
+
+> **Neu in Fassung 2:** Klarstellung in § 4 Abs. 8 zum plattforminternen
+> Los-Guthaben (Los-Giveaway) und zur Sofortverlosung; Screenshot-Wettbewerbe
+> (§ 5: der Veranstalter prüft und verantwortet jede Einsendung, bevor er sie
+> freigibt). Bestehende Veranstalter müssen der neuen Fassung zustimmen,
+> bevor sie ein Giveaway öffnen.
 
 Diese Bedingungen gelten zwischen dem Betreiber dieser Plattform (nachfolgend
 „Betreiber", Anschrift siehe [Impressum](/admin/impressum.html)) und jeder
@@ -73,8 +79,24 @@ sofortigen Sperrung nach § 9.
    untersagt.
 7. Der Veranstalter sichert zu, dass sein Gewinnspiel nach dem an seinem Sitz
    geltenden Recht zulässig ist und keiner Erlaubnis bedarf.
+8. **Klarstellung zum plattforminternen Los-Guthaben:** Bei Giveaways mit
+   Los-Einsatz („Los-Giveaway") entsteht Guthaben **ausschließlich durch
+   Zuschauzeit und Chataktivität** auf den teilnehmenden Kanälen. Dieses
+   Guthaben ist kein Zahlungsmittel im Sinne von Absatz 2: es kann nicht
+   gekauft, nicht in Geld umgetauscht, nicht ausgezahlt und nicht auf andere
+   Personen übertragen werden, und es verfällt nach zwölf Monaten ohne
+   Bewegung. Mit der Ziehung eines Preises sind die darauf gesetzten Einsätze
+   aller Teilnehmer verbraucht. Bei Sofortverlosungen genügt die Anwesenheit
+   im Stream und die Eingabe des Keywords — eine Vorleistung ist nicht
+   erforderlich; alle Berechtigten haben dieselbe Gewinnchance.
 
 ## § 5 Weitere unzulässige Inhalte und Gewinne
+
+**Nutzergenerierte Einsendungen (z.B. Screenshot-Wettbewerbe):** Der
+Veranstalter gibt jede Einsendung vor ihrer Sichtbarkeit frei und ist für
+freigegebene Inhalte verantwortlich. Er stellt sicher, dass freigegebene
+Einsendungen keine Rechte Dritter verletzen und keinen der nachfolgend
+unzulässigen Inhalte zeigen; die Freigabe wird protokolliert.
 
 1. Unzulässig sind Gewinne, die nicht an jede teilnahmeberechtigte Person
    abgegeben werden dürfen, insbesondere Alkohol, Tabak, Waffen, Arzneimittel,

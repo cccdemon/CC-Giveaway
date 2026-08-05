@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Chaos Crew – Lose setzen</title>
+<link rel="stylesheet" href="chaos-crew-admin.css">
+<style>
+  .wg-wrap { padding:16px 18px 50px; max-width:720px; margin:0 auto; }
+  .wg-title { font-size:14px; letter-spacing:2px; color:var(--gold); margin:10px 0 6px; }
+  .wg-note { font-size:11px; color:var(--dim); line-height:1.65; margin-bottom:18px; }
+  .wg-team { border:1px solid rgba(0,212,255,.2); border-radius:10px; padding:14px 16px; margin-bottom:18px; }
+  .wg-team h2 { margin:0 0 4px; font-size:13px; letter-spacing:1.5px; color:var(--cyan); text-transform:uppercase; }
+  .wg-balance { font-size:12px; color:var(--gold); margin-bottom:12px; }
+  .wg-cmd { font-size:10.5px; color:var(--dim); margin-bottom:12px; }
+  .wg-prize { border:1px solid rgba(240,165,0,.25); border-radius:8px; padding:11px 13px; margin-bottom:10px; }
+  .wg-prize.drawn { opacity:.6; border-color:rgba(255,255,255,.12); }
+  .wg-prize h3 { margin:0 0 3px; font-size:13px; font-weight:600; color:var(--text); }
+  .wg-meta { font-size:10px; color:var(--dim); margin-bottom:8px; letter-spacing:.4px; }
+  .wg-meta .own { color:var(--gold); }
+  .wg-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .wg-row input { width:70px; }
+  .wg-msg { font-size:11px; margin-top:8px; }
+  .wg-msg.err { color:var(--red); } .wg-msg.ok { color:#22e07a; }
+  .wg-empty { font-size:12px; color:var(--dim); }
+  .wg-legal { font-size:10px; color:var(--dim); line-height:1.6; margin-top:16px;
+              border-top:1px solid rgba(255,255,255,.06); padding-top:12px; }
+</style>
+</head>
+<body>
+<script src="cc-defs.js"></script>
+<script src="giveaway-shared.js"></script>
+
+<div class="gw-app">
+  <div class="wg-wrap">
+    <div class="wg-title">LOSE SETZEN</div>
+    <div class="wg-note">
+      Beim Los-Giveaway wird deine Zuschauzeit zu Los-Guthaben. Hier siehst du
+      dein Guthaben und setzt Lose gezielt auf Preise — oder nimmst einen
+      Einsatz bis zum Einsatz-Ende wieder zurück. Nach der Ziehung eines
+      Preises sind die Einsätze aller Teilnehmer dieses Preises verbraucht.
+    </div>
+    <div id="wg-body"><span class="wg-empty">lädt …</span></div>
+    <div class="wg-legal">
+      Los-Guthaben entsteht ausschließlich aus Zuschauzeit. Es ist nicht
+      käuflich, hat keinen Barwert, ist nicht übertragbar und verfällt nach
+      12 Monaten ohne Bewegung. Gezogen wird je Preis per gewichtetem Zufall —
+      jedes Los kann gewinnen. Alle Bewegungen siehst du unter
+      <a href="/admin/meine-daten.html">Meine Daten</a>.
+    </div>
+  </div>
+</div>
+
+<script src="wager.js"></script>
+</body>
+</html>
