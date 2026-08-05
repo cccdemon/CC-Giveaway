@@ -731,6 +731,13 @@ class WatchtimeEngine {
     const t = sanitizeTeamId(teamId);
     this.validateSessionId(gid);
     if (!t) throw new Error('Invalid teamId');
+    // Los-Giveaway und Contest haben Zuschauer-Seiten, die die Instanz über
+    // das Team finden — zwei parallele Instanzen derselben Mechanik wären
+    // dort nicht unterscheidbar. Darum: maximal eine je Team.
+    if (core === 'CORE_TicketBuy' || core === 'CORE_ScreenshotContest') {
+      const dup = (await this.listGiveaways(t)).find(g => !g.primary && g.core === core);
+      if (dup) throw new Error('duplicate_core');
+    }
     await this.redis.sadd(K.gwSet(t), gid);
     await this.redis.set(K.gOpen(t, gid), 'true');
     await this.redis.del(K.gPaused(t, gid));
@@ -851,6 +858,66 @@ class WatchtimeEngine {
        FROM giveaway_prizes p WHERE p.team_id=$1` + (openOnly ? ` AND p.status='open'` : '') +
       ` ORDER BY p.id`, [t]);
     return r.rows;
+  }
+
+  // Ungezogene Preise einer Instanz — Gate fürs Schließen (erst ziehen
+  // oder stornieren, sonst stranden offene Preise ohne Core/Panel).
+  async openPrizeCount(teamId, gid) {
+    const t = sanitizeTeamId(teamId);
+    const r = await this.pg.query(
+      `SELECT COUNT(*) AS n FROM giveaway_prizes WHERE team_id=$1 AND session_id=$2 AND status='open'`, [t, gid]);
+    return parseInt(r.rows[0].n, 10) || 0;
+  }
+
+  // Preis korrigieren — nur solange er offen ist (nach Ziehung ist der
+  // Ziehungssatz der Nachweis, da wird nichts mehr angefasst).
+  async editPrize(teamId, prizeId, { title, sponsor, description, wagerEndTs } = {}) {
+    const t = sanitizeTeamId(teamId);
+    const pr = await this.pg.query(
+      `SELECT id, status FROM giveaway_prizes WHERE id=$1 AND team_id=$2`, [prizeId, t]);
+    if (!pr.rowCount) return { error: 'no_prize' };
+    if (pr.rows[0].status !== 'open') return { error: 'not_open' };
+    if (title !== undefined && title !== null && String(title).trim()) {
+      await this.pg.query(`UPDATE giveaway_prizes SET title=$1 WHERE id=$2`, [sanitizeStr(String(title), 100).trim(), prizeId]);
+    }
+    if (sponsor !== undefined && sponsor !== null) {
+      await this.pg.query(`UPDATE giveaway_prizes SET sponsor=$1 WHERE id=$2`,
+        [sanitizeStr(String(sponsor), 100).trim() || null, prizeId]);
+    }
+    if (description !== undefined && description !== null) {
+      await this.pg.query(`UPDATE giveaway_prizes SET description=$1 WHERE id=$2`,
+        [sanitizeStr(String(description), 500).trim() || null, prizeId]);
+    }
+    if (wagerEndTs !== undefined) {   // null = Einsatz-Ende entfernen
+      await this.pg.query(`UPDATE giveaway_prizes SET wager_end=$1 WHERE id=$2`,
+        [wagerEndTs ? new Date(wagerEndTs * 1000) : null, prizeId]);
+    }
+    const out = await this.pg.query(
+      `SELECT id, title, sponsor, description, wager_end, status FROM giveaway_prizes WHERE id=$1`, [prizeId]);
+    return { prize: out.rows[0] };
+  }
+
+  // Preis stornieren: alle offenen Einsätze zurückbuchen (Gegenzeile in
+  // prize_wagers + refund im Ledger — dieselben Primitiven wie die
+  // freiwillige Rücknahme), dann status='cancelled'. Kein DELETE.
+  async cancelPrize(teamId, prizeId) {
+    const t = sanitizeTeamId(teamId);
+    const pr = await this.pg.query(
+      `SELECT id, title, status FROM giveaway_prizes WHERE id=$1 AND team_id=$2`, [prizeId, t]);
+    if (!pr.rowCount) return { error: 'no_prize' };
+    if (pr.rows[0].status !== 'open') return { error: 'not_open' };
+    const stakes = await this.getPrizeStakes(t, prizeId);
+    let total = 0;
+    for (const s of stakes) {
+      await this.pg.query(`INSERT INTO prize_wagers (prize_id, team_id, username, amount) VALUES ($1,$2,$3,$4)`,
+        [prizeId, t, s.username, -s.stake]);
+      await this.credit.book(t, s.username, 'refund', s.stake, { refPrize: prizeId });
+      total += s.stake;
+    }
+    await this.pg.query(`UPDATE giveaway_prizes SET status='cancelled' WHERE id=$1`, [prizeId]);
+    console.log(`[WTE] [${t}] prize ${prizeId} cancelled: ${stakes.length} Einsätze (+${total.toFixed(2)}) zurückgebucht`);
+    return { title: pr.rows[0].title, refundedUsers: stakes.length,
+             refundedTotal: Math.round(total * 10000) / 10000 };
   }
 
   async prizeStake(prizeId, username) {

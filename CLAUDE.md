@@ -43,7 +43,11 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
   afterDraw bindet Einsätze aller Setzer in der Ziehungs-TX. Setz-Befehl je
   Instanz konfigurierbar (`gWagerCmd`, Default `!setzen`); Web-Seite
   `/giveaway/wager.html`. Instanz-Close bucht `earn` und räumt ab
-  („Guthaben wandert"). Verfall nach 12 Monaten Inaktivität (`runRetention`).
+  („Guthaben wandert") — **blockiert, solange ungezogene Preise offen sind**
+  (`openPrizeCount`, erst ziehen oder stornieren; Sammeln stoppen = Pause).
+  Preise korrigierbar (`editPrize`, nur offene) und stornierbar
+  (`cancelPrize` = Gegenzeilen in `prize_wagers` + `refund` im Ledger, dann
+  `status='cancelled'`). Verfall nach 12 Monaten Inaktivität (`runRetention`).
 - `CORE_ScreenshotContest` — Community-Wettbewerb: Einsendungen (nur Follow +
   Mindest-Viewtime, 1/Person, `BYTEA` in PG, **Freigabe-Pflicht** durch den
   Owner), Voting 1–10 (`UNIQUE(entry, voter)`, Re-Vote überschreibt, eigene
@@ -56,7 +60,9 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
 - **Parallelbetrieb:** Accrual-Zustand je Giveaway unter `t:<team>:g:<sid>:*`
   (Lazy-Migration vom Legacy-Bestand, nur fürs Primary). Sekundär-Instanzen via
   `openGiveawayInstance` (eigenes Keyword/Kanalliste/Pause/Multiplier, strikt
-  ohne Legacy-Fallback). Obergrenze `MAX_PARALLEL_GIVEAWAYS` (ENV, Default 4).
+  ohne Legacy-Fallback). Obergrenze `MAX_PARALLEL_GIVEAWAYS` (ENV, Default 4);
+  **max. 1 TicketBuy- und 1 Contest-Instanz je Team** (Engine wirft
+  `duplicate_core` — Zuschauer-Seiten finden ihre Instanz übers Team).
   Team-weit bleiben: Presence/LastTick, Follows, Bans, Index, Keyword, cfg:*.
   **Neu-Öffnen ohne Reset startet bei null** (beabsichtigt, im Changelog).
 - **Gewinn ist Pflichtangabe je Giveaway** (`sessions.prize`, Server-Gate in
@@ -135,7 +141,7 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 `gw_open`(+keyword) · `gw_close` · `gw_draw_winner`(+`giveawayId`,+`prizeId` bei TicketBuy) · `gw_set_keyword` · `gw_get_keyword` · `gw_add_ticket`(user,amount) · `gw_sub_ticket` · `gw_ban`/`gw_unban` · `gw_reset`
 `gw_pause`/`gw_resume`/`gw_set_multiplier` (optional `giveawayId` → wirkt auf die Instanz)
 `gw_open_instance`(keyword, channels, core, windowSec, wagerCmd, announce) · `gw_close_instance` · `gw_list_giveaways` · `gw_set_announce`(giveawayId, on — CV-Chat-Ansagen stumm/laut, Gewinner-Ansage bleibt immer)
-`gw_add_prize`(giveawayId, title, wagerEndMinutes) · `gw_list_prizes` · `gw_set_wager_cmd`(giveawayId, command)
+`gw_add_prize`(giveawayId, title, wagerEndMinutes) · `gw_list_prizes` · `gw_set_wager_cmd`(giveawayId, command) · `gw_edit_prize`(prizeId, title/sponsor/description/wagerEndMinutes — nur offene) · `gw_cancel_prize`(prizeId — storniert + bucht alle Einsätze zurück)
 `gw_contest_voting`(giveawayId, action: open/pause/resume/close) · `gw_review_entry`(entryId, approve/reject) · `gw_list_entries`(giveawayId)
 
 ## Data

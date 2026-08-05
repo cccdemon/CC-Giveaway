@@ -850,6 +850,17 @@ async function runAdminCmd(send, msg, meta, ctx) {
         minWatchSec = Math.max(mc.min, Math.min(mc.max,
           Number.isFinite(parseInt(msg.minWatchSec, 10)) ? parseInt(msg.minWatchSec, 10) : mc.def));
       }
+      // Zuschauer-Seiten (Setzen/Contest) finden ihre Instanz über das Team —
+      // zwei parallele derselben Mechanik wären dort nicht unterscheidbar.
+      if (coreId === 'CORE_TicketBuy' || coreId === 'CORE_ScreenshotContest') {
+        const dup = (await wte.listGiveaways(teamId)).find(g => !g.primary && g.core === coreId);
+        if (dup) {
+          Object.assign(outcome, { blocked: 'duplicate_core', existing: dup.gid });
+          send({ event: 'gw_ack', type: 'open_blocked',
+                 error: `Es läuft bereits ${coreId === 'CORE_TicketBuy' ? 'ein Los-Giveaway' : 'ein Screenshot-Contest'} in diesem Team — erst schließen, dann neu starten.` });
+          break;
+        }
+      }
       const teamChans = await wte.getChannels(teamId);
       const wanted = Array.isArray(msg.channels) ? msg.channels.map(sanitizeChannel).filter(Boolean) : [];
       const channels = wanted.filter(ch => teamChans.includes(ch));   // nur eigene Kanäle
@@ -891,6 +902,19 @@ async function runAdminCmd(send, msg, meta, ctx) {
         Object.assign(outcome, { error: 'unknown_instance', giveawayId: msg.giveawayId || null });
         send({ event: 'gw_ack', type: 'error', error: 'Unbekannte Giveaway-Instanz.' });
         break;
+      }
+      // Los-Giveaway: Schließen räumt die Instanz vollständig ab — mit noch
+      // ungezogenen Preisen wären die danach unbedienbar (kein Core, keine
+      // Karten). Darum erst alle Preise ziehen oder stornieren; Sammeln
+      // stoppen geht jederzeit mit PAUSE.
+      if (known.core === 'CORE_TicketBuy') {
+        const openPrizes = await wte.openPrizeCount(teamId, gid);
+        if (openPrizes > 0) {
+          Object.assign(outcome, { blocked: 'open_prizes', openPrizes });
+          send({ event: 'gw_ack', type: 'error',
+                 error: `Noch ${openPrizes} ungezogene${openPrizes === 1 ? 'r Preis' : ' Preise'} — erst ziehen (★) oder stornieren (✖). Sammeln stoppen: PAUSE.` });
+          break;
+        }
       }
       await wte.closeGiveawayInstance(teamId, gid);
       await setSessionStatusById(gid, 'closed');
@@ -950,6 +974,57 @@ async function runAdminCmd(send, msg, meta, ctx) {
     }
     case 'gw_list_prizes': {
       send({ event: 'gw_ack', type: 'prizes', prizes: await wte.listPrizes(teamId, { openOnly: !!msg.openOnly }) });
+      break;
+    }
+    // Preis korrigieren (Titel/Sponsor/Beschreibung/Einsatz-Ende) — nur offene.
+    case 'gw_edit_prize': {
+      const prizeId = parseInt(msg.prizeId, 10);
+      if (!Number.isFinite(prizeId) || prizeId <= 0) {
+        Object.assign(outcome, { error: 'bad_request' });
+        send({ event: 'gw_ack', type: 'error', error: 'Preis-ID fehlt.' });
+        break;
+      }
+      const fields = {};
+      if (msg.title !== undefined)       fields.title       = msg.title;
+      if (msg.sponsor !== undefined)     fields.sponsor     = msg.sponsor;
+      if (msg.description !== undefined) fields.description = msg.description;
+      if (msg.wagerEndMinutes !== undefined) {
+        const endMin = Math.max(0, parseInt(msg.wagerEndMinutes, 10) || 0);
+        fields.wagerEndTs = endMin ? Math.floor(Date.now() / 1000) + endMin * 60 : null;
+      }
+      const r = await wte.editPrize(teamId, prizeId, fields);
+      if (r.error) {
+        Object.assign(outcome, { error: r.error, prizeId });
+        send({ event: 'gw_ack', type: 'error',
+               error: r.error === 'not_open' ? 'Dieser Preis ist schon gezogen oder storniert.' : 'Diesen Preis gibt es nicht.' });
+        break;
+      }
+      Object.assign(outcome, { prizeId, fields: Object.keys(fields) });
+      send({ event: 'gw_ack', type: 'prize_edited', prizeId });
+      break;
+    }
+    // Preis stornieren: alle Einsätze zurückbuchen, status='cancelled'.
+    case 'gw_cancel_prize': {
+      const prizeId = parseInt(msg.prizeId, 10);
+      if (!Number.isFinite(prizeId) || prizeId <= 0) {
+        Object.assign(outcome, { error: 'bad_request' });
+        send({ event: 'gw_ack', type: 'error', error: 'Preis-ID fehlt.' });
+        break;
+      }
+      const r = await wte.cancelPrize(teamId, prizeId);
+      if (r.error) {
+        Object.assign(outcome, { error: r.error, prizeId });
+        send({ event: 'gw_ack', type: 'error',
+               error: r.error === 'not_open' ? 'Dieser Preis ist schon gezogen oder storniert.' : 'Diesen Preis gibt es nicht.' });
+        break;
+      }
+      Object.assign(outcome, { prizeId, title: r.title, refundedUsers: r.refundedUsers, refundedTotal: r.refundedTotal });
+      const cGid = validGid(msg.giveawayId);
+      const cInst = cGid ? (await wte.listGiveaways(teamId)).find(g => g.gid === cGid) : null;
+      await announceChannels(teamId, cInst ? cInst.channels : null,
+        `🎁 Preis #${prizeId} „${r.title}" wurde storniert` +
+        (r.refundedUsers ? ` — alle Einsätze (${r.refundedUsers} Teilnehmer) sind zurückgebucht.` : '.'));
+      send({ event: 'gw_ack', type: 'prize_cancelled', prizeId, refundedUsers: r.refundedUsers });
       break;
     }
     case 'gw_set_wager_cmd': {

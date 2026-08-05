@@ -30,6 +30,9 @@
   .sc-entry .st-approved { color:#22e07a; }
   .sc-entry .st-rejected { color:rgba(200,220,232,.4); text-decoration:line-through; }
   #cv-open-btn[disabled] { opacity:.35; cursor:not-allowed; filter:grayscale(1); }
+  /* Zustandsmaschine: ungültige Hauptaktionen sind sichtbar, aber gesperrt */
+  .actionstrip .btn[disabled] { opacity:.35; cursor:not-allowed; filter:grayscale(1); }
+  .tb-prize .btn-mini { padding:2px 6px; font-size:11px; line-height:1; }
 
   /* ── Instanz-Assistent (ersetzt die prompt()-Kette) ────── */
   .iw-overlay { position:fixed; inset:0; z-index:900; display:flex; align-items:center;
@@ -107,10 +110,10 @@
     <button class="btn btn-gold vis-campaign-only" id="btn-verify" onclick="verifyFollows()">FOLLOWS PRÜFEN</button>
     <button class="btn btn-solid" id="btn-draw" onclick="drawWinner()">★ GEWINNER ZIEHEN</button>
     <span class="as-spacer"></span>
-    <button class="btn btn-green vis-campaign-only" onclick="gwOpen()">ÖFFNEN</button>
-    <button class="btn btn-gold"  onclick="gwPause()">PAUSE</button>
-    <button class="btn btn-cyan"  onclick="gwResume()">FORTSETZEN</button>
-    <button class="btn btn-red" onclick="gwCloseSmart()">SCHLIESSEN</button>
+    <button class="btn btn-green vis-campaign-only" id="btn-open" onclick="gwOpen()">ÖFFNEN</button>
+    <button class="btn btn-gold" id="btn-pause"  onclick="gwPause()">PAUSE</button>
+    <button class="btn btn-cyan" id="btn-resume" onclick="gwResume()">FORTSETZEN</button>
+    <button class="btn btn-red"  id="btn-close" onclick="gwCloseSmart()">SCHLIESSEN</button>
   </div>
 
   <!-- ── Zwei-Spalten ─────────────────────────────────── -->
@@ -188,7 +191,7 @@
           <button class="btn btn-cyan btn-sm" onclick="tbSetWagerCmd()">SETZEN</button>
         </div>
         <div class="cfg-hint">Zuschauer setzen mit „&lt;Befehl&gt; &lt;Preis-Nr&gt; &lt;Anzahl&gt;" — Anzahl 0 = Rücknahme.</div>
-        <div class="card-sub mt-8">NEUER PREIS</div>
+        <div class="card-sub mt-8" id="tb-prize-form-title">NEUER PREIS</div>
         <div class="input-row">
           <input type="text" id="tb-prize-title" placeholder="Titel (z.B. Headset)" maxlength="100">
         </div>
@@ -198,7 +201,8 @@
         <div class="input-row mt-6">
           <input type="number" id="tb-prize-end" min="0" max="20160" step="15" value="0" class="in-narrow" title="Einsatz-Ende in Minuten (0 = offen bis zur Ziehung)">
           <span class="mr-lbl">min Einsatz-Ende (0 = offen)</span>
-          <button class="btn btn-gold btn-sm" onclick="tbAddPrize()">ANLEGEN</button>
+          <button class="btn btn-gold btn-sm" id="tb-prize-save" onclick="tbAddPrize()">ANLEGEN</button>
+          <button class="btn btn-sm" id="tb-prize-cancel-edit" style="display:none" onclick="tbCancelEdit()">ABBRUCH</button>
         </div>
         <div class="card-sub mt-8">OFFENE PREISE <span class="link-cyan" onclick="tbLoadPrizes()">↻</span></div>
         <div id="tb-prizes"><div class="wsc-empty">Lade…</div></div>

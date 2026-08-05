@@ -156,6 +156,7 @@ function updateTicketBuyButtons() {
   // Typ-Karten in der Rail mit Daten füllen
   if (core === 'CORE_TicketBuy') tbLoadPrizes();
   if (core === 'CORE_ScreenshotContest') scLoadEntries();
+  updateActionButtons();
 }
 
 // SCHLIESSEN wirkt auf die Auswahl: Kampagne oder gewählte Zusatz-Instanz.
@@ -171,19 +172,61 @@ function tbSetWagerCmd() {
   send({ event: 'gw_cmd', cmd: 'gw_set_wager_cmd', giveawayId: currentGiveaway, command: cmd });
 }
 
+// Formular dient Anlegen UND Korrigieren (kein prompt() — Panel-Konvention).
+var tbEditPrizeId = null;
+var tbPrizes = [];
+
 function tbAddPrize() {
   var title = document.getElementById('tb-prize-title').value.trim();
   if (!title) { log('Preis braucht einen Titel', 'red'); return; }
   var mins = CC.validate.sanitizeInt(document.getElementById('tb-prize-end').value, 0, 20160, 0);
-  send({ event: 'gw_cmd', cmd: 'gw_add_prize', giveawayId: currentGiveaway, title: title, wagerEndMinutes: mins,
-         sponsor: (document.getElementById('tb-prize-sponsor') || {}).value || '' });
+  var sponsor = (document.getElementById('tb-prize-sponsor') || {}).value || '';
+  if (tbEditPrizeId) {
+    send({ event: 'gw_cmd', cmd: 'gw_edit_prize', giveawayId: currentGiveaway, prizeId: tbEditPrizeId,
+           title: title, sponsor: sponsor, wagerEndMinutes: mins });
+  } else {
+    send({ event: 'gw_cmd', cmd: 'gw_add_prize', giveawayId: currentGiveaway, title: title, wagerEndMinutes: mins,
+           sponsor: sponsor });
+  }
+  tbCancelEdit();
+}
+
+function tbEditPrize(prizeId) {
+  var p = tbPrizes.find(function(x){ return x.id === prizeId; });
+  if (!p) return;
+  tbEditPrizeId = prizeId;
+  document.getElementById('tb-prize-title').value = p.title || '';
+  var sp = document.getElementById('tb-prize-sponsor'); if (sp) sp.value = p.sponsor || '';
+  // Einsatz-Ende: Restminuten vorbelegen (0 = offen lassen / entfernen).
+  var endEl = document.getElementById('tb-prize-end');
+  if (endEl) endEl.value = p.wager_end
+    ? Math.max(0, Math.round((new Date(p.wager_end).getTime() - Date.now()) / 60000)) : 0;
+  document.getElementById('tb-prize-form-title').textContent = 'PREIS #' + prizeId + ' KORRIGIEREN';
+  document.getElementById('tb-prize-save').textContent = 'SPEICHERN';
+  document.getElementById('tb-prize-cancel-edit').style.display = '';
+  document.getElementById('tb-prize-title').focus();
+}
+
+function tbCancelEdit() {
+  tbEditPrizeId = null;
   document.getElementById('tb-prize-title').value = '';
   var sp = document.getElementById('tb-prize-sponsor'); if (sp) sp.value = '';
+  var endEl = document.getElementById('tb-prize-end'); if (endEl) endEl.value = 0;
+  document.getElementById('tb-prize-form-title').textContent = 'NEUER PREIS';
+  document.getElementById('tb-prize-save').textContent = 'ANLEGEN';
+  document.getElementById('tb-prize-cancel-edit').style.display = 'none';
+}
+
+function tbCancelPrize(prizeId) {
+  if (!confirm('Preis #' + prizeId + ' stornieren? Alle gesetzten Lose werden den Teilnehmern zurückgebucht.')) return;
+  send({ event: 'gw_cmd', cmd: 'gw_cancel_prize', giveawayId: currentGiveaway, prizeId: prizeId });
 }
 
 function tbLoadPrizes() { send({ event: 'gw_cmd', cmd: 'gw_list_prizes' }); }
 
+var TB_STATUS_LABEL = { drawn: 'gezogen', cancelled: 'storniert' };
 function renderPrizes(prizes) {
+  tbPrizes = prizes || [];
   var host = document.getElementById('tb-prizes');
   if (!host) return;
   if (!prizes || !prizes.length) { host.innerHTML = '<div class="wsc-empty">Noch keine Preise.</div>'; return; }
@@ -192,8 +235,10 @@ function renderPrizes(prizes) {
       + p.id + ' ' + esc(p.title) + (p.sponsor ? ' <span style="opacity:.55">· ' + esc(p.sponsor) + '</span>' : '') + '</span>'
       + '<span class="s">' + Number(p.total_stake).toFixed(0) + ' 🎟</span>'
       + (p.status === 'open'
-          ? '<button class="btn btn-solid btn-sm" onclick="tbDrawPrize(' + p.id + ')">★ ZIEHEN</button>'
-          : '<span class="cfg-hint">gezogen</span>')
+          ? '<button class="btn btn-cyan btn-sm btn-mini" onclick="tbEditPrize(' + p.id + ')" title="Titel/Sponsor/Einsatz-Ende korrigieren">✎</button>'
+            + '<button class="btn btn-red btn-sm btn-mini" onclick="tbCancelPrize(' + p.id + ')" title="Stornieren — Einsätze werden zurückgebucht">✖</button>'
+            + '<button class="btn btn-solid btn-sm" onclick="tbDrawPrize(' + p.id + ')">★ ZIEHEN</button>'
+          : '<span class="cfg-hint">' + (TB_STATUS_LABEL[p.status] || esc(p.status)) + '</span>')
       + '</div>';
   }).join('');
 }
@@ -532,7 +577,9 @@ function handle(msg) {
       if (msg.type === 'instance_opened') log('Zusatz-Giveaway gestartet: ' + (msg.giveawayId || '?')
             + (msg.keyword ? ' (Keyword „' + msg.keyword + '")' : '')
             + (msg.wagerCmd ? ' (Setzen: „' + msg.wagerCmd + '")' : ''), 'gold');
-      if (msg.type === 'prize_added')   log('Preis #' + msg.prizeId + ' angelegt: „' + (msg.title || '') + '"', 'gold');
+      if (msg.type === 'prize_added')   { log('Preis #' + msg.prizeId + ' angelegt: „' + (msg.title || '') + '"', 'gold'); tbLoadPrizes(); }
+      if (msg.type === 'prize_edited')  { log('Preis #' + msg.prizeId + ' korrigiert', 'gold'); tbLoadPrizes(); }
+      if (msg.type === 'prize_cancelled') { log('Preis #' + msg.prizeId + ' storniert — ' + (msg.refundedUsers || 0) + ' Einsätze zurückgebucht', 'gold'); tbLoadPrizes(); }
       if (msg.type === 'wager_cmd_set') log('Setz-Befehl geändert: „' + (msg.command || '') + '"', 'gold');
       if (msg.type === 'contest_voting') log('Contest-Voting: ' + (msg.voting || '?'), 'gold');
       if (msg.type === 'entry_reviewed') log('Einsendung #' + msg.entryId + ' → ' + (msg.decision === 'approve' ? 'FREIGEGEBEN' : 'abgelehnt'), 'gold');
@@ -702,20 +749,41 @@ function gwOpen()   { if (currentGiveaway) { log('Instanz gewählt — Kampagne 
                       var oPrize = (document.getElementById('prize-input') || {}).value || '';
                       if (!oPrize.trim()) { log('Bitte zuerst den Gewinn eintragen (Feld links)', 'red');
                                             var pi = document.getElementById('prize-input'); if (pi) pi.focus(); return; }
+                      // Kein optimistisches Setzen: der Server bestätigt per
+                      // gw_status/gw_data — sonst zeigt das Panel bei Ablehnung
+                      // (fehlende TOS, fehlender Gewinn) einen falschen Zustand.
                       send({ event:'gw_cmd', cmd:'gw_open', prize: oPrize.trim(),
                              sponsor: ((document.getElementById('sponsor-input') || {}).value || '').trim() });
-                      gwIsOpen=true; gwPaused=false; updateGwStatus(); log('Giveaway geoeffnet','cyan'); }
+                      liveRefresh(); }
 function gwClose()  { if (currentGiveaway) { log('Instanz gewählt — zum Schließen der Instanz ✕ benutzen', 'red'); return; }
-                      send({ event:'gw_cmd', cmd:'gw_close'  }); gwIsOpen=false; gwPaused=false; updateGwStatus(); log('Giveaway geschlossen','gold'); }
+                      send({ event:'gw_cmd', cmd:'gw_close'  }); liveRefresh(); }
 // PAUSE/RESUME tragen die giveawayId (GID_CMDS) und wirken auf die Auswahl.
-function gwPause()  { send({ event:'gw_cmd', cmd:'gw_pause'  }); gwPaused=true;  updateGwStatus(); log('Giveaway pausiert','gold'); }
-function gwResume() { send({ event:'gw_cmd', cmd:'gw_resume' }); gwPaused=false; gwIsOpen=true; updateGwStatus(); log('Giveaway fortgesetzt','cyan'); }
+function gwPause()  { send({ event:'gw_cmd', cmd:'gw_pause'  }); liveRefresh(); }
+function gwResume() { send({ event:'gw_cmd', cmd:'gw_resume' }); liveRefresh(); }
 
 function updateGwStatus() {
   const el = document.getElementById('gw-txt');
   if (!gwIsOpen)      { el.textContent='CLOSED';   el.className='state-chip closed'; }
   else if (gwPaused)  { el.textContent='PAUSIERT'; el.className='state-chip paused'; }
   else                { el.textContent='OPEN';     el.className='state-chip open'; }
+  updateActionButtons();
+}
+
+// Zustandsmaschine der Hauptaktionen: nur gültige Übergänge sind klickbar.
+// Kampagne: Zustand aus gwIsOpen/gwPaused; Instanz: aus giveawayList
+// (gelistete Instanzen sind offen, paused steht am Eintrag).
+function updateActionButtons() {
+  var open = gwIsOpen, paused = gwPaused;
+  if (currentGiveaway) {
+    var g = giveawayList.find(function(x){ return x.gid === currentGiveaway && !x.primary; });
+    open = !!g; paused = !!(g && g.paused);
+  }
+  var set = function(id, enabled) { var b = document.getElementById(id); if (b) b.disabled = !enabled; };
+  set('btn-open',   !currentGiveaway && !open);
+  set('btn-pause',  open && !paused);
+  set('btn-resume', open && paused);
+  set('btn-close',  open);
+  set('btn-draw',   open);
 }
 
 function drawWinner() {

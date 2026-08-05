@@ -5,6 +5,29 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ---
 
+## 6. August 2026
+
+### Los-Giveaway: sicherer Lebenszyklus und volle Preisverwaltung
+
+Ein Los-Giveaway lässt sich **nicht mehr schließen, solange ungezogene Preise
+offen sind** — vorher konnten offene Preise nach dem Schließen weder gezogen
+noch entfernt werden. Sammeln stoppen geht jederzeit mit PAUSE; danach in
+Ruhe je Preis ziehen (★), dann schließen. Preise können jetzt außerdem
+**korrigiert** (Titel, Sponsor, Einsatz-Ende — ✎) und **storniert** werden
+(✖): beim Stornieren bekommen alle Teilnehmer ihre gesetzten Lose
+automatisch zurückgebucht, und der Chat wird informiert.
+
+### Eine Instanz je Mechanik — und ehrliche Knöpfe
+
+Je Team läuft ab jetzt **maximal ein Los-Giveaway und ein
+Screenshot-Contest gleichzeitig** — die Zuschauer-Seiten (Lose setzen,
+Contest) könnten zwei parallele Instanzen derselben Art nicht
+unterscheiden. Sofortverlosungen dürfen weiterhin mehrfach parallel laufen.
+Im Dashboard sind ÖFFNEN/PAUSE/FORTSETZEN/SCHLIESSEN nur noch klickbar,
+wenn die Aktion im aktuellen Zustand gültig ist, und der angezeigte Status
+wechselt erst nach Bestätigung des Servers — kein kurzzeitig falscher
+Status mehr, wenn der Server ablehnt.
+
 ## 5. August 2026
 
 ### Sofortverlosung: Chat-Ansagen abschaltbar

@@ -49,9 +49,27 @@ function makePg(channels) {
       prizes.push(row);
       return { rows: [{ id: row.id }], rowCount: 1 };
     }
-    if (/SELECT id, title, status, wager_end FROM giveaway_prizes/.test(sql)) {
+    if (/SELECT id, title, status, wager_end FROM giveaway_prizes/.test(sql)
+        || /SELECT id, title, status FROM giveaway_prizes/.test(sql)
+        || /SELECT id, status FROM giveaway_prizes/.test(sql)) {
       const r = prizes.filter(x => x.id === p[0] && x.team_id === p[1]);
       return { rows: r, rowCount: r.length };
+    }
+    if (/SELECT id, title, sponsor, description, wager_end, status FROM giveaway_prizes/.test(sql)) {
+      const r = prizes.filter(x => x.id === p[0]);
+      return { rows: r, rowCount: r.length };
+    }
+    if (/COUNT\(\*\) AS n FROM giveaway_prizes/.test(sql)) {
+      return { rows: [{ n: prizes.filter(x => x.team_id === p[0] && x.session_id === p[1] && x.status === 'open').length }] };
+    }
+    if (/UPDATE giveaway_prizes SET status='cancelled'/.test(sql)) {
+      const pr = prizes.find(x => x.id === p[0]); if (pr) pr.status = 'cancelled';
+      return { rowCount: pr ? 1 : 0, rows: [] };
+    }
+    if (/UPDATE giveaway_prizes SET (title|sponsor|description|wager_end)=\$1/.test(sql)) {
+      const field = sql.match(/SET (\w+)=\$1/)[1];
+      const pr = prizes.find(x => x.id === p[1]); if (pr) pr[field] = p[0];
+      return { rowCount: pr ? 1 : 0, rows: [] };
     }
     if (/FROM giveaway_prizes p WHERE/.test(sql)) {
       return { rows: prizes.filter(x => x.team_id === p[0] && (!/status='open'/.test(sql) || x.status === 'open'))
@@ -918,6 +936,61 @@ test('phase3b: Keyword zaehlt nur im offenen Anmeldefenster, Fenster mehrfach oe
   // Ziehung bleibt manuell moeglich
   const r = await e.drawWinner(TEAM, 'sess_2', {});
   assert.ok(['bob', 'carol'].includes(r.winner));
+});
+
+test('lifecycle: max. eine TicketBuy-/Contest-Instanz je Team, CV mehrfach ok', async () => {
+  const e = engine();
+  await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy' });
+  await assert.rejects(() => e.openGiveawayInstance(TEAM, 'sess_3', { core: 'CORE_TicketBuy' }),
+    /duplicate_core/);
+  await e.openGiveawayInstance(TEAM, 'sess_4', { core: 'CORE_ScreenshotContest' });
+  await assert.rejects(() => e.openGiveawayInstance(TEAM, 'sess_5', { core: 'CORE_ScreenshotContest' }),
+    /duplicate_core/);
+  // Sofortverlosungen haben keine Zuschauer-Seite → mehrfach erlaubt
+  await e.openGiveawayInstance(TEAM, 'sess_6', { keyword: 'a', core: 'CORE_CurrentViewers' });
+  await e.openGiveawayInstance(TEAM, 'sess_7', { keyword: 'b', core: 'CORE_CurrentViewers' });
+});
+
+test('lifecycle: openPrizeCount zaehlt nur offene Preise der Instanz', async () => {
+  const e = engine();
+  await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy' });
+  const p1 = await e.addPrize(TEAM, 'sess_2', { title: 'Headset' });
+  await e.addPrize(TEAM, 'sess_2', { title: 'Maus' });
+  assert.equal(await e.openPrizeCount(TEAM, 'sess_2'), 2);
+  await e.cancelPrize(TEAM, p1);
+  assert.equal(await e.openPrizeCount(TEAM, 'sess_2'), 1);
+});
+
+test('prize: editPrize aendert nur offene Preise', async () => {
+  const e = engine();
+  const p1 = await e.addPrize(TEAM, null, { title: 'Headset' });
+  let r = await e.editPrize(TEAM, p1, { title: 'Headset Pro', sponsor: 'XY' });
+  assert.equal(r.prize.title, 'Headset Pro');
+  assert.equal(r.prize.sponsor, 'XY');
+  await e.pg.query(`UPDATE giveaway_prizes SET status='cancelled' WHERE id=$1`, [p1]);
+  r = await e.editPrize(TEAM, p1, { title: 'zu spaet' });
+  assert.equal(r.error, 'not_open');
+  r = await e.editPrize(TEAM, 999, { title: 'x' });
+  assert.equal(r.error, 'no_prize');
+});
+
+test('prize: cancelPrize bucht alle Einsaetze zurueck, danach kein Setzen mehr', async () => {
+  const e = engine();
+  await e.credit.book(TEAM, 'bob', 'earn', 5);
+  await e.credit.book(TEAM, 'alice', 'earn', 5);
+  const p1 = await e.addPrize(TEAM, null, { title: 'Headset' });
+  await e.placeWager(TEAM, null, 'bob', p1, 3);
+  await e.placeWager(TEAM, null, 'alice', p1, 2);
+  const r = await e.cancelPrize(TEAM, p1);
+  assert.equal(r.refundedUsers, 2);
+  assert.equal(r.refundedTotal, 5);
+  assert.equal(await e.credit.balance(TEAM, 'bob'), 5);      // alles zurück
+  assert.equal(await e.credit.balance(TEAM, 'alice'), 5);
+  assert.equal((await e.getPrizeStakes(TEAM, p1)).length, 0); // keine offenen Einsätze
+  const late = await e.placeWager(TEAM, null, 'bob', p1, 1);
+  assert.equal(late.error, 'no_prize');                       // storniert = nicht mehr setzbar
+  const again = await e.cancelPrize(TEAM, p1);
+  assert.equal(again.error, 'not_open');                      // kein Doppel-Storno
 });
 
 test('phase3c: Chat-Ansagen der Sofortverlosung sind schaltbar (announce-Flag)', async () => {
