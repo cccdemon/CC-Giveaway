@@ -5,6 +5,25 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ---
 
+## 5. August 2026
+
+### Neu: Screenshot-Contest
+
+Vierter Giveaway-Typ: die Community sendet Screenshots ein und bewertet sie —
+**1 (schlecht) bis 10 (SUPER!)**. Die höchste Punktsumme gewinnt; bei
+Gleichstand entscheidet das Los. Einsenden und Bewerten können nur echte
+Zuschauer (Follow + Mindest-Zuschauzeit — das hält auch Vote-Bots draußen),
+je Person zählt **eine Einsendung** und **eine Stimme pro Bild** (erneutes
+Bewerten ändert die eigene Wertung, das eigene Bild ist tabu). Jede
+Einsendung wird vor der Sichtbarkeit vom Streamer geprüft und freigegeben.
+
+Der Streamer steuert das Voting ausdrücklich: **öffnen, pausieren,
+fortsetzen, schließen** — jede Änderung wird im Chat angesagt. Wer seinen
+Screenshot ersetzt, verliert die dafür schon abgegebenen Stimmen und wird
+vorher deutlich gewarnt.
+
+---
+
 ## 4. August 2026
 
 ### Neu: Los-Giveaway — Zuschauzeit wird Guthaben, Einsatz auf Preise

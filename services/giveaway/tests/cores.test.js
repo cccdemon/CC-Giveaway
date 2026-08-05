@@ -209,6 +209,7 @@ test('Phase 2a: Registry löst Core-IDs auf, Fallback = heutiger Core', () => {
     { id: 'CORE_WatchtimeChatActivity', label: 'Zuschauzeit & Chat' },
     { id: 'CORE_CurrentViewers',        label: 'Sofortverlosung' },
     { id: 'CORE_TicketBuy',             label: 'Los-Einsatz' },
+    { id: 'CORE_ScreenshotContest',     label: 'Screenshot-Contest' },
   ]);
 });
 

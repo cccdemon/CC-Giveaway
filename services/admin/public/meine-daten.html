@@ -92,7 +92,9 @@ var LABELS = {
   result:'Ergebnis', winner:'Gewinner', winner_coins:'Coins', drawn_at:'Gezogen am',
   is_test:'Testziehung', version:'Fassung', accepted_at:'Zugestimmt am',
   entry_type:'Vorgang', amount:'Betrag (Lose)', ref_session:'Giveaway',
-  ref_prize:'Preis-Nr.', created_at:'Zeitpunkt'
+  ref_prize:'Preis-Nr.', created_at:'Zeitpunkt', prize_id:'Preis-Nr.',
+  title:'Titel', mime:'Dateityp', status:'Status', image_bytes:'Bildgröße (Bytes)',
+  entry_id:'Einsendung-Nr.', score:'Wertung'
 };
 
 function tableOf(rows) {
@@ -154,6 +156,10 @@ function render(d) {
             'Erspielte Lose und Einsätze (nur bei Los-Giveaways). Guthaben verfällt nach 12 Monaten ohne Bewegung.')
       + sec('Einsätze auf Preise', d.prizeWagers,
             'Gesetzte und zurückgenommene Lose je Preis (negative Beträge = Rücknahme).')
+      + sec('Contest-Einsendungen', d.contestEntries,
+            'Deine eingesendeten Screenshots (Metadaten; das Bild selbst siehst du auf der Contest-Seite). Bei einer Löschung werden Einsendungen samt Bild entfernt.')
+      + sec('Contest-Wertungen', d.contestVotes,
+            'Deine abgegebenen Bewertungen. Bei einer Löschung wird dein Name darin pseudonymisiert, die Wertung bleibt als Teil des Ergebnisses.')
       + sec('Zustimmung zu den Nutzungsbedingungen', d.tosAcceptances)
       + sec('Protokolleinträge zu dir', d.auditEntries,
             'Verwaltungshandlungen, bei denen du das Ziel warst — etwa eine manuelle Coin-Gutschrift.')

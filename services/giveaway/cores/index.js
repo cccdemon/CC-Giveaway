@@ -6,11 +6,13 @@
 const watchtimeChat = require('./watchtime-chat.js');
 const currentViewers = require('./current-viewers.js');
 const ticketBuy = require('./ticket-buy.js');
+const screenshotContest = require('./screenshot-contest.js');
 
 const CORES = Object.freeze({
   [watchtimeChat.id]: watchtimeChat,
   [currentViewers.id]: currentViewers,
   [ticketBuy.id]: ticketBuy,
+  [screenshotContest.id]: screenshotContest,
 });
 
 const DEFAULT_CORE_ID = watchtimeChat.id;

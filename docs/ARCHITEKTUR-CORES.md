@@ -302,6 +302,49 @@ ziehen.
 
 ---
 
+### 5.4 CORE_ScreenshotContest
+
+Wettbewerb statt Verlosung: die Community sendet Screenshots ein und bewertet
+sie; die höchste **Punktsumme** gewinnt (Entscheidung §10.5).
+
+- **Einsenden** darf nur, wer nachweislich Zuschauer des ausrichtenden Kanals
+  ist: bestätigter **Follow** UND **Mindest-Zuschauzeit** (konfigurierbar,
+  gemessen am Kampagnen-Viewtime-Stand des Teams). **Eine Einsendung pro
+  Person**; erneutes Einsenden ersetzt die eigene (bis zum Einsende-Ende) und
+  setzt den Status zurück.
+- **Freigabe-Pflicht:** jede Einsendung ist `pending`, bis der Veranstalter sie
+  freigibt (`approved`) oder ablehnt (`rejected`) — nichts wird ungeprüft
+  sichtbar (Inhalte-/Rechteverantwortung des Veranstalters, auditiert).
+- **Voten** darf nur, wer per Twitch eingeloggt ist UND die konfigurierbare
+  Mindest-Zuschauzeit erreicht (Anti-Votebot: Wegwerf-Accounts haben keine
+  Viewtime). Skala **1–10**, **genau eine Stimme je (Voter, Screenshot)** —
+  per `UNIQUE`-Constraint erzwungen; erneutes Voten **überschreibt** die eigene
+  Stimme statt sie zu addieren. Damit gilt strukturell: n angemeldete Voter →
+  maximal n Votes je Screenshot. Dazu Rate-Limit auf dem Vote-Endpunkt.
+- **Der Gewinner ist deterministisch** — trotzdem läuft die Ermittlung über die
+  normale Engine-Ziehung: `buildPool` liefert **nur die Führenden** (höchste
+  Punktsumme, `approved`, ≥1 Stimme) mit `weight = 1`. Bei eindeutigem Führenden
+  ist der „Zufallszug" über einen Kandidaten deterministisch; **bei
+  Punktgleichstand lost die Engine fair aus**. Snapshot = das komplette Ranking
+  (Nachweis), Draw-Audit/Claim/Ansage kommen gratis aus der Engine.
+- Kein Watchtime-Accrual über die Instanz (`accrual:'none'`); die
+  Viewtime-Schwellen lesen den Team-/Kampagnenstand.
+- Bilder liegen als `BYTEA` in Postgres (max. 2 MB, `png/jpeg/webp`) — kein
+  neues Volume, der Backup-Container sichert sie mit. Auslieferung nur hinter
+  Login; sichtbar sind `approved` (alle), `pending/rejected` nur Einsender und
+  Veranstalter.
+- **DSGVO:** Einsendungen (inkl. Bild) und Votes sind personenbezogen →
+  Auskunft; Löschung: eigene Einsendung wird hart gelöscht (Bild weg), Votes
+  werden pseudonymisiert (Score bleibt — Teil des Ergebnisnachweises).
+
+> **Stand 5. August 2026: umgesetzt** (`cores/screenshot-contest.js`,
+> Tabellen `contest_entries`/`contest_votes`, Engine-Methoden submit/review/
+> vote/standings, Voting-Steuerung `open/pause/resume/close` mit
+> Chat-Ansagen, Warn-Handshake beim Ersetzen (`votes_would_be_lost` →
+> `confirmReplace`), REST + `/giveaway/contest.html`, Panel-Typ 4 mit 🖼/🗳,
+> Rechtstexte § 4d + Nutzungsbedingungen § 5-Zusatz, DSGVO komplett,
+> 6 Engine-Tests).
+
 ## 6 Parallelbetrieb: die Giveaway-Dimension
 
 Das ist der eigentliche Umbau. Heute gibt es je Team **einen** Zustand:
@@ -642,3 +685,12 @@ Am 4. August 2026 entschieden:
    dessen Gewinner weiterhin aus. Optional später als Engine-Feature:
    „Gewinner der letzten X Tage ausschließen" je Giveaway, Default aus —
    kein Phase-4-Blocker.
+
+Am 5. August 2026 entschieden (CORE_ScreenshotContest, §5.4):
+
+5. **Wertung = Punktsumme** der Votes (1–10). Die Max-Votes-Deckelung
+   (eine Stimme je Voter und Screenshot) begrenzt sie natürlich.
+6. **Einsenden nur für nachgewiesene Zuschauer** (Follow + Mindest-Viewtime),
+   eine Einsendung pro Person, Ersetzen erlaubt.
+7. **Vote-Schwelle konfigurierbar** (Mindest-Viewtime, 0 = aus) — zusätzlich
+   zu Twitch-Session, UNIQUE-Constraint und Rate-Limit.

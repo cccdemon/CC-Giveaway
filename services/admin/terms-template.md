@@ -90,6 +90,30 @@ ergänzend zu § 4:
 5. **Mit der Ziehung eines Preises sind die darauf gesetzten Einsätze aller
    Teilnehmer verbraucht** — auch die der Nichtgewinner.
 
+## § 4d Screenshot-Contest
+Der Veranstalter kann **Screenshot-Wettbewerbe** durchführen. Dabei gilt
+abweichend von § 4:
+1. **Einsenden** darf, wer einem der Contest-Kanäle **folgt** und die genannte
+   **Mindest-Zuschauzeit** erreicht hat. **Eine Einsendung pro Person**;
+   erneutes Einsenden ersetzt die eigene. **Achtung: beim Ersetzen verfallen
+   bereits abgegebene Stimmen für den vorherigen Screenshot** — darauf wird
+   vor dem Ersetzen hingewiesen.
+2. Mit der Einsendung versicherst du, dass du die **Rechte am Bild** hast, es
+   keine Rechte Dritter verletzt und keine unzulässigen Inhalte zeigt, und du
+   räumst dem Veranstalter das **einfache Nutzungsrecht** ein, das Bild im
+   Rahmen des Contests anzuzeigen (Contest-Seite, Stream). Jede Einsendung
+   wird vor der Sichtbarkeit **vom Veranstalter geprüft und freigegeben**;
+   eine Ablehnung ist endgültig und wird nicht begründet.
+3. **Bewerten** (Skala **1–10**) darf, wer die Mindest-Zuschauzeit erreicht
+   hat — im vom Veranstalter angesagten **Voting-Zeitraum** (er kann das
+   Voting öffnen, pausieren, fortsetzen und schließen). Je Person und
+   Screenshot zählt **genau eine Stimme**; erneutes Bewerten ersetzt die
+   eigene Stimme. Die eigene Einsendung kann nicht bewertet werden.
+4. Es gewinnt die Einsendung mit der **höchsten Punktsumme**. Bei
+   Punktgleichstand entscheidet das Los unter den punktgleichen Einsendungen.
+5. Manipulation des Votings (Bot-Stimmen, Mehrfachaccounts, Stimmenkauf)
+   führt zum Ausschluss nach § 6.
+
 ## § 5 Anerkennung der Chataktivität
 Die Chataktivität dient **ausschließlich als Nachweis aktiver Teilnahme**. Nicht gewertet werden insbesondere:
 Spam, wiederholte identische Nachrichten, Emoji-Spam, Ein-Wort-Nachrichten ohne

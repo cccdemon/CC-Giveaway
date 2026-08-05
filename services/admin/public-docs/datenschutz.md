@@ -77,6 +77,10 @@ Je nach Mechanik des Giveaways kommen hinzu:
   Grundlage deines Kontostands und des Ziehungsnachweises.
 * **Sofortverlosung:** die Eingabe des Keywords im Zeitfenster und deine
   gemeldete Anwesenheit im Stream zum Zeitpunkt der Verlosung.
+* **Screenshot-Contest:** dein eingesendetes Bild samt Titel und
+  Freigabestatus sowie deine abgegebenen Bewertungen (1–10) je Einsendung.
+  Bilder sind nur für angemeldete Nutzer sichtbar und erst nach Freigabe
+  durch den Veranstalter.
 
 ### 3.4 Optionale Bewertung von Chatnachrichten durch KI
 Veranstalter können aktivieren, dass die Sinnhaftigkeit einer Chatnachricht
@@ -149,6 +153,8 @@ Die Löschung erfolgt automatisch; sie muss nicht beantragt werden.
 | Verwaltungsprotokoll (Audit-Log) | dauerhaft, nach **12 Monaten** anonymisiert |
 | Los-Guthaben (Guthaben-Journal) | Restguthaben verfällt nach **12 Monaten ohne Bewegung**; das Journal bleibt als Nachweis, bei Löschung pseudonymisiert |
 | Einsätze auf Preise | Teil des Ziehungsnachweises — dauerhaft, bei Löschung pseudonymisiert |
+| Contest-Einsendungen (Bilder) | bis zur Löschung durch dich (Auskunfts-/Löschseite) — dann samt Bild entfernt |
+| Contest-Bewertungen | Teil des Ergebnisnachweises — bei Löschung wird dein Name pseudonymisiert, die Wertung bleibt |
 | Sicherungskopien der Datenbank | **30 Tage** |
 
 Solange ein Giveaway läuft, werden seine Daten nicht gelöscht — die Frist

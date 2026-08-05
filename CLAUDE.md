@@ -42,6 +42,15 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
   Instanz konfigurierbar (`gWagerCmd`, Default `!setzen`); Web-Seite
   `/giveaway/wager.html`. Instanz-Close bucht `earn` und räumt ab
   („Guthaben wandert"). Verfall nach 12 Monaten Inaktivität (`runRetention`).
+- `CORE_ScreenshotContest` — Community-Wettbewerb: Einsendungen (nur Follow +
+  Mindest-Viewtime, 1/Person, `BYTEA` in PG, **Freigabe-Pflicht** durch den
+  Owner), Voting 1–10 (`UNIQUE(entry, voter)`, Re-Vote überschreibt, eigene
+  Einsendung tabu, Viewtime-Schwelle + Rate-Limit gegen Votebots).
+  Voting-Steuerung `open/pause/resume/close` (`gVoteState`). Gewinner =
+  höchste **Punktsumme**, deterministisch über die Engine-Ziehung
+  (`buildPool` = nur Führende, weight 1; Gleichstand wird gelost). Ersetzen
+  der eigenen Einsendung löscht deren Stimmen (Warn-Handshake
+  `votes_would_be_lost` + `confirmReplace`). Seite `/giveaway/contest.html`.
 - **Parallelbetrieb:** Accrual-Zustand je Giveaway unter `t:<team>:g:<sid>:*`
   (Lazy-Migration vom Legacy-Bestand, nur fürs Primary). Sekundär-Instanzen via
   `openGiveawayInstance` (eigenes Keyword/Kanalliste/Pause/Multiplier, strikt
@@ -80,6 +89,8 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 - `services/giveaway/cores/chat-ai.js` — optionale KI-Chatbewertung + Key-Krypto (gehört zum Core)
 - `services/giveaway/public/cc-defs.js` — **einzige Quelle** der WS-Event-/Cmd-Whitelists (beide Shared-Libs lesen `CC.defs` fail-closed; Seiten laden sie VOR der Shared-Lib)
 - `services/giveaway/public/wager.html|js` — Zuschauer-Seite „Lose setzen" (Twitch-Session, hinter Auth)
+- `services/giveaway/cores/screenshot-contest.js` — CORE_ScreenshotContest (Pool = Führende, Texte, Limits)
+- `services/giveaway/public/contest.html|js` — Zuschauer-Seite Screenshot-Contest (Upload + Voting)
 - `services/giveaway/helix.js` — Twitch-Helix-Follow-Reconcile, Follower/User-ID-Cache, Token-Refresh
 - `services/admin/auth.js` — pure Auth-Helper (HMAC-signierte Cookie-Sessions, bcrypt), ohne express/pg/redis
 - `services/giveaway/public/giveaway-shared.js` — Shared-Lib (`CC.validate`, `CC.audit.summary`, Nav)
@@ -104,16 +115,18 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 `GET archive` (Sitzungsliste) · `GET archive/:sid` (Dossier) · `GET archive/:sid/export` (tar.gz, Owner)
 `GET claim/mine` · `POST claim` (nur der eingeloggte Gewinner)
 `GET wager/state` · `POST wager` (nur der eingeloggte Zuschauer; auditiert `wager_set`/`wager_retract`)
+`GET contest/state` · `POST contest/entry` (Base64, max 2 MB, auditiert) · `POST contest/vote` (Rate-Limit) · `GET contest/image/:id`
 
 ## Admin WS `gw_cmd` (`{event:'gw_cmd',cmd,...}`)
 `gw_open`(+keyword) · `gw_close` · `gw_draw_winner`(+`giveawayId`,+`prizeId` bei TicketBuy) · `gw_set_keyword` · `gw_get_keyword` · `gw_add_ticket`(user,amount) · `gw_sub_ticket` · `gw_ban`/`gw_unban` · `gw_reset`
 `gw_pause`/`gw_resume`/`gw_set_multiplier` (optional `giveawayId` → wirkt auf die Instanz)
 `gw_open_instance`(keyword, channels, core, windowSec, wagerCmd) · `gw_close_instance` · `gw_list_giveaways`
 `gw_add_prize`(giveawayId, title, wagerEndMinutes) · `gw_list_prizes` · `gw_set_wager_cmd`(giveawayId, command)
+`gw_contest_voting`(giveawayId, action: open/pause/resume/close) · `gw_review_entry`(entryId, approve/reject) · `gw_list_entries`(giveawayId)
 
 ## Data
 - **Redis:** team-weit `t:<team>:…` (open/paused, keyword, session id, banned, users, Presence/LastTick, Follows, chIndex, cfg:*, Abuse) + **je Giveaway** `t:<team>:g:<sid>:…` (watch/msgs/chat_ts je Kanal, registered, mult, open/paused/keyword/channels/core/win_end/wager_cmd der Instanz) + `t:<team>:giveaways` (Set aktiver Instanzen). Legacy-Keys werden beim ersten Zugriff ins Primary migriert (genau eine Quelle je Wert). `resetGiveaway`/`cleanupGiveawayInstance` räumen beide Namespaces.
-- **PostgreSQL:** `sessions`, `users`, `session_participants`, `watchtime_events`, `campaign_participation`, `abuse_flags`, `teams`, `team_members`, `streamers`, `terms_versions` (Teilnahmebedingungen pro Team), `tos_acceptances` (Zustimmung Nutzungsbedingungen, append-only), `app_secrets` (verschlüsselt), `giveaway_draws` (voller Draw-Audit, + `core`/`prize_id`), `draw_claims` (Gewinnermeldung — **einzige Klardaten im System**: Name/E-Mail/Anschrift, 12 Monate), `audit_log` (append-only: jede zustandsändernde Admin-/System-Aktion mit Actor, IP, Ziel, Vorher/Nachher; auch `denied`/`error`), `credit_ledger` (Guthaben-Journal, append-only, nur Gegenbuchungen — nie DELETE; Verfall 12 Monate Inaktivität), `giveaway_prizes` + `prize_wagers` (Preise/Einsätze, append-only; personenbezogen → DSGVO-Pfade), `sessions.core/core_config/status` (sessions = Giveaway-Instanz). Schema: **`ensureSchema()` beim Start ist die Quelle der Wahrheit.** `postgres/init.sql`
+- **PostgreSQL:** `sessions`, `users`, `session_participants`, `watchtime_events`, `campaign_participation`, `abuse_flags`, `teams`, `team_members`, `streamers`, `terms_versions` (Teilnahmebedingungen pro Team), `tos_acceptances` (Zustimmung Nutzungsbedingungen, append-only), `app_secrets` (verschlüsselt), `giveaway_draws` (voller Draw-Audit, + `core`/`prize_id`), `draw_claims` (Gewinnermeldung — **einzige Klardaten im System**: Name/E-Mail/Anschrift, 12 Monate), `audit_log` (append-only: jede zustandsändernde Admin-/System-Aktion mit Actor, IP, Ziel, Vorher/Nachher; auch `denied`/`error`), `credit_ledger` (Guthaben-Journal, append-only, nur Gegenbuchungen — nie DELETE; Verfall 12 Monate Inaktivität), `giveaway_prizes` + `prize_wagers` (Preise/Einsätze, append-only; personenbezogen → DSGVO-Pfade), `contest_entries` (Bild als BYTEA; Löschung entfernt das Bild) + `contest_votes` (bei Löschung pseudonymisiert), `sessions.core/core_config/status` (sessions = Giveaway-Instanz). Schema: **`ensureSchema()` beim Start ist die Quelle der Wahrheit.** `postgres/init.sql`
 (nur bei frischem Volume) legt lediglich `users`, `sessions`, `session_participants`,
 `watchtime_events`, `campaign_participation`, `debug_log`, `giveaway_draws` an — alles
 Team-/Auth-/Compliance-bezogene (`teams`, `team_members`, `streamers`, `terms_versions`,

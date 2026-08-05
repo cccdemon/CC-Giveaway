@@ -249,7 +249,7 @@ async function memberChannel(login, teamId) {
 const AUDIT_SKIP = new Set([
   'gw_get_channels', 'gw_get_multiplier', 'gw_get_stream_settings',
   'gw_get_keyword', 'gw_get_ingest_tokens', 'gw_get_ai_settings', 'gw_list_ai_models',
-  'gw_list_giveaways', 'gw_list_prizes',
+  'gw_list_giveaways', 'gw_list_prizes', 'gw_list_entries',
 ]);
 
 // Obergrenze gleichzeitiger Giveaways je Team (Entscheidung §10.2:
@@ -633,7 +633,7 @@ const MEMBER_CMDS = new Set([
   'gw_get_channels', 'gw_get_multiplier', 'gw_get_stream_settings', 'gw_get_keyword',
   'gw_get_ingest_tokens', 'gw_gen_ingest_token', 'gw_get_ai_settings',
   'gw_open', 'gw_pause', 'gw_resume', 'gw_set_multiplier',
-  'gw_list_giveaways', 'gw_list_prizes',
+  'gw_list_giveaways', 'gw_list_prizes', 'gw_list_entries',
 ]);
 
 // Abgelehnte Versuche gehoeren ins Protokoll — aber das Admin-Panel pollt die
@@ -765,7 +765,7 @@ async function runAdminCmd(send, msg, meta, ctx) {
       const coreId = CoreRegistry.CORES[msg.core] ? msg.core : CoreRegistry.DEFAULT_CORE_ID;
       const coreMod = CoreRegistry.getCore(coreId);
       let windowSec = 0;
-      if (coreMod.accrual === 'none') {   // Sofortverlosung
+      if (coreId === 'CORE_CurrentViewers') {   // Sofortverlosung
         if (!keyword) {
           Object.assign(outcome, { blocked: 'no_keyword', core: coreId });
           send({ event: 'gw_ack', type: 'open_blocked',
@@ -780,22 +780,31 @@ async function runAdminCmd(send, msg, meta, ctx) {
       if (coreId === 'CORE_TicketBuy') {
         wagerCmd = sanitizeStr(msg.wagerCmd || '', 30).trim().toLowerCase() || coreMod.config.wagerCmd.def;
       }
+      // Contest: Mindest-Viewtime für Einsenden/Voten (WebUI-konfigurierbar).
+      let minWatchSec = null;
+      if (coreId === 'CORE_ScreenshotContest') {
+        const mc = coreMod.config.minWatchSec;
+        minWatchSec = Math.max(mc.min, Math.min(mc.max,
+          Number.isFinite(parseInt(msg.minWatchSec, 10)) ? parseInt(msg.minWatchSec, 10) : mc.def));
+      }
       const teamChans = await wte.getChannels(teamId);
       const wanted = Array.isArray(msg.channels) ? msg.channels.map(sanitizeChannel).filter(Boolean) : [];
       const channels = wanted.filter(ch => teamChans.includes(ch));   // nur eigene Kanäle
       const gid = `sess_${Date.now()}`;
-      const coreConfig = coreMod.accrual === 'none' ? { windowSec }
+      const coreConfig = coreId === 'CORE_CurrentViewers' ? { windowSec }
+                       : coreId === 'CORE_ScreenshotContest' ? { minWatchSec }
                        : coreId === 'CORE_TicketBuy' ? { ...(await snapshotCoreConfig(teamId)), wagerCmd }
                        : await snapshotCoreConfig(teamId);
       await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels, core, status, core_config)
                       VALUES ($1,$2,$3,$4,$5,'open',$6) ON CONFLICT (id) DO NOTHING`,
         [gid, teamId, keyword, JSON.stringify(channels.length ? channels : teamChans), coreId, JSON.stringify(coreConfig)]);
       await wte.openGiveawayInstance(teamId, gid, { keyword, channels: channels.length ? channels : null,
-                                                    core: coreId, windowSec, wagerCmd });
+                                                    core: coreId, windowSec, wagerCmd, minWatchSec });
       Object.assign(outcome, { giveawayId: gid, keyword, core: coreId, windowSec: windowSec || undefined,
                                wagerCmd: wagerCmd || undefined, channels: channels.length ? channels : 'alle' });
       await announceChannels(teamId, channels.length ? channels : null,
-        coreMod.accrual === 'none' ? coreMod.infoText({ keyword, windowSec })
+        coreId === 'CORE_CurrentViewers' ? coreMod.infoText({ keyword, windowSec })
+        : coreId === 'CORE_ScreenshotContest' ? coreMod.infoText()
         : coreId === 'CORE_TicketBuy' ? coreMod.infoText({ cmd: wagerCmd })
         : '🎁 Zusätzliches Giveaway gestartet!' + (keyword ? ` Mitmachen: schreib "${keyword}" im Chat.` : ''));
       send({ event: 'gw_ack', type: 'instance_opened', giveawayId: gid, keyword, core: coreId,
@@ -873,6 +882,57 @@ async function runAdminCmd(send, msg, meta, ctx) {
       Object.assign(outcome, { giveawayId: gid, cmdBefore: before, cmdAfter: cmd });
       await announceChannels(teamId, inst.channels, `🎟 Lose setzen geht ab jetzt mit „${cmd} <preis-nr> <anzahl>".`);
       send({ event: 'gw_ack', type: 'wager_cmd_set', giveawayId: gid, command: cmd });
+      break;
+    }
+    // ── Phase 6: Screenshot-Contest ────────────────────────
+    case 'gw_contest_voting': {
+      // Voting öffnen / pausieren / fortsetzen / schließen (Pflicht-Steuerung).
+      const gid = validGid(msg.giveawayId);
+      const inst = gid ? (await wte.listGiveaways(teamId)).find(g => g.gid === gid && g.core === 'CORE_ScreenshotContest') : null;
+      const action = String(msg.action || '');
+      const map = { open: 'open', resume: 'open', pause: 'paused', close: 'closed' };
+      if (!inst || !map[action]) {
+        Object.assign(outcome, { error: 'bad_request' });
+        send({ event: 'gw_ack', type: 'error', error: 'Contest-Instanz oder Aktion (open/pause/resume/close) fehlt.' });
+        break;
+      }
+      const before = await wte.getContestVoting(teamId, gid);
+      const state = await wte.setContestVoting(teamId, gid, map[action]);
+      Object.assign(outcome, { giveawayId: gid, votingBefore: before, votingAfter: state });
+      const texts = {
+        open:   '📸 Das VOTING ist offen! Bewerte die Screenshots mit 1–10 auf der Contest-Seite (Login mit Twitch).',
+        paused: '📸 Voting pausiert — abgegebene Stimmen bleiben erhalten.',
+        closed: '📸 Voting beendet — die Auswertung folgt!',
+      };
+      if (before !== state) await announceChannels(teamId, inst.channels, texts[state]);
+      send({ event: 'gw_ack', type: 'contest_voting', giveawayId: gid, voting: state });
+      break;
+    }
+    case 'gw_review_entry': {
+      const entryId = parseInt(msg.entryId, 10);
+      const approve = msg.decision === 'approve';
+      if (!Number.isFinite(entryId) || !['approve', 'reject'].includes(msg.decision)) {
+        Object.assign(outcome, { error: 'bad_request' });
+        send({ event: 'gw_ack', type: 'error', error: 'entryId und decision (approve/reject) nötig.' });
+        break;
+      }
+      const r = await wte.reviewContestEntry(teamId, entryId, approve);
+      if (r.error) {
+        Object.assign(outcome, { error: r.error, entryId });
+        send({ event: 'gw_ack', type: 'error', error: 'Einsendung nicht gefunden.' });
+        break;
+      }
+      Object.assign(outcome, { entryId, decision: msg.decision, entrant: r.username });
+      send({ event: 'gw_ack', type: 'entry_reviewed', entryId, decision: msg.decision, username: r.username });
+      break;
+    }
+    case 'gw_list_entries': {
+      const gid = validGid(msg.giveawayId);
+      if (!gid) { send({ event: 'gw_ack', type: 'error', error: 'giveawayId fehlt.' }); break; }
+      send({ event: 'gw_ack', type: 'entries',
+             giveawayId: gid,
+             voting: await wte.getContestVoting(teamId, gid),
+             entries: await wte.getContestStandings(teamId, gid, { all: true }) });
       break;
     }
     case 'gw_set_stream_settings': {
@@ -1490,6 +1550,106 @@ app.post('/api/wager', express.json(), async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Phase 6: Screenshot-Contest (nur eingeloggte Zuschauer) ──
+// Anti-Votebot: Twitch-Session + UNIQUE(entry, voter) + Viewtime-Schwelle
+// + Rate-Limit. Identität ausschließlich aus X-Auth-User.
+async function contestInstance(teamId) {
+  return (await wte.listGiveaways(teamId)).find(g => g.core === 'CORE_ScreenshotContest' && g.gid) || null;
+}
+
+app.get('/api/contest/state', async (req, res) => {
+  try {
+    const user = reqUser(req);
+    if (!user) return res.status(401).json({ error: 'unauthenticated' });
+    const teamId = sanitizeTeamId(req.query.team || '');
+    const teams = teamId ? [teamId] : await wte.getUserTeams(user);
+    const out = [];
+    for (const t of teams) {
+      const inst = await contestInstance(t);
+      if (!inst) continue;
+      const elig = await wte._contestEligibility(t, inst.gid, user);
+      const standings = await wte.getContestStandings(t, inst.gid, { all: true });
+      const mine = standings.find(s => s.username === user) || null;
+      // Sichtbar für Voter: nur approved; eigene Einsendung immer.
+      const entries = [];
+      for (const s of standings) {
+        if (s.status !== 'approved' && s.username !== user) continue;
+        const v = await pg.query(`SELECT score FROM contest_votes WHERE entry_id=$1 AND voter=$2`, [s.entryId, user]);
+        entries.push({ ...s, myScore: v.rowCount ? v.rows[0].score : null, own: s.username === user });
+      }
+      out.push({ teamId: t, giveawayId: inst.gid,
+                 voting: await wte.getContestVoting(t, inst.gid),
+                 canSubmit: elig.followsHost && elig.watchOk,
+                 canVote: elig.watchOk,
+                 minWatch: elig.minWatch, watchSec: Math.round(elig.watchSec),
+                 followsHost: elig.followsHost,
+                 myEntry: mine ? { entryId: mine.entryId, title: mine.title, status: mine.status, votes: mine.votes } : null,
+                 entries });
+    }
+    res.json({ user, contests: out });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/contest/entry', express.json({ limit: '4mb' }), async (req, res) => {
+  try {
+    const user = reqUser(req);
+    if (!user) return res.status(401).json({ error: 'unauthenticated' });
+    const teamId = sanitizeTeamId(req.body && req.body.team);
+    const inst = teamId ? await contestInstance(teamId) : null;
+    if (!inst) return res.status(404).json({ error: 'no_contest' });
+    const ContestCore = CoreRegistry.getCore('CORE_ScreenshotContest');
+    const mime = String(req.body.mime || '');
+    if (!ContestCore.IMAGE_MIMES.includes(mime)) return res.status(400).json({ error: 'bad_mime' });
+    let image;
+    try { image = Buffer.from(String(req.body.imageBase64 || ''), 'base64'); } catch { image = null; }
+    if (!image || !image.length) return res.status(400).json({ error: 'no_image' });
+    if (image.length > ContestCore.IMAGE_MAX_BYTES) return res.status(413).json({ error: 'image_too_large' });
+    const r = await wte.submitContestEntry(teamId, inst.gid, user, {
+      title: req.body.title, mime, image, confirmReplace: !!req.body.confirmReplace });
+    if (r.error) return res.status(r.error === 'votes_would_be_lost' ? 409 : 403).json(r);
+    await audit({ teamId, actor: user, ip: req.ip, action: 'contest_submit', target: user,
+                  detail: { giveawayId: inst.gid, replaced: r.replaced, bytes: image.length } });
+    res.json(r);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/contest/vote', express.json(), async (req, res) => {
+  try {
+    const user = reqUser(req);
+    if (!user) return res.status(401).json({ error: 'unauthenticated' });
+    const teamId = sanitizeTeamId(req.body && req.body.team);
+    const inst = teamId ? await contestInstance(teamId) : null;
+    if (!inst) return res.status(404).json({ error: 'no_contest' });
+    const ContestCore = CoreRegistry.getCore('CORE_ScreenshotContest');
+    const score = ContestCore.clampScore(req.body.score);
+    const entryId = parseInt(req.body.entryId, 10);
+    if (!score || !Number.isFinite(entryId)) return res.status(400).json({ error: 'bad_request' });
+    // Rate-Limit: max. 1 Vote/Sekunde je Nutzer (Bot-Bremse, UX-neutral).
+    const rl = await redis.set(`t:${teamId}:contest:rl:${user}`, '1', 'EX', 1, 'NX');
+    if (rl !== 'OK') return res.status(429).json({ error: 'rate_limited' });
+    const r = await wte.castContestVote(teamId, inst.gid, user, entryId, score);
+    if (r.error) return res.status(403).json(r);
+    res.json(r);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/contest/image/:id', async (req, res) => {
+  try {
+    const user = reqUser(req);
+    if (!user) return res.status(401).json({ error: 'unauthenticated' });
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).end();
+    const r = await pg.query(`SELECT team_id, username, mime, image, status FROM contest_entries WHERE id=$1`, [id]);
+    if (!r.rowCount) return res.status(404).end();
+    const e = r.rows[0];
+    // approved sehen alle Eingeloggten; pending/rejected nur Einsender + Team-Mitglieder.
+    if (e.status !== 'approved' && e.username !== user && !await isMember(user, e.team_id)) {
+      return res.status(403).end();
+    }
+    res.set('Content-Type', e.mime).set('Cache-Control', 'private, max-age=300').send(e.image);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/claim/mine', async (req, res) => {
   try {
     const user = sanitizeUsername(reqUser(req) || '');
@@ -1800,6 +1960,34 @@ async function ensureSchema() {
       amount     NUMERIC(12,4) NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_wagers_prize ON prize_wagers(prize_id, username)`);
+  // Phase 6 (CORE_ScreenshotContest, §5.4): Einsendungen (Bild als BYTEA,
+  // Backup-Container sichert mit) + Votes. UNIQUE(session_id, username) =
+  // eine Einsendung pro Person; UNIQUE(entry_id, voter) = eine Stimme je
+  // (Voter, Screenshot) — strukturell max. n Votes bei n Votern.
+  await pg.query(`
+    CREATE TABLE IF NOT EXISTS contest_entries (
+      id BIGSERIAL PRIMARY KEY,
+      team_id    TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      username   TEXT NOT NULL,
+      title      TEXT,
+      mime       TEXT NOT NULL,
+      image      BYTEA NOT NULL,
+      status     TEXT NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (session_id, username))`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_entries_session ON contest_entries(session_id, status)`);
+  await pg.query(`
+    CREATE TABLE IF NOT EXISTS contest_votes (
+      id BIGSERIAL PRIMARY KEY,
+      entry_id   BIGINT NOT NULL REFERENCES contest_entries(id) ON DELETE CASCADE,
+      team_id    TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      voter      TEXT NOT NULL,
+      score      INTEGER NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (entry_id, voter))`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_votes_session ON contest_votes(session_id, voter)`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_sessions_team ON sessions(team_id)`);
   await pg.query(`ALTER TABLE watchtime_events ADD COLUMN IF NOT EXISTS channel TEXT`);
   await pg.query(`ALTER TABLE watchtime_events ADD COLUMN IF NOT EXISTS team_id TEXT`);

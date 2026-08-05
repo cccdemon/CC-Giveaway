@@ -202,6 +202,7 @@
     { href:'/giveaway/audit.html', label:'Audit-Log', ic:'🧾' },
     { href:'/giveaway/claim.html', label:'Gewinn melden', ic:'🏆' },
     { href:'/giveaway/wager.html', label:'Lose setzen', ic:'🎟' },
+    { href:'/giveaway/contest.html', label:'Screenshot-Contest', ic:'📸' },
     { href:'/admin/users.html', label:'Benutzer', ic:'👥' },
     { href:'/admin/datenschutz-admin.html', label:'Betroffenenrechte', ic:'🛡' },
     { href:'/admin/nutzungsbedingungen.html', label:'Nutzungsbedingungen', ic:'§' },

@@ -136,12 +136,39 @@ function onGiveawayChange() {
   requestData();
 }
 
-// Preis-/Befehl-Buttons nur bei gewählter Los-Giveaway-Instanz zeigen.
+// Typ-spezifische Buttons nur bei passender Instanz-Auswahl zeigen.
 function updateTicketBuyButtons() {
   var g = giveawayList.find(function(x){ return x.gid === currentGiveaway; });
   var isTb = !!(g && g.core === 'CORE_TicketBuy');
+  var isSc = !!(g && g.core === 'CORE_ScreenshotContest');
   var p = document.getElementById('gw-add-prize'); if (p) p.style.display = isTb ? '' : 'none';
   var w = document.getElementById('gw-wager-cmd'); if (w) w.style.display = isTb ? '' : 'none';
+  var e = document.getElementById('gw-entries');   if (e) e.style.display = isSc ? '' : 'none';
+  var v = document.getElementById('gw-voting');    if (v) v.style.display = isSc ? '' : 'none';
+}
+
+// ── Phase 6: Screenshot-Contest (Review + Voting-Steuerung) ──
+function listEntries() {
+  if (!currentGiveaway) return;
+  send({ event: 'gw_cmd', cmd: 'gw_list_entries', giveawayId: currentGiveaway });
+}
+
+function reviewEntry() {
+  if (!currentGiveaway) return;
+  listEntries();
+  var id = prompt('Einsendung-Nr. freigeben/ablehnen (Liste siehe Log):', '');
+  if (id === null || !id.trim()) return;
+  var ok = confirm('OK = FREIGEBEN · Abbrechen = ABLEHNEN');
+  send({ event: 'gw_cmd', cmd: 'gw_review_entry', entryId: parseInt(id, 10),
+         decision: ok ? 'approve' : 'reject' });
+}
+
+function contestVoting() {
+  if (!currentGiveaway) return;
+  var a = prompt('Voting-Steuerung: open / pause / resume / close', 'open');
+  if (a === null || !a.trim()) return;
+  send({ event: 'gw_cmd', cmd: 'gw_contest_voting', giveawayId: currentGiveaway,
+         action: a.trim().toLowerCase() });
 }
 
 function renderGiveawaySelect() {
@@ -168,11 +195,20 @@ function renderGiveawaySelect() {
 }
 
 function openInstance() {
-  var type = prompt('Typ des zusätzlichen Giveaways:\n\n1 = Zusatz-Kampagne (Zuschauzeit & Chat)\n2 = Sofortverlosung (Keyword-Fenster, zieht automatisch)\n3 = Los-Giveaway (Zuschauzeit wird Guthaben, Einsatz auf Preise)', '1');
+  var type = prompt('Typ des zusätzlichen Giveaways:\n\n1 = Zusatz-Kampagne (Zuschauzeit & Chat)\n2 = Sofortverlosung (Keyword-Fenster, zieht automatisch)\n3 = Los-Giveaway (Zuschauzeit wird Guthaben, Einsatz auf Preise)\n4 = Screenshot-Contest (Einsendungen + Community-Voting 1–10)', '1');
   if (type === null) return;
   type = String(type).trim();
   var payload = { event: 'gw_cmd', cmd: 'gw_open_instance' };
 
+  if (type === '4') {
+    payload.core = 'CORE_ScreenshotContest';
+    payload.keyword = '';
+    var mw = CC.validate.sanitizeInt(prompt('Mindest-Zuschauzeit für Einsenden/Voten in Minuten (0 = aus):', '10') || '10', 0, 6000, 10);
+    payload.minWatchSec = mw * 60;
+    send(payload);
+    log('Screenshot-Contest wird gestartet … (Voting danach mit 🗳 öffnen)', 'cyan');
+    return;
+  }
   if (type === '3') {
     payload.core = 'CORE_TicketBuy';
     // Setz-Befehl ist konfigurierbar (landet als gWagerCmd an der Instanz).
@@ -285,6 +321,15 @@ function handle(msg) {
       log(`ACK: ${msg.type} -> ${msg.user || msg.keyword || msg.winner || msg.channel || ''}`, 'cyan');
       // Read-only Antworten (NIE requestData → sonst Endlosschleife)
       if (msg.type === 'giveaways')     { giveawayList = msg.giveaways || []; renderGiveawaySelect(); break; }
+      if (msg.type === 'entries')       {
+        log('Voting: ' + (msg.voting || 'closed'), 'gold');
+        (msg.entries || []).forEach(function(en){
+          log('#' + en.entryId + ' [' + en.status + '] „' + (en.title || '—') + '" von ' + maskName(en.username, en.username)
+            + ' · ' + en.score + ' Pkt / ' + en.votes + ' Stimmen', 'cyan');
+        });
+        if (!(msg.entries || []).length) log('Keine Einsendungen', 'gold');
+        break;
+      }
       if (msg.type === 'prizes')        {
         (msg.prizes || []).forEach(function(p){ log('Preis #' + p.id + ' „' + p.title + '" [' + p.status + '] Einsatz: ' + p.total_stake, 'cyan'); });
         if (!(msg.prizes || []).length) log('Keine offenen Preise', 'gold');
@@ -333,6 +378,8 @@ function handle(msg) {
             + (msg.wagerCmd ? ' (Setzen: „' + msg.wagerCmd + '")' : ''), 'gold');
       if (msg.type === 'prize_added')   log('Preis #' + msg.prizeId + ' angelegt: „' + (msg.title || '') + '"', 'gold');
       if (msg.type === 'wager_cmd_set') log('Setz-Befehl geändert: „' + (msg.command || '') + '"', 'gold');
+      if (msg.type === 'contest_voting') log('Contest-Voting: ' + (msg.voting || '?'), 'gold');
+      if (msg.type === 'entry_reviewed') log('Einsendung #' + msg.entryId + ' → ' + (msg.decision === 'approve' ? 'FREIGEGEBEN' : 'abgelehnt'), 'gold');
       if (msg.type === 'instance_closed') log('Instanz geschlossen: ' + (msg.giveawayId || '?'), 'gold');
       if (msg.type === 'instance_paused')  log('Instanz pausiert: '   + (msg.giveawayId || '?'), 'gold');
       if (msg.type === 'instance_resumed') log('Instanz läuft weiter: ' + (msg.giveawayId || '?'), 'cyan');

@@ -3,8 +3,10 @@
 **Fassung 2 — Stand: 4. August 2026**
 
 > **Neu in Fassung 2:** Klarstellung in § 4 Abs. 8 zum plattforminternen
-> Los-Guthaben (Los-Giveaway) und zur Sofortverlosung. Bestehende Veranstalter
-> müssen der neuen Fassung zustimmen, bevor sie ein Giveaway öffnen.
+> Los-Guthaben (Los-Giveaway) und zur Sofortverlosung; Screenshot-Wettbewerbe
+> (§ 5: der Veranstalter prüft und verantwortet jede Einsendung, bevor er sie
+> freigibt). Bestehende Veranstalter müssen der neuen Fassung zustimmen,
+> bevor sie ein Giveaway öffnen.
 
 Diese Bedingungen gelten zwischen dem Betreiber dieser Plattform (nachfolgend
 „Betreiber", Anschrift siehe [Impressum](/admin/impressum.html)) und jeder
@@ -89,6 +91,12 @@ sofortigen Sperrung nach § 9.
    erforderlich; alle Berechtigten haben dieselbe Gewinnchance.
 
 ## § 5 Weitere unzulässige Inhalte und Gewinne
+
+**Nutzergenerierte Einsendungen (z.B. Screenshot-Wettbewerbe):** Der
+Veranstalter gibt jede Einsendung vor ihrer Sichtbarkeit frei und ist für
+freigegebene Inhalte verantwortlich. Er stellt sicher, dass freigegebene
+Einsendungen keine Rechte Dritter verletzen und keinen der nachfolgend
+unzulässigen Inhalte zeigen; die Freigabe wird protokolliert.
 
 1. Unzulässig sind Gewinne, die nicht an jede teilnahmeberechtigte Person
    abgegeben werden dürfen, insbesondere Alkohol, Tabak, Waffen, Arzneimittel,

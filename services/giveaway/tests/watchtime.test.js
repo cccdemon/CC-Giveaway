@@ -39,8 +39,8 @@ function makeRedis() {
 function makePg(channels) {
   // In-Memory-Tabellen für die TicketBuy-Pfade (Phase 4b) — die übrigen
   // Queries laufen wie bisher auf die Dummy-Antwort.
-  const prizes = [], wagers = [], ledger = [];
-  let prizeSeq = 1;
+  const prizes = [], wagers = [], ledger = [], entries = [], cvotes = [];
+  let prizeSeq = 1, entrySeq = 1;
   async function query(sql, p = []) {
     if (/from team_members/i.test(sql)) return { rows: (channels || []).map(c => ({ channel: c })) };
     if (/INSERT INTO giveaway_prizes/.test(sql)) {
@@ -71,6 +71,50 @@ function makePg(channels) {
         by.set(w.username, (by.get(w.username) || 0) + w.amount);
       return { rows: [...by.entries()].filter(([, s]) => s > 0).map(([username, stake]) => ({ username, stake })) };
     }
+    // ── Contest (Phase 6) ──
+    if (/INSERT INTO contest_entries/.test(sql)) {
+      const ex = entries.find(e => e.session_id === p[1] && e.username === p[2]);
+      if (ex) Object.assign(ex, { title: p[3], mime: p[4], image: p[5], status: 'pending' });
+      else entries.push({ id: entrySeq++, team_id: p[0], session_id: p[1], username: p[2],
+                          title: p[3], mime: p[4], image: p[5], status: 'pending' });
+      return { rowCount: 1, rows: [] };
+    }
+    if (/SELECT id FROM contest_entries WHERE session_id=\$1 AND username=\$2/.test(sql)) {
+      const r = entries.filter(e => e.session_id === p[0] && e.username === p[1]);
+      return { rows: r, rowCount: r.length };
+    }
+    if (/COUNT\(\*\)::int AS n FROM contest_votes WHERE entry_id=\$1/.test(sql)) {
+      return { rows: [{ n: cvotes.filter(v => v.entry_id === p[0]).length }] };
+    }
+    if (/DELETE FROM contest_votes WHERE entry_id=\$1/.test(sql)) {
+      const before = cvotes.length;
+      for (let i = cvotes.length - 1; i >= 0; i--) if (cvotes[i].entry_id === p[0]) cvotes.splice(i, 1);
+      return { rowCount: before - cvotes.length, rows: [] };
+    }
+    if (/UPDATE contest_entries SET status=\$3/.test(sql)) {
+      const e = entries.find(x => x.id === p[0] && x.team_id === p[1]);
+      if (e) e.status = p[2];
+      return e ? { rowCount: 1, rows: [{ username: e.username, title: e.title }] } : { rowCount: 0, rows: [] };
+    }
+    if (/SELECT id, username, status FROM contest_entries WHERE id=\$1/.test(sql)) {
+      const r = entries.filter(e => e.id === p[0] && e.session_id === p[1] && e.team_id === p[2]);
+      return { rows: r, rowCount: r.length };
+    }
+    if (/INSERT INTO contest_votes/.test(sql)) {
+      const ex = cvotes.find(v => v.entry_id === p[0] && v.voter === p[3]);
+      if (ex) ex.score = p[4];
+      else cvotes.push({ entry_id: p[0], team_id: p[1], session_id: p[2], voter: p[3], score: p[4] });
+      return { rowCount: 1, rows: [] };
+    }
+    if (/FROM contest_entries e/.test(sql)) {
+      const all = !/status='approved'/.test(sql);
+      return { rows: entries.filter(e => e.session_id === p[0] && e.team_id === p[1] && (all || e.status === 'approved'))
+        .map(e => {
+          const vs = cvotes.filter(v => v.entry_id === e.id);
+          return { entry_id: e.id, username: e.username, title: e.title, status: e.status,
+                   score: vs.reduce((s, v) => s + v.score, 0), votes: vs.length };
+        }).sort((a, b) => b.score - a.score || b.votes - a.votes || a.entry_id - b.entry_id) };
+    }
     if (/INSERT INTO credit_ledger/.test(sql)) {
       ledger.push({ team_id: p[0], username: p[1], entry_type: p[2], amount: parseFloat(p[3]) });
       return { rowCount: 1, rows: [] };
@@ -82,7 +126,7 @@ function makePg(channels) {
     return { rows: [{ n: 0 }], rowCount: 1 };
   }
   return {
-    prizes, wagers, ledger,
+    prizes, wagers, ledger, entries, cvotes,
     query,
     async connect() {
       return { async query(sql, p = []) {
@@ -746,4 +790,102 @@ test('phase4b: verfuegbares Guthaben = Ledger + Live-Stand laufender Instanz', a
   await e.redis.sadd(K.gwUsers(TEAM), 'bob');
   await e.settleTicketBuyInstance(TEAM, 'sess_2');                // earn +1 → Summe wieder 0
   assert.equal(await e.credit.balance(TEAM, 'bob'), 0);
+});
+
+// ── Phase 6: CORE_ScreenshotContest ───────────────────────
+// Berechtigung liest den Kampagnen-/Legacy-Stand: Follow + Viewtime.
+async function contestSetup(minWatchSec) {
+  const e = engine();
+  await e.openGiveawayInstance(TEAM, 'sess_9', { core: 'CORE_ScreenshotContest', minWatchSec: minWatchSec ?? 600 });
+  // bob: Follow + 1h Viewtime auf dem Instanz-Kanal (legacy = Kampagnenstand)
+  for (const u of ['bob', 'carol', 'dave']) {
+    await e.redis.set(K.chFollows(TEAM, 'justcallmedeimos', u), '1');
+    await e.redis.set(K.chWatch(TEAM, 'justcallmedeimos', u), '3600');
+  }
+  return e;
+}
+const IMG = Buffer.from('fakepng');
+
+test('phase6: einsenden braucht Follow und Viewtime', async () => {
+  const e = await contestSetup(600);
+  // eve: weder Follow noch Viewtime
+  let r = await e.submitContestEntry(TEAM, 'sess_9', 'eve', { mime: 'image/png', image: IMG });
+  assert.equal(r.error, 'not_following');
+  // mallory: Follow, aber zu wenig Viewtime
+  await e.redis.set(K.chFollows(TEAM, 'justcallmedeimos', 'mallory'), '1');
+  await e.redis.set(K.chWatch(TEAM, 'justcallmedeimos', 'mallory'), '60');
+  r = await e.submitContestEntry(TEAM, 'sess_9', 'mallory', { mime: 'image/png', image: IMG });
+  assert.equal(r.error, 'not_enough_watchtime');
+  r = await e.submitContestEntry(TEAM, 'sess_9', 'bob', { title: 'Mein Shot', mime: 'image/png', image: IMG });
+  assert.equal(r.ok, true);
+});
+
+test('phase6: eine Einsendung pro Person, Ersetzen warnt vor Stimmenverlust', async () => {
+  const e = await contestSetup(0);
+  await e.submitContestEntry(TEAM, 'sess_9', 'bob', { title: 'V1', mime: 'image/png', image: IMG });
+  await e.reviewContestEntry(TEAM, 1, true);
+  await e.setContestVoting(TEAM, 'sess_9', 'open');
+  await e.castContestVote(TEAM, 'sess_9', 'carol', 1, 8);
+  // Ersetzen ohne Bestätigung → blockiert mit Stimmenzahl
+  let r = await e.submitContestEntry(TEAM, 'sess_9', 'bob', { title: 'V2', mime: 'image/png', image: IMG });
+  assert.equal(r.error, 'votes_would_be_lost');
+  assert.equal(r.votes, 1);
+  // Mit Bestätigung → ersetzt, Stimmen verfallen, Status zurück auf pending
+  r = await e.submitContestEntry(TEAM, 'sess_9', 'bob', { title: 'V2', mime: 'image/png', image: IMG, confirmReplace: true });
+  assert.equal(r.replaced, true);
+  const st = await e.getContestStandings(TEAM, 'sess_9', { all: true });
+  assert.equal(st.length, 1);                       // immer noch EINE Einsendung
+  assert.equal(st[0].votes, 0);                     // Stimmen verfallen
+  assert.equal(st[0].status, 'pending');            // neue Freigabe nötig
+});
+
+test('phase6: Voting-Steuerung open/pause/resume/close erzwingt den Zustand', async () => {
+  const e = await contestSetup(0);
+  await e.submitContestEntry(TEAM, 'sess_9', 'bob', { mime: 'image/png', image: IMG });
+  await e.reviewContestEntry(TEAM, 1, true);
+  assert.equal((await e.castContestVote(TEAM, 'sess_9', 'carol', 1, 7)).error, 'voting_not_open');
+  await e.setContestVoting(TEAM, 'sess_9', 'open');
+  assert.equal((await e.castContestVote(TEAM, 'sess_9', 'carol', 1, 7)).ok, true);
+  await e.setContestVoting(TEAM, 'sess_9', 'paused');
+  assert.equal((await e.castContestVote(TEAM, 'sess_9', 'dave', 1, 5)).error, 'voting_not_open');
+  await e.setContestVoting(TEAM, 'sess_9', 'open');   // fortsetzen
+  assert.equal((await e.castContestVote(TEAM, 'sess_9', 'dave', 1, 5)).ok, true);
+});
+
+test('phase6: eine Stimme je Voter+Screenshot, Re-Vote ueberschreibt (max n Votes)', async () => {
+  const e = await contestSetup(0);
+  await e.submitContestEntry(TEAM, 'sess_9', 'bob', { mime: 'image/png', image: IMG });
+  await e.reviewContestEntry(TEAM, 1, true);
+  await e.setContestVoting(TEAM, 'sess_9', 'open');
+  await e.castContestVote(TEAM, 'sess_9', 'carol', 1, 3);
+  await e.castContestVote(TEAM, 'sess_9', 'carol', 1, 10);   // ueberschreibt, addiert nicht
+  await e.castContestVote(TEAM, 'sess_9', 'dave', 1, 6);
+  const st = await e.getContestStandings(TEAM, 'sess_9');
+  assert.equal(st[0].votes, 2);                     // 2 Voter → max 2 Votes
+  assert.equal(st[0].score, 16);                    // 10 + 6, Punktsumme
+  // eigene Einsendung nicht votebar:
+  assert.equal((await e.castContestVote(TEAM, 'sess_9', 'bob', 1, 10)).error, 'own_entry');
+});
+
+test('phase6: Ziehung deterministisch, Gleichstand lost die Engine aus', async () => {
+  const e = await contestSetup(0);
+  await e.submitContestEntry(TEAM, 'sess_9', 'bob',   { mime: 'image/png', image: IMG });
+  await e.submitContestEntry(TEAM, 'sess_9', 'carol', { mime: 'image/png', image: IMG });
+  await e.reviewContestEntry(TEAM, 1, true);
+  await e.reviewContestEntry(TEAM, 2, true);
+  await e.setContestVoting(TEAM, 'sess_9', 'open');
+  await e.castContestVote(TEAM, 'sess_9', 'carol', 1, 9);   // bobs Entry: 9
+  await e.castContestVote(TEAM, 'sess_9', 'bob',   2, 4);   // carols Entry: 4
+  const r = await e.drawWinner(TEAM, 'sess_9', {});
+  assert.equal(r.winner, 'bob');                    // hoechste Punktsumme, deterministisch
+  assert.equal(r.coins, 9);                         // Score im Ergebnis
+  assert.equal(r.eligibleCount, 1);                 // nur der Fuehrende im Pool
+  assert.equal(await e.getContestVoting(TEAM, 'sess_9'), 'closed');   // Ziehung schliesst Voting
+});
+
+test('phase6: Contest ohne bewertete Einsendungen zieht nicht', async () => {
+  const e = await contestSetup(0);
+  await e.submitContestEntry(TEAM, 'sess_9', 'bob', { mime: 'image/png', image: IMG });
+  await e.reviewContestEntry(TEAM, 1, true);        // freigegeben, aber 0 Stimmen
+  assert.equal(await e.drawWinner(TEAM, 'sess_9', {}), null);
 });

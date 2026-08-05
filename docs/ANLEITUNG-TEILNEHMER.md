@@ -47,6 +47,19 @@ Nach der Ziehung sind die Einsätze **aller** Teilnehmer dieses Preises
 verbraucht. Guthaben ist nicht kaufbar, nicht auszahlbar, nicht übertragbar
 und verfällt nach 12 Monaten ohne Bewegung.
 
+## Extra: Screenshot-Contest 📸
+Beim **Screenshot-Contest** sendest du deinen besten Screenshot ein (Seite
+„Screenshot-Contest", Twitch-Login) und bewertest die freigegebenen Bilder der
+anderen mit **1 (schlecht) bis 10 (SUPER!)** — sobald der Streamer das Voting
+öffnet. Regeln kurz:
+- Einsenden und Voten können nur **echte Zuschauer** (Follow + Mindest-Zuschauzeit).
+- **Ein Screenshot pro Person.** Ersetzen geht — aber **die schon erhaltenen
+  Stimmen verfallen dabei** (du wirst vorher gewarnt).
+- **Eine Stimme je Bild**; nochmal klicken ändert deine Wertung. Dein eigenes
+  Bild kannst du nicht bewerten.
+- Jede Einsendung wird vor der Sichtbarkeit vom Streamer geprüft.
+- Es gewinnt die **höchste Punktsumme**; bei Gleichstand entscheidet das Los.
+
 ## Fair bleiben
 Spam, Emoji-Spam, Ein-Wort-Nachrichten, Bots oder Mehrfachaccounts führen zum
 **Ausschluss** — deine Chance verfällt dann. Gezogen wird **zufällig**, gewichtet

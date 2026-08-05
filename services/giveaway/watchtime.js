@@ -90,6 +90,8 @@ const K = {
   gCore:     (t, g) => `${K.GP(t, g)}core`,      // Core-ID der Instanz (Phase 3)
   gWinEnd:   (t, g) => `${K.GP(t, g)}win_end`,   // Fensterende (Unix-Sek., Sofortverlosung)
   gWagerCmd: (t, g) => `${K.GP(t, g)}wager_cmd`, // Setz-Befehl (Phase 4b, WebUI-konfigurierbar)
+  gMinWatch: (t, g) => `${K.GP(t, g)}min_watch`, // Contest: Mindest-Viewtime Einsenden/Voten (Phase 6)
+  gVoteState:(t, g) => `${K.GP(t, g)}vote_state`,// Contest: Voting closed|open|paused (Phase 6)
   abuseHist:  (t, u) => `${TP(t)}gw:abuse:hist:${u}`,     // letzte Msg-Hashes
   abuseTimes: (t, u) => `${TP(t)}gw:abuse:times:${u}`,    // letzte Timestamps (Rate)
 };
@@ -718,7 +720,7 @@ class WatchtimeEngine {
   // ── Phase 2c: Sekundär-Instanz (z.B. Sofortverlosung neben der Kampagne) ──
   // Läuft ausschließlich im g:-Namespace; channels = Teilmenge der
   // Team-Kanäle (leer/null = alle).
-  async openGiveawayInstance(teamId, gid, { keyword = '', channels = null, core = null, windowSec = 0, wagerCmd = '' } = {}) {
+  async openGiveawayInstance(teamId, gid, { keyword = '', channels = null, core = null, windowSec = 0, wagerCmd = '', minWatchSec = null } = {}) {
     const t = sanitizeTeamId(teamId);
     this.validateSessionId(gid);
     if (!t) throw new Error('Invalid teamId');
@@ -737,6 +739,9 @@ class WatchtimeEngine {
       await this.redis.set(K.gWinEnd(t, gid), String(Math.floor(Date.now() / 1000) + win));
     }
     if (wagerCmd) await this.redis.set(K.gWagerCmd(t, gid), sanitizeStr(wagerCmd, 30).toLowerCase());
+    if (minWatchSec !== null && Number.isFinite(parseInt(minWatchSec, 10))) {
+      await this.redis.set(K.gMinWatch(t, gid), String(Math.max(0, parseInt(minWatchSec, 10))));
+    }
     await this.redis.sadd(K.openTeams(), t);
     console.log(`[WTE] [${t}] instance ${gid} opened, core=${core || CORE.id}, keyword="${keyword}"`);
   }
@@ -915,6 +920,114 @@ class WatchtimeEngine {
     return { users, total: Math.round(total * 10000) / 10000 };
   }
 
+  // ── Phase 6: CORE_ScreenshotContest ─────────────────────
+  // Berechtigung Einsenden: bestätigter Follow auf einem Instanz-Kanal UND
+  // Mindest-Viewtime (Kampagnenstand des Teams). Voten: Mindest-Viewtime.
+  async _contestEligibility(teamId, gid, username) {
+    const t = sanitizeTeamId(teamId);
+    const minWatch = parseInt(await this.redis.get(K.gMinWatch(t, gid)), 10) || 0;
+    const agg = await this.getUserAggregate(t, username);   // Kampagnen-/Team-Stand
+    let chans = null;
+    try { const raw = await this.redis.get(K.gChanList(t, gid)); if (raw) chans = JSON.parse(raw); } catch { /* alle */ }
+    if (!Array.isArray(chans) || !chans.length) chans = await this.getChannels(t);
+    const followsHost = chans.some(ch => agg.perChannel[ch] && agg.perChannel[ch].follows);
+    return {
+      watchOk: agg.totalWatchSec >= minWatch,
+      followsHost,
+      minWatch,
+      watchSec: agg.totalWatchSec,
+    };
+  }
+
+  // Einsenden/Ersetzen. EINE Einsendung pro Person (UNIQUE); Ersetzen löscht
+  // die bereits abgegebenen Stimmen für den alten Screenshot — deshalb wird
+  // ohne confirmReplace abgebrochen, wenn Stimmen existieren (UI warnt).
+  async submitContestEntry(teamId, gid, username, { title = '', mime, image, confirmReplace = false } = {}) {
+    const t = sanitizeTeamId(teamId), u = sanitizeUsername(username);
+    if (await this.redis.get(K.gOpen(t, gid)) !== 'true') return { error: 'contest_closed' };
+    if (await this.redis.get(K.gwBanned(t, u)) === '1') return { error: 'banned' };
+    const elig = await this._contestEligibility(t, gid, u);
+    if (!elig.followsHost) return { error: 'not_following', minWatch: elig.minWatch };
+    if (!elig.watchOk)     return { error: 'not_enough_watchtime', minWatch: elig.minWatch, watchSec: elig.watchSec };
+
+    const existing = await this.pg.query(
+      `SELECT id FROM contest_entries WHERE session_id=$1 AND username=$2`, [gid, u]);
+    if (existing.rowCount) {
+      const votes = await this.pg.query(
+        `SELECT COUNT(*)::int AS n FROM contest_votes WHERE entry_id=$1`, [existing.rows[0].id]);
+      const n = votes.rows[0].n || 0;
+      if (n > 0 && !confirmReplace) return { error: 'votes_would_be_lost', votes: n };
+      // Neueinsendung: alte Stimmen verfallen (der bewertete Inhalt existiert
+      // nicht mehr) — Warnung/Bestätigung ist oben erzwungen.
+      await this.pg.query(`DELETE FROM contest_votes WHERE entry_id=$1`, [existing.rows[0].id]);
+    }
+    await this.pg.query(`
+      INSERT INTO contest_entries (team_id, session_id, username, title, mime, image, status)
+      VALUES ($1,$2,$3,$4,$5,$6,'pending')
+      ON CONFLICT (session_id, username) DO UPDATE SET
+        title=EXCLUDED.title, mime=EXCLUDED.mime, image=EXCLUDED.image,
+        status='pending', created_at=NOW()
+    `, [t, gid, u, sanitizeStr(title, 100), mime, image]);
+    await this._touchUser(t, u);
+    return { ok: true, replaced: existing.rowCount > 0 };
+  }
+
+  async reviewContestEntry(teamId, entryId, approve) {
+    const t = sanitizeTeamId(teamId);
+    const r = await this.pg.query(
+      `UPDATE contest_entries SET status=$3 WHERE id=$1 AND team_id=$2 RETURNING username, title`,
+      [entryId, t, approve ? 'approved' : 'rejected']);
+    return r.rowCount ? { ok: true, ...r.rows[0] } : { error: 'no_entry' };
+  }
+
+  // Voting-Steuerung: closed (Default) | open | paused. Nur 'open' nimmt Stimmen an.
+  async setContestVoting(teamId, gid, state) {
+    const t = sanitizeTeamId(teamId);
+    if (!['open', 'paused', 'closed'].includes(state)) throw new Error('Ungültiger Voting-Zustand');
+    await this.redis.set(K.gVoteState(t, gid), state);
+    return state;
+  }
+  async getContestVoting(teamId, gid) {
+    return await this.redis.get(K.gVoteState(sanitizeTeamId(teamId), gid)) || 'closed';
+  }
+
+  // Eine Stimme je (Voter, Screenshot); erneutes Voten überschreibt (UPSERT).
+  // Eigene Einsendung ist nicht votebar.
+  async castContestVote(teamId, gid, voter, entryId, score) {
+    const t = sanitizeTeamId(teamId), u = sanitizeUsername(voter);
+    if (await this.getContestVoting(t, gid) !== 'open') return { error: 'voting_not_open' };
+    if (await this.redis.get(K.gwBanned(t, u)) === '1') return { error: 'banned' };
+    const elig = await this._contestEligibility(t, gid, u);
+    if (!elig.watchOk) return { error: 'not_enough_watchtime', minWatch: elig.minWatch, watchSec: elig.watchSec };
+    const entry = await this.pg.query(
+      `SELECT id, username, status FROM contest_entries WHERE id=$1 AND session_id=$2 AND team_id=$3`,
+      [entryId, gid, t]);
+    if (!entry.rowCount || entry.rows[0].status !== 'approved') return { error: 'no_entry' };
+    if (entry.rows[0].username === u) return { error: 'own_entry' };
+    await this.pg.query(`
+      INSERT INTO contest_votes (entry_id, team_id, session_id, voter, score)
+      VALUES ($1,$2,$3,$4,$5)
+      ON CONFLICT (entry_id, voter) DO UPDATE SET score=EXCLUDED.score, created_at=NOW()
+    `, [entryId, t, gid, u, score]);
+    return { ok: true, score };
+  }
+
+  // Ranking: Punktsumme + Stimmenzahl je Einsendung (approved für die Ziehung;
+  // all=true liefert auch pending/rejected fürs Admin-Review).
+  async getContestStandings(teamId, gid, { all = false } = {}) {
+    const t = sanitizeTeamId(teamId);
+    const r = await this.pg.query(
+      `SELECT e.id AS entry_id, e.username, e.title, e.status,
+              COALESCE(SUM(v.score),0)::int AS score, COUNT(v.id)::int AS votes
+       FROM contest_entries e
+       LEFT JOIN contest_votes v ON v.entry_id = e.id
+       WHERE e.session_id=$1 AND e.team_id=$2` + (all ? '' : ` AND e.status='approved'`) +
+      ` GROUP BY e.id, e.username, e.title, e.status
+       ORDER BY score DESC, votes DESC, e.id`, [gid, t]);
+    return r.rows.map(x => ({ entryId: parseInt(x.entry_id), username: x.username, title: x.title || '',
+                              status: x.status, score: x.score, votes: x.votes }));
+  }
+
   // Räumt eine (gezogene/geschlossene) Instanz vollständig aus Redis —
   // keine g:-Leichen (§6). Nach der Auto-Ziehung der Sofortverlosung
   // aufgerufen; für manuell geschlossene Instanzen erst nach der Ziehung.
@@ -930,7 +1043,8 @@ class WatchtimeEngine {
       }
     }
     pipeline.del(K.gOpen(t, gid), K.gPaused(t, gid), K.gKw(t, gid), K.gChanList(t, gid),
-                 K.gCore(t, gid), K.gWinEnd(t, gid), K.gMult(t, gid), K.gWagerCmd(t, gid));
+                 K.gCore(t, gid), K.gWinEnd(t, gid), K.gMult(t, gid), K.gWagerCmd(t, gid),
+                 K.gMinWatch(t, gid), K.gVoteState(t, gid));
     pipeline.srem(K.gwSet(t), gid);
     await pipeline.exec();
     console.log(`[WTE] [${t}] instance ${gid} cleaned`);
@@ -954,6 +1068,11 @@ class WatchtimeEngine {
         throw new Error('CORE_TicketBuy zieht je Preis — prizeId fehlt');
       }
       poolSource = await this.getPrizeStakes(t, drawPrizeId);
+    } else if (drawCoreId === 'CORE_ScreenshotContest') {
+      // Deterministisch: buildPool liefert nur die Führenden (weight 1);
+      // bei Punktgleichstand lost der normale Engine-Zufall aus. Voting zu.
+      await this.setContestVoting(t, sessionId, 'closed');
+      poolSource = await this.getContestStandings(t, sessionId);
     } else if (drawCore.accrual === 'none') {
       poolSource = await this.getInstantParticipants(t, sessionId);
     } else {
