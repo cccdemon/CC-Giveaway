@@ -59,6 +59,18 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
   ohne Legacy-Fallback). Obergrenze `MAX_PARALLEL_GIVEAWAYS` (ENV, Default 4).
   Team-weit bleiben: Presence/LastTick, Follows, Bans, Index, Keyword, cfg:*.
   **Neu-Öffnen ohne Reset startet bei null** (beabsichtigt, im Changelog).
+- **Gewinn ist Pflichtangabe je Giveaway** (`sessions.prize`, Server-Gate in
+  `gw_open`/`gw_open_instance` — Ausnahme Los-Giveaway: dort je Preis,
+  `giveaway_prizes.title/sponsor`), **Sponsor optional** (`sessions.sponsor`).
+  Beides in der Eröffnungs-Ansage (`prizeLine()`) und als Default im
+  Ziehungssatz (`gw_draw_winner` liest sessions/giveaway_prizes, wenn kein
+  expliziter prize-Text kommt).
+- **Panel-Konventionen:** Instanz-Start über das Modal (`iw-*`,
+  Typ-Karten + Kanal-Chips), Instanz-Steuerung als Rail-Karten
+  (`card-instant`/`card-ticketbuy`/`card-contest` — Sichtbarkeits-Matrix per
+  `core-*`-Klassen am `.gw-app`), SCHLIESSEN wirkt kontextabhängig
+  (`gwCloseSmart`). Fenster-Eingaben in Minuten (API bleibt `windowSec`).
+  Keine `prompt()`/`alert()`-Dialoge für neue Features — Karten/Modal nutzen.
 
 ## Services (`services/`)
 | Service | Container | Port | Zweck |

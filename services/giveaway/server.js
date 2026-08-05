@@ -338,7 +338,13 @@ async function giveawayInfoText(teamId) {
 // Jeder Statuswechsel wird im Chat angesagt. Die Ansagen sitzen in diesen
 // Helfern und nicht in den gw_cmd-Faellen, damit der Auto-Pfad
 // (stream_online/-offline) dieselbe Nachricht schickt und nichts vergessen wird.
-async function openGiveaway(teamId, keyword) {
+// Chat-Zeile „Zu gewinnen: X — bereitgestellt von Y" für Ansagen.
+function prizeLine(prize, sponsor) {
+  if (!prize) return '';
+  return ` 🎁 Zu gewinnen: ${prize}` + (sponsor ? ` — bereitgestellt von ${sponsor}` : '') + '.';
+}
+
+async function openGiveaway(teamId, keyword, prize = '', sponsor = '') {
   const sid = `sess_${Date.now()}`;
   await wte.openGiveaway(teamId, keyword, sid);
   await redis.del(K.gwAutoPaused(teamId));   // frischer Start ist nie auto-pausiert
@@ -348,10 +354,10 @@ async function openGiveaway(teamId, keyword) {
   // Gelesen wird zur Laufzeit weiterhin aus Redis; der Snapshot dokumentiert,
   // mit welcher Konfiguration dieses Giveaway gestartet ist.
   const coreConfig = await snapshotCoreConfig(teamId);
-  await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels, core, status, core_config) VALUES ($1,$2,$3,$4,$5,'open',$6) ON CONFLICT (id) DO NOTHING`,
-    [sid, teamId, keyword || '', JSON.stringify(chans), CORE.id, JSON.stringify(coreConfig)]);
+  await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels, core, status, core_config, prize, sponsor) VALUES ($1,$2,$3,$4,$5,'open',$6,$7,$8) ON CONFLICT (id) DO NOTHING`,
+    [sid, teamId, keyword || '', JSON.stringify(chans), CORE.id, JSON.stringify(coreConfig), prize || null, sponsor || null]);
   broadcastTeam(teamId, { event: 'gw_status', status: 'open' });
-  await announceTeam(teamId, '🎉 Das Giveaway ist ERÖFFNET! ' + await giveawayInfoText(teamId));
+  await announceTeam(teamId, '🎉 Das Giveaway ist ERÖFFNET!' + prizeLine(prize, sponsor) + ' ' + await giveawayInfoText(teamId));
   log('GW', `[${teamId}] opened session ${sid}, kw="${keyword}", channels=${chans.join(',')}`);
   return sid;
 }
@@ -690,7 +696,7 @@ async function runAdminCmd(send, msg, meta, ctx) {
   const { teamId, owner, sid, outcome } = ctx;
 
   switch (msg.cmd) {
-    case 'gw_open':
+    case 'gw_open': {
       if (!await ownerAcceptedTos(teamId)) {
         Object.assign(outcome, { blocked: 'no_tos' });
         send({ event: 'gw_ack', type: 'open_blocked', error: TOS_HINT });
@@ -701,9 +707,20 @@ async function runAdminCmd(send, msg, meta, ctx) {
         send({ event: 'gw_ack', type: 'open_blocked', error: IMPRINT_HINT });
         break;
       }
-      outcome.sessionOpened = await openGiveaway(teamId, sanitizeStr(msg.keyword || '', 100));
+      // Der Gewinn ist Pflichtangabe — Teilnehmer müssen wissen, worum es geht.
+      const oPrize   = sanitizeStr(msg.prize || '', 100).trim();
+      const oSponsor = sanitizeStr(msg.sponsor || '', 100).trim();
+      if (!oPrize) {
+        Object.assign(outcome, { blocked: 'no_prize' });
+        send({ event: 'gw_ack', type: 'open_blocked',
+               error: 'Bitte zuerst eintragen, was verlost wird (Feld „Gewinn" — ggf. mit Sponsor).' });
+        break;
+      }
+      Object.assign(outcome, { prize: oPrize, sponsor: oSponsor || undefined });
+      outcome.sessionOpened = await openGiveaway(teamId, sanitizeStr(msg.keyword || '', 100), oPrize, oSponsor);
       send({ event: 'gw_status', status: 'open' });
       break;
+    }
     case 'gw_close':
       outcome.sessionClosed = await wte.getSessionId(teamId);
       await closeGiveaway(teamId);
@@ -767,6 +784,16 @@ async function runAdminCmd(send, msg, meta, ctx) {
       // Phase 3: Instanz kann einen anderen Core fahren (Registry-validiert).
       const coreId = CoreRegistry.CORES[msg.core] ? msg.core : CoreRegistry.DEFAULT_CORE_ID;
       const coreMod = CoreRegistry.getCore(coreId);
+      // Gewinn ist Pflicht — ausser beim Los-Giveaway (dort sind die einzeln
+      // angelegten Preise die Gewinne, je Preis mit eigenem Sponsor).
+      const iPrize   = sanitizeStr(msg.prize || '', 100).trim();
+      const iSponsor = sanitizeStr(msg.sponsor || '', 100).trim();
+      if (!iPrize && coreId !== 'CORE_TicketBuy') {
+        Object.assign(outcome, { blocked: 'no_prize', core: coreId });
+        send({ event: 'gw_ack', type: 'open_blocked',
+               error: 'Bitte eintragen, was verlost wird (Gewinn — ggf. mit Sponsor).' });
+        break;
+      }
       let windowSec = 0;
       if (coreId === 'CORE_CurrentViewers') {   // Sofortverlosung
         if (!keyword) {
@@ -801,19 +828,22 @@ async function runAdminCmd(send, msg, meta, ctx) {
                        : coreId === 'CORE_ScreenshotContest' ? { minWatchSec }
                        : coreId === 'CORE_TicketBuy' ? { ...(await snapshotCoreConfig(teamId)), wagerCmd }
                        : await snapshotCoreConfig(teamId);
-      await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels, core, status, core_config)
-                      VALUES ($1,$2,$3,$4,$5,'open',$6) ON CONFLICT (id) DO NOTHING`,
-        [gid, teamId, keyword, JSON.stringify(channels.length ? channels : teamChans), coreId, JSON.stringify(coreConfig)]);
+      await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels, core, status, core_config, prize, sponsor)
+                      VALUES ($1,$2,$3,$4,$5,'open',$6,$7,$8) ON CONFLICT (id) DO NOTHING`,
+        [gid, teamId, keyword, JSON.stringify(channels.length ? channels : teamChans), coreId,
+         JSON.stringify(coreConfig), iPrize || null, iSponsor || null]);
       await wte.openGiveawayInstance(teamId, gid, { keyword, channels: channels.length ? channels : null,
                                                     core: coreId, windowSec, wagerCmd, minWatchSec });
       Object.assign(outcome, { giveawayId: gid, keyword, core: coreId, windowSec: windowSec || undefined,
-                               wagerCmd: wagerCmd || undefined, channels: channels.length ? channels : 'alle' });
+                               wagerCmd: wagerCmd || undefined, prize: iPrize || undefined,
+                               sponsor: iSponsor || undefined, channels: channels.length ? channels : 'alle' });
       await announceChannels(teamId, channels.length ? channels : null,
-        coreId === 'CORE_CurrentViewers'
+        (coreId === 'CORE_CurrentViewers'
           ? (windowSec > 0 ? coreMod.infoText({ keyword, windowSec }) : coreMod.prepText({ keyword }))
         : coreId === 'CORE_ScreenshotContest' ? coreMod.infoText()
         : coreId === 'CORE_TicketBuy' ? coreMod.infoText({ cmd: wagerCmd })
-        : '🎁 Zusätzliches Giveaway gestartet!' + (keyword ? ` Mitmachen: schreib "${keyword}" im Chat.` : ''));
+        : '🎁 Zusätzliches Giveaway gestartet!' + (keyword ? ` Mitmachen: schreib "${keyword}" im Chat.` : ''))
+        + prizeLine(iPrize, iSponsor));
       send({ event: 'gw_ack', type: 'instance_opened', giveawayId: gid, keyword, core: coreId,
              windowSec: windowSec || null, wagerCmd: wagerCmd || null,
              channels: channels.length ? channels : null });
@@ -869,12 +899,16 @@ async function runAdminCmd(send, msg, meta, ctx) {
       }
       const endMin = Math.max(0, parseInt(msg.wagerEndMinutes, 10) || 0);
       const wagerEndTs = endMin ? Math.floor(Date.now() / 1000) + endMin * 60 : null;
+      const pSponsor = sanitizeStr(msg.sponsor || '', 100).trim();
       const prizeId = await wte.addPrize(teamId, gid, {
         title, description: sanitizeStr(msg.description || '', 500), wagerEndTs });
-      Object.assign(outcome, { prizeId, title, giveawayId: gid, wagerEndMinutes: endMin || null });
+      if (pSponsor) await pg.query(`UPDATE giveaway_prizes SET sponsor=$1 WHERE id=$2`, [pSponsor, prizeId]);
+      Object.assign(outcome, { prizeId, title, sponsor: pSponsor || undefined, giveawayId: gid, wagerEndMinutes: endMin || null });
       const cmd = (await redis.get(K.gWagerCmd(teamId, gid))) || 'setzen-Befehl';
       await announceChannels(teamId, inst.channels,
-        `🎁 Neuer Preis #${prizeId}: „${title}" — Lose setzen mit dem ${cmd === 'setzen-Befehl' ? cmd : `Befehl „${cmd} ${prizeId} <anzahl>"`}`
+        `🎁 Neuer Preis #${prizeId}: „${title}"`
+        + (pSponsor ? ` (bereitgestellt von ${pSponsor})` : '')
+        + ` — Lose setzen mit dem ${cmd === 'setzen-Befehl' ? cmd : `Befehl „${cmd} ${prizeId} <anzahl>"`}`
         + (endMin ? ` (Einsatz-Ende in ${endMin} min).` : '.'));
       send({ event: 'gw_ack', type: 'prize_added', prizeId, title });
       break;
@@ -1191,9 +1225,28 @@ async function runAdminCmd(send, msg, meta, ctx) {
       try {
         // Vor echter Ziehung Follows via Helix verifizieren (Phase 4).
         if (!msg.test) { try { await verifyFollows(teamId); } catch(e) { logErr('Helix', 'pre-draw verify:', e.message); } }
-        // Mit giveawayId zieht die Instanz, sonst das Primary.
+        // Mit giveawayId zieht die Instanz, sonst das Primary. Ohne expliziten
+        // prize-Text kommt der beim Öffnen eingetragene Gewinn (+ Sponsor)
+        // in den Ziehungssatz.
         const drawGid = validGid(msg.giveawayId) || await sid();
-        const result = await wte.drawWinner(teamId, drawGid, { test: !!msg.test, prize: msg.prize, prizeId: msg.prizeId });
+        let drawPrize = sanitizeStr(msg.prize || '', 100).trim();
+        const drawPrizeIdNum = parseInt(msg.prizeId, 10);
+        if (!drawPrize && Number.isFinite(drawPrizeIdNum)) {   // Los-Giveaway: Titel + Sponsor des Preises
+          try {
+            const pr = await pg.query(`SELECT title, sponsor FROM giveaway_prizes WHERE id=$1`, [drawPrizeIdNum]);
+            if (pr.rowCount) drawPrize = pr.rows[0].title
+              + (pr.rows[0].sponsor ? ` — bereitgestellt von ${pr.rows[0].sponsor}` : '');
+          } catch (e) { logErr('GW', 'draw prize lookup:', e.message); }
+        }
+        if (!drawPrize && drawGid) {
+          try {
+            const sp = await pg.query(`SELECT prize, sponsor FROM sessions WHERE id=$1`, [drawGid]);
+            if (sp.rowCount && sp.rows[0].prize) {
+              drawPrize = sp.rows[0].prize + (sp.rows[0].sponsor ? ` — bereitgestellt von ${sp.rows[0].sponsor}` : '');
+            }
+          } catch (e) { logErr('GW', 'draw prize lookup:', e.message); }
+        }
+        const result = await wte.drawWinner(teamId, drawGid, { test: !!msg.test, prize: drawPrize, prizeId: msg.prizeId });
         if (!result) { outcome.winner = null; send({ event: 'gw_ack', type: 'no_winner' }); break; }
         Object.assign(outcome, { winner: result.winner, winnerCoins: result.coins, drawId: result.drawId,
                                  eligibleCount: result.eligibleCount, totalCoins: result.total,
@@ -1959,6 +2012,11 @@ async function ensureSchema() {
   await pg.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS core TEXT NOT NULL DEFAULT 'CORE_WatchtimeChatActivity'`);
   await pg.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS core_config JSONB`);
   await pg.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS status TEXT`);
+  // Gewinn ist Pflichtangabe je Giveaway, Sponsor/Bereitsteller optional
+  // (Transparenz gegenüber Teilnehmern; Bestand bleibt NULL-tolerant).
+  await pg.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS prize TEXT`);
+  await pg.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS sponsor TEXT`);
+  await pg.query(`ALTER TABLE giveaway_prizes ADD COLUMN IF NOT EXISTS sponsor TEXT`);
   await pg.query(`ALTER TABLE giveaway_draws ADD COLUMN IF NOT EXISTS core TEXT`);
   await pg.query(`ALTER TABLE giveaway_draws ADD COLUMN IF NOT EXISTS prize_id BIGINT`);
   // Phase 4a (CORE_TicketBuy, §5.2/§10.1): team-weites Guthaben-Journal,

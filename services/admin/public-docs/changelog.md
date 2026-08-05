@@ -7,6 +7,17 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 5. August 2026
 
+### Gewinn und Sponsor gehören jetzt zu jedem Giveaway
+
+Beim Öffnen eines Giveaways muss ab jetzt eingetragen werden, **was verlost
+wird** — optional dazu, **wer den Gewinn bereitgestellt hat** (Sponsor).
+Beides wird im Chat angesagt und steht im Ziehungsnachweis. Beim
+Los-Giveaway gilt das je Preis. Außerdem: das Anmeldefenster der
+Sofortverlosung wird in Minuten eingestellt, der Öffnen-Knopf ist gesperrt,
+solange ein Fenster läuft, und die Instanz-Steuerung (Preise, Setz-Befehl,
+Voting, Fenster) sitzt jetzt als Karten im Dashboard statt in
+Browser-Dialogen.
+
 ### Neu: Screenshot-Contest
 
 Vierter Giveaway-Typ: die Community sendet Screenshots ein und bewertet sie —

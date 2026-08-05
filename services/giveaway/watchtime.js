@@ -842,7 +842,7 @@ class WatchtimeEngine {
   async listPrizes(teamId, { openOnly = true } = {}) {
     const t = sanitizeTeamId(teamId);
     const r = await this.pg.query(
-      `SELECT p.id, p.session_id, p.title, p.description, p.wager_end, p.status,
+      `SELECT p.id, p.session_id, p.title, p.description, p.wager_end, p.status, p.sponsor,
               COALESCE((SELECT SUM(w.amount) FROM prize_wagers w WHERE w.prize_id = p.id), 0) AS total_stake
        FROM giveaway_prizes p WHERE p.team_id=$1` + (openOnly ? ` AND p.status='open'` : '') +
       ` ORDER BY p.id`, [t]);

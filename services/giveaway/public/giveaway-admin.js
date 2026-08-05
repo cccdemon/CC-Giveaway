@@ -175,8 +175,10 @@ function tbAddPrize() {
   var title = document.getElementById('tb-prize-title').value.trim();
   if (!title) { log('Preis braucht einen Titel', 'red'); return; }
   var mins = CC.validate.sanitizeInt(document.getElementById('tb-prize-end').value, 0, 20160, 0);
-  send({ event: 'gw_cmd', cmd: 'gw_add_prize', giveawayId: currentGiveaway, title: title, wagerEndMinutes: mins });
+  send({ event: 'gw_cmd', cmd: 'gw_add_prize', giveawayId: currentGiveaway, title: title, wagerEndMinutes: mins,
+         sponsor: (document.getElementById('tb-prize-sponsor') || {}).value || '' });
   document.getElementById('tb-prize-title').value = '';
+  var sp = document.getElementById('tb-prize-sponsor'); if (sp) sp.value = '';
 }
 
 function tbLoadPrizes() { send({ event: 'gw_cmd', cmd: 'gw_list_prizes' }); }
@@ -186,7 +188,8 @@ function renderPrizes(prizes) {
   if (!host) return;
   if (!prizes || !prizes.length) { host.innerHTML = '<div class="wsc-empty">Noch keine Preise.</div>'; return; }
   host.innerHTML = prizes.map(function(p) {
-    return '<div class="tb-prize"><span class="t">#' + p.id + ' ' + esc(p.title) + '</span>'
+    return '<div class="tb-prize"><span class="t" title="' + esc(p.sponsor ? 'bereitgestellt von ' + p.sponsor : '') + '">#'
+      + p.id + ' ' + esc(p.title) + (p.sponsor ? ' <span style="opacity:.55">· ' + esc(p.sponsor) + '</span>' : '') + '</span>'
       + '<span class="s">' + Number(p.total_stake).toFixed(0) + ' 🎟</span>'
       + (p.status === 'open'
           ? '<button class="btn btn-solid btn-sm" onclick="tbDrawPrize(' + p.id + ')">★ ZIEHEN</button>'
@@ -291,6 +294,9 @@ function iwSelect(type) {
     c.classList.toggle('sel', c.getAttribute('data-type') === type);
   });
   var f = IW_TYPES[type].fields;
+  var showPrize = type !== 'ticketbuy';   // Los-Giveaway: Gewinne = einzelne Preise
+  document.getElementById('iw-f-prize').style.display   = showPrize ? '' : 'none';
+  document.getElementById('iw-f-sponsor').style.display = showPrize ? '' : 'none';
   document.getElementById('iw-f-keyword').style.display  = f.keyword  ? '' : 'none';
   document.getElementById('iw-f-window').style.display   = f.window   ? '' : 'none';
   document.getElementById('iw-f-wagercmd').style.display = f.wagercmd ? '' : 'none';
@@ -313,6 +319,17 @@ function iwStart() {
   var err = document.getElementById('iw-err');
   var payload = { event: 'gw_cmd', cmd: 'gw_open_instance', keyword: '' };
   if (t.core) payload.core = t.core;
+
+  // Gewinn ist Pflicht — ausser beim Los-Giveaway (Preise = Gewinne).
+  if (iwType !== 'ticketbuy') {
+    payload.prize = document.getElementById('iw-prize').value.trim();
+    payload.sponsor = document.getElementById('iw-sponsor').value.trim();
+    if (!payload.prize) {
+      err.textContent = 'Bitte eintragen, was verlost wird (Gewinn).';
+      document.getElementById('iw-prize').focus();
+      return;
+    }
+  }
 
   if (t.fields.keyword) {
     payload.keyword = CC.validate.sanitize(document.getElementById('iw-keyword').value, 'keyword').trim();
@@ -663,7 +680,13 @@ function genIngestToken(ch) {
 // OPEN/CLOSE gelten der Kampagne — bei gewählter Zusatz-Instanz blocken,
 // deren Lebenszyklus läuft über ＋/✕ (gw_open_instance/gw_close_instance).
 function gwOpen()   { if (currentGiveaway) { log('Instanz gewählt — Kampagne öffnen erst nach Wechsel auf „Kampagne"', 'red'); return; }
-                      send({ event:'gw_cmd', cmd:'gw_open'   }); gwIsOpen=true; gwPaused=false; updateGwStatus(); log('Giveaway geoeffnet','cyan'); }
+                      // Gewinn ist Pflicht (Server prüft ebenfalls); Sponsor optional.
+                      var oPrize = (document.getElementById('prize-input') || {}).value || '';
+                      if (!oPrize.trim()) { log('Bitte zuerst den Gewinn eintragen (Feld links)', 'red');
+                                            var pi = document.getElementById('prize-input'); if (pi) pi.focus(); return; }
+                      send({ event:'gw_cmd', cmd:'gw_open', prize: oPrize.trim(),
+                             sponsor: ((document.getElementById('sponsor-input') || {}).value || '').trim() });
+                      gwIsOpen=true; gwPaused=false; updateGwStatus(); log('Giveaway geoeffnet','cyan'); }
 function gwClose()  { if (currentGiveaway) { log('Instanz gewählt — zum Schließen der Instanz ✕ benutzen', 'red'); return; }
                       send({ event:'gw_cmd', cmd:'gw_close'  }); gwIsOpen=false; gwPaused=false; updateGwStatus(); log('Giveaway geschlossen','gold'); }
 // PAUSE/RESUME tragen die giveawayId (GID_CMDS) und wirken auf die Auswahl.

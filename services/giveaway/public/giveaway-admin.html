@@ -102,7 +102,8 @@
 
   <!-- ── Primäraktionen ───────────────────────────────── -->
   <div class="actionstrip">
-    <input type="text" id="prize-input" class="vis-campaign-only" placeholder="Preis (z.B. Steam-Key, 10€ …)">
+    <input type="text" id="prize-input" class="vis-campaign-only" placeholder="Gewinn (Pflicht — z.B. Steam-Key)" maxlength="100">
+    <input type="text" id="sponsor-input" class="vis-campaign-only" placeholder="Sponsor / bereitgestellt von (optional)" maxlength="100">
     <button class="btn btn-gold vis-campaign-only" id="btn-verify" onclick="verifyFollows()">FOLLOWS PRÜFEN</button>
     <button class="btn btn-solid" id="btn-draw" onclick="drawWinner()">★ GEWINNER ZIEHEN</button>
     <span class="as-spacer"></span>
@@ -186,6 +187,9 @@
         <div class="card-sub mt-8">NEUER PREIS</div>
         <div class="input-row">
           <input type="text" id="tb-prize-title" placeholder="Titel (z.B. Headset)" maxlength="100">
+        </div>
+        <div class="input-row mt-6">
+          <input type="text" id="tb-prize-sponsor" placeholder="Sponsor (optional)" maxlength="100">
         </div>
         <div class="input-row mt-6">
           <input type="number" id="tb-prize-end" min="0" max="20160" step="15" value="0" class="in-narrow" title="Einsatz-Ende in Minuten (0 = offen bis zur Ziehung)">
@@ -341,6 +345,15 @@
 
     <div id="iw-fields" style="display:none">
       <div class="iw-sec" id="iw-fields-title">EINSTELLUNGEN</div>
+      <div class="iw-field" id="iw-f-prize">
+        <label for="iw-prize">Gewinn (Pflicht)</label>
+        <input type="text" id="iw-prize" maxlength="100" placeholder="z.B. Steam-Key, Ingame-Schiff …">
+        <div class="hint">Wird im Chat angesagt und steht im Ziehungsnachweis.</div>
+      </div>
+      <div class="iw-field" id="iw-f-sponsor">
+        <label for="iw-sponsor">Sponsor / bereitgestellt von (optional)</label>
+        <input type="text" id="iw-sponsor" maxlength="100" placeholder="z.B. Community-Mitglied XY">
+      </div>
       <div class="iw-field" id="iw-f-keyword">
         <label for="iw-keyword" id="iw-keyword-label">Keyword</label>
         <input type="text" id="iw-keyword" maxlength="100" placeholder="z.B. !blitz">
