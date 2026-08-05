@@ -213,6 +213,31 @@ test('Phase 2a: Registry löst Core-IDs auf, Fallback = heutiger Core', () => {
   ]);
 });
 
+test('statusLine: jede Sekundär-Mechanik liefert eine !los-Zusatzzeile', () => {
+  const cv = require('../cores/current-viewers');
+  const tb = require('../cores/ticket-buy');
+  const sc = require('../cores/screenshot-contest');
+
+  // Sofortverlosung: offenes Fenster nennt Keyword + Restzeit, sonst Hinweis.
+  assert.strictEqual(cv.statusLine({ keyword: 'sofort', secondsLeft: 90 }),
+    '⚡ Sofortverlosung: Anmeldefenster OFFEN — schreib "sofort" (noch 90 Sekunden).');
+  assert.strictEqual(cv.statusLine({ keyword: '', secondsLeft: 0 }),
+    '⚡ Außerdem läuft eine Sofortverlosung — das nächste Anmeldefenster wird angesagt.');
+
+  // Los-Einsatz: nennt den (konfigurierten) Setz-Befehl, Fallback = Default.
+  assert.strictEqual(tb.statusLine({ cmd: '!lose' }),
+    '🎟 Außerdem läuft ein Los-Giveaway — Lose setzen mit „!lose <preis-nr> <anzahl>" oder auf der Setz-Seite.');
+  assert.ok(tb.statusLine({}).includes('!setzen'));
+
+  // Contest: Voting-Zustand entscheidet die Zeile.
+  assert.ok(sc.statusLine({ voting: 'open' }).includes('VOTING ist offen'));
+  assert.ok(sc.statusLine({ voting: 'closed' }).includes('Einsendungen'));
+  assert.ok(sc.statusLine({ voting: 'paused' }).includes('Einsendungen'));
+
+  // Kampagnen-Core braucht KEINE statusLine (Primary spricht via statusText).
+  assert.strictEqual(typeof CORE.statusLine, 'undefined');
+});
+
 test('Phase 1: coinsFromSec Fallback bei fehlender Basis unverändert', () => {
   for (const sec of [0, 1, 3599, 3600, 7200, 10800, 123456]) {
     assert.strictEqual(CORE.coinsFromSec(sec), refCoinsFromSec(sec));

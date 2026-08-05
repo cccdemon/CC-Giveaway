@@ -57,6 +57,13 @@ function prepText({ keyword }) {
   return `⚡ Gleich startet eine SOFORTVERLOSUNG — halte dich bereit, ${kwTxt} zu schreiben, sobald das Anmeldefenster öffnet!`;
 }
 
+// Eine Zeile für !los, wenn diese Instanz parallel zur Kampagne läuft.
+function statusLine({ keyword, secondsLeft }) {
+  const kwTxt = keyword ? `"${keyword}"` : 'das Keyword';
+  if (secondsLeft > 0) return `⚡ Sofortverlosung: Anmeldefenster OFFEN — schreib ${kwTxt} (noch ${fmtWindow(secondsLeft)}).`;
+  return '⚡ Außerdem läuft eine Sofortverlosung — das nächste Anmeldefenster wird angesagt.';
+}
+
 function emptyDrawText() {
   return '⚡ Sofortverlosung abgebrochen — niemand war teilnahmeberechtigt '
        + '(Keyword geschrieben UND als Zuschauer gemeldet). Keine Ziehung erfolgt.';
@@ -79,6 +86,7 @@ module.exports = {
   buildPool,
   infoText,
   prepText,
+  statusLine,
   emptyDrawText,
   winnerText,
 

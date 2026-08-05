@@ -77,6 +77,11 @@ function infoText({ cmd }) {
   return `🎁 Los-Giveaway: Zuschauzeit wird zu Los-Guthaben. Setze deine Lose gezielt auf Preise: „${cmd} <preis-nr> <anzahl>". Gezogen wird je Preis, gewichtet nach Einsatz — jedes Los kann gewinnen. Nach der Ziehung sind die Einsätze aller Teilnehmer dieses Preises verbraucht.`;
 }
 
+// Eine Zeile für !los, wenn diese Instanz parallel zur Kampagne läuft.
+function statusLine({ cmd }) {
+  return `🎟 Außerdem läuft ein Los-Giveaway — Lose setzen mit „${cmd || WAGER_CMD_DEF} <preis-nr> <anzahl>" oder auf der Setz-Seite.`;
+}
+
 function winnerText({ winner, prizeTitle }) {
   return `🎉 „${prizeTitle}": @${winner} gewinnt — herzlichen Glückwunsch! Die Einsätze aller Teilnehmer dieses Preises sind damit verbraucht.`;
 }
@@ -97,6 +102,7 @@ module.exports = {
   retractOkText,
   wagerErrText,
   infoText,
+  statusLine,
   winnerText,
 
   display: {

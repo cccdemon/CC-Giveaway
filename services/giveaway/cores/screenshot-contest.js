@@ -52,6 +52,12 @@ function infoText() {
        + 'Einsenden und Voten können nur echte Zuschauer. Die höchste Punktsumme gewinnt!';
 }
 
+// Eine Zeile für !los, wenn diese Instanz parallel zur Kampagne läuft.
+function statusLine({ voting }) {
+  if (voting === 'open') return '📸 Außerdem läuft ein Screenshot-Contest — das VOTING ist offen (Contest-Seite, Login mit Twitch).';
+  return '📸 Außerdem läuft ein Screenshot-Contest — Einsendungen auf der Contest-Seite (Login mit Twitch).';
+}
+
 function winnerText({ winner, coins }) {
   return `📸 Contest-Sieger: @${winner} mit ${coins} Punkten — herzlichen Glückwunsch! 🎉`;
 }
@@ -74,6 +80,7 @@ module.exports = {
   clampScore,
   buildPool,
   infoText,
+  statusLine,
   winnerText,
   emptyDrawText,
 

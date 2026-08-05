@@ -326,6 +326,33 @@ const TOS_HINT = 'Den Nutzungsbedingungen wurde noch nicht zugestimmt. Melde dic
 // Ohne Schema — Chat-Texte zeigen nur den Host (anders als publicHost()).
 const chatHost = () =>
   (process.env.PUBLIC_URL || 'https://team.raumdock.org').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+// !los kannte nur die Kampagne — parallele Sekundär-Instanzen (Sofort/Los/
+// Contest) bekommen je eine kurze Zusatzzeile aus ihrem Core (statusLine).
+// Pausierte Instanzen bleiben stumm; Fehler hier dürfen !los nie brechen.
+async function secondaryStatusLines(teamId, channel) {
+  const lines = [];
+  const ch = sanitizeChannel(channel || '');
+  try {
+    for (const g of await wte.listGiveaways(teamId)) {
+      if (g.primary || g.paused) continue;
+      // Kanal-limitierte Instanz nur auf ihren eigenen Kanälen ansagen.
+      if (Array.isArray(g.channels) && ch && !g.channels.includes(ch)) continue;
+      const core = CoreRegistry.getCore(g.core);
+      if (typeof core.statusLine !== 'function') continue;
+      const ctx = { keyword: g.keyword };
+      if (core.id === 'CORE_CurrentViewers') {
+        ctx.secondsLeft = g.windowEndsAt ? g.windowEndsAt - Math.floor(Date.now() / 1000) : 0;
+      } else if (core.id === 'CORE_TicketBuy') {
+        ctx.cmd = await redis.get(K.gWagerCmd(teamId, g.gid)) || '';
+      } else if (core.id === 'CORE_ScreenshotContest') {
+        ctx.voting = await redis.get(K.gVoteState(teamId, g.gid)) || 'closed';
+      }
+      lines.push(core.statusLine(ctx));
+    }
+  } catch (e) { logErr('GW', 'secondaryStatusLines:', e.message); }
+  return lines.join(' ');
+}
+
 async function giveawayInfoText(teamId) {
   return CORE.infoText({
     keyword:    await redis.get(K.gwKeyword(teamId)) || '',
@@ -1311,7 +1338,9 @@ function subscribeToGiveaway() {
             poolTotal = all.filter(p => p.eligible).reduce((s, p) => s + p.totalCoins, 0);
           }
         }
-        const reply = CORE.statusText({ username: u, open, agg, keyword, poolTotal, host: chatHost(), teamId });
+        let reply = CORE.statusText({ username: u, open, agg, keyword, poolTotal, host: chatHost(), teamId });
+        const extra = await secondaryStatusLines(teamId, msg.channel);
+        if (extra) reply += ' ' + extra;
         redisPub.publish('ch:chat_reply', JSON.stringify({ event: 'chat_reply', channel: msg.channel, message: reply }));
         break;
       }

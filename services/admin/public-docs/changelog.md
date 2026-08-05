@@ -7,6 +7,16 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 5. August 2026
 
+### !los kennt jetzt alle laufenden Giveaways
+
+Der Status-Befehl `!los` nannte bisher nur die Kampagne. Läuft parallel eine
+Sofortverlosung, ein Los-Giveaway oder ein Screenshot-Contest, hängt die
+Antwort jetzt je eine kurze Zeile an — bei der Sofortverlosung mit Keyword
+und Restzeit des offenen Anmeldefensters, beim Los-Giveaway mit dem
+Setz-Befehl, beim Contest mit dem Voting-Stand. Instanzen, die nur auf
+bestimmten Kanälen laufen, werden auch nur dort genannt; pausierte bleiben
+stumm.
+
 ### Gewinn und Sponsor gehören jetzt zu jedem Giveaway
 
 Beim Öffnen eines Giveaways muss ab jetzt eingetragen werden, **was verlost
