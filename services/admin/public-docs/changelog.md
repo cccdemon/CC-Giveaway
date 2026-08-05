@@ -49,10 +49,11 @@ Bewegung. Alle Bewegungen stehen in „Meine Daten".
 ### Neu: Sofortverlosung
 
 Neben der langlaufenden Kampagne gibt es jetzt die **Sofortverlosung**: der
-Streamer startet sie mit Keyword und Zeitfenster (z.B. 60 Sekunden), alle die
-das Keyword schreiben **und gerade zuschauen** sind im Topf — gleiches Los für
-alle, kein Punktesammeln. Nach Ablauf zieht das System automatisch und sagt
-den Gewinner im Chat an. Nur den Chat offen zu haben reicht nicht: wer nicht
+Streamer öffnet ein Anmeldefenster mit Keyword (z.B. 60 Sekunden — auch
+mehrmals hintereinander), alle die das Keyword im Fenster schreiben **und
+gerade zuschauen** sind im Topf — gleiches Los für alle, kein Punktesammeln.
+**Gezogen wird live vom Streamer selbst**, das System sagt Fenster und
+Gewinner im Chat an. Nur den Chat offen zu haben reicht nicht: wer nicht
 als Zuschauer gemeldet ist, nimmt nicht teil. Meldet niemand Anwesenheit,
 wird die Verlosung mit klarer Ansage abgebrochen statt leer gezogen.
 

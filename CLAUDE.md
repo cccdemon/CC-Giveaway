@@ -28,11 +28,13 @@ Gewicht wird und wer berechtigt ist; Zufall/Snapshot/Persistenz/Audit/Recht
 bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
 (Vertrag, Abgrenzung, Phasen-Stand).
 - `CORE_WatchtimeChatActivity` — die Spec oben, unverändert (Primary/Kampagne).
-- `CORE_CurrentViewers` — Sofortverlosung: Keyword im Zeitfenster **und** Präsenz
-  aus `viewer_tick` (`chLastTick`, Chat allein reicht nicht), weight=1,
-  Fensterende in Redis (`gWinEnd`), Server-Watcher (5 s) zieht automatisch,
-  Leer-Zug bricht mit Ansage ab, Audit `auto_instant_draw`, Instanz wird
-  danach vollständig abgeräumt.
+- `CORE_CurrentViewers` — Sofortverlosung: Keyword **im offenen Anmeldefenster**
+  und Präsenz aus `viewer_tick` (`chLastTick`, Chat allein reicht nicht),
+  weight=1. Das Fenster ist NUR die Anmeldephase (`gWinEnd`, restart-sicher,
+  **mehrfach öffenbar** via `gw_instant_window` — Teilnehmer akkumulieren);
+  der Watcher (5 s) schließt abgelaufene Fenster nur mit Ansage. **Ziehung
+  immer manuell** (★, auch Member); Anwesenheit zählt zum Ziehungszeitpunkt.
+  Aufräumen beim Schließen der Instanz.
 - `CORE_TicketBuy` — Los-Einsatz: Zuschauzeit → team-weites Guthaben
   (`credit_ledger`, append-only, **einzige Buchungsstelle
   `services/giveaway/credit.js`**, Typen erzwingen Vorzeichen; transfer/purchase
