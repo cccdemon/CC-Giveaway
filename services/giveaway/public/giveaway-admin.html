@@ -4,6 +4,17 @@
 <meta charset="UTF-8">
 <title>Chaos Crew – Giveaway Admin</title>
 <link rel="stylesheet" href="chaos-crew-admin.css">
+<style>
+  /* Layout folgt dem gewählten Core: nur die Felder zeigen, die für DIESES
+     Giveaway gelten. Kampagne (keine Instanz gewählt) = alles wie gehabt. */
+  .gw-app.core-inst .vis-campaign-only { display:none !important; }
+  .gw-app.core-ticketbuy #card-keyword,
+  .gw-app.core-contest   #card-keyword { display:none !important; }
+  .gw-app.core-instant #card-boost,
+  .gw-app.core-contest #card-boost { display:none !important; }
+  .gw-app.core-instant #btn-draw,
+  .gw-app.core-instant #btn-verify { display:none !important; }
+</style>
 </head>
 <body>
 <script src="cc-defs.js"></script>
@@ -39,14 +50,14 @@
 
   <!-- ── Primäraktionen ───────────────────────────────── -->
   <div class="actionstrip">
-    <input type="text" id="prize-input" placeholder="Preis (z.B. Steam-Key, 10€ …)">
-    <button class="btn btn-gold" onclick="verifyFollows()">FOLLOWS PRÜFEN</button>
-    <button class="btn btn-solid" onclick="drawWinner()">★ GEWINNER ZIEHEN</button>
+    <input type="text" id="prize-input" class="vis-campaign-only" placeholder="Preis (z.B. Steam-Key, 10€ …)">
+    <button class="btn btn-gold vis-campaign-only" id="btn-verify" onclick="verifyFollows()">FOLLOWS PRÜFEN</button>
+    <button class="btn btn-solid" id="btn-draw" onclick="drawWinner()">★ GEWINNER ZIEHEN</button>
     <span class="as-spacer"></span>
-    <button class="btn btn-green" onclick="gwOpen()">ÖFFNEN</button>
+    <button class="btn btn-green vis-campaign-only" onclick="gwOpen()">ÖFFNEN</button>
     <button class="btn btn-gold"  onclick="gwPause()">PAUSE</button>
     <button class="btn btn-cyan"  onclick="gwResume()">FORTSETZEN</button>
-    <button class="btn btn-red"   onclick="gwClose()">SCHLIESSEN</button>
+    <button class="btn btn-red vis-campaign-only" onclick="gwClose()">SCHLIESSEN</button>
   </div>
 
   <!-- ── Zwei-Spalten ─────────────────────────────────── -->
@@ -87,8 +98,8 @@
         </div>
       </div>
 
-      <!-- Keyword -->
-      <div class="card">
+      <!-- Keyword (nicht bei Los-Giveaway/Contest — dort kein Keyword-Opt-in) -->
+      <div class="card" id="card-keyword">
         <div class="card-title">KEYWORD // TEILNAHME</div>
         <div class="kw-current"><span class="kw-label">AKTUELL:</span><span class="kw-val" id="kw-current">-</span></div>
         <div class="input-row">
@@ -98,8 +109,8 @@
         <button class="btn btn-gold btn-full mt-6" onclick="clearKeyword()">DEAKTIVIEREN</button>
       </div>
 
-      <!-- Giveaway-Einstellungen -->
-      <div class="card">
+      <!-- Giveaway-Einstellungen (team-weit → nur in der Kampagnen-Ansicht pflegen) -->
+      <div class="card vis-campaign-only" id="card-settings">
         <div class="card-title">EINSTELLUNGEN</div>
         <div class="cfg-row"><span>Teilnahme: folge</span><input type="number" id="cfg-follow-min" min="0" max="10" value="2" class="in-narrow" onchange="saveStreamSettings()"><span>Kanälen</span></div>
         <div class="cfg-hint">Gucken zählt auf allen Kanälen aufs gleiche Konto — Folgen ist die Bedingung.</div>
@@ -122,8 +133,8 @@
         <label class="cfg-row"><input type="checkbox" id="cfg-auto-resume" onchange="saveStreamSettings()"><span>Start/Fortsetzen wenn ein Stream <b>online</b></span></label>
       </div>
 
-      <!-- Manuelle Tickets -->
-      <div class="card">
+      <!-- Manuelle Tickets (wirken auf die Kampagne) -->
+      <div class="card vis-campaign-only" id="card-manual">
         <div class="card-title">MANUELL // TICKETS</div>
         <div class="input-row">
           <input type="text" id="m-name" placeholder="Username">
@@ -133,8 +144,8 @@
         </div>
       </div>
 
-      <!-- Viewtime-Boost -->
-      <div class="card">
+      <!-- Viewtime-Boost (nicht bei Sofortverlosung/Contest — kein Accrual) -->
+      <div class="card" id="card-boost">
         <div class="card-title">VIEWTIME-BOOST <div id="mult-status">1× (aus)</div></div>
         <div class="manual-row">
           <input type="number" id="mult-factor" value="2" min="1" max="10" step="1" class="in-narrow" title="Faktor">
@@ -159,8 +170,8 @@
         <div class="hist-list" id="history-list"><div class="wsc-empty">Lade Historie...</div></div>
       </div>
 
-      <!-- Export & Verwaltung -->
-      <div class="card">
+      <!-- Export & Verwaltung (Backup/Reset = Kampagnen-Stand) -->
+      <div class="card vis-campaign-only" id="card-export">
         <div class="card-title">EXPORT &amp; VERWALTUNG</div>
         <div class="btn-group">
           <button class="btn btn-cyan" onclick="exportCSV()">CSV</button>

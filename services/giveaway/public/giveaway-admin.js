@@ -15,7 +15,8 @@ let currentTeam  = null;
 // Session-ID einer Zusatz-Instanz. Diese Cmds wirken auf die Auswahl:
 let currentGiveaway = null;
 let giveawayList    = [];
-const GID_CMDS = { gw_pause:1, gw_resume:1, gw_set_multiplier:1, gw_get_multiplier:1, gw_draw_winner:1 };
+const GID_CMDS = { gw_pause:1, gw_resume:1, gw_set_multiplier:1, gw_get_multiplier:1, gw_draw_winner:1,
+                   gw_set_keyword:1, gw_get_keyword:1 };
 const TEAM_EVENTS = { gw_cmd:1, gw_get_all:1, gw_overlay:1, viewer_tick:1, chat_msg:1, time_cmd:1 };
 let participants = {};
 let gwChannels   = [];
@@ -134,17 +135,30 @@ function onGiveawayChange() {
   updateTicketBuyButtons();
   log(currentGiveaway ? 'Instanz gewählt: ' + currentGiveaway : 'Kampagne gewählt', 'cyan');
   requestData();
+  loadKeyword();   // Keyword-Box zeigt das Keyword der Auswahl
 }
 
-// Typ-spezifische Buttons nur bei passender Instanz-Auswahl zeigen.
-function updateTicketBuyButtons() {
+// Typ-spezifische Buttons nur bei passender Instanz-Auswahl zeigen —
+// und das Layout dem Core anpassen (CSS-Matrix im <style> der Seite):
+// nur die Felder sichtbar, die für DIESES Giveaway gelten.
+var CORE_CSS = { CORE_CurrentViewers: 'core-instant', CORE_TicketBuy: 'core-ticketbuy',
+                 CORE_ScreenshotContest: 'core-contest', CORE_WatchtimeChatActivity: 'core-watchtime' };
+function selectedCore() {
   var g = giveawayList.find(function(x){ return x.gid === currentGiveaway; });
-  var isTb = !!(g && g.core === 'CORE_TicketBuy');
-  var isSc = !!(g && g.core === 'CORE_ScreenshotContest');
+  return g ? g.core : null;   // null = Kampagne
+}
+function updateTicketBuyButtons() {
+  var core = selectedCore();
+  var isTb = core === 'CORE_TicketBuy';
+  var isSc = core === 'CORE_ScreenshotContest';
   var p = document.getElementById('gw-add-prize'); if (p) p.style.display = isTb ? '' : 'none';
   var w = document.getElementById('gw-wager-cmd'); if (w) w.style.display = isTb ? '' : 'none';
   var e = document.getElementById('gw-entries');   if (e) e.style.display = isSc ? '' : 'none';
   var v = document.getElementById('gw-voting');    if (v) v.style.display = isSc ? '' : 'none';
+  var app = document.querySelector('.gw-app');
+  if (app) {
+    app.className = 'gw-app' + (currentGiveaway ? ' core-inst ' + (CORE_CSS[core] || '') : '');
+  }
 }
 
 // ── Phase 6: Screenshot-Contest (Review + Voting-Steuerung) ──
@@ -362,7 +376,13 @@ function handle(msg) {
         else log('KI-Test ok (' + msg.source + '): "' + msg.sample + '" -> ' + (msg.meaningful ? 'sinnvoll' : 'nicht sinnvoll'), 'cyan');
         break;
       }
-      if (msg.type === 'keyword') { const kw = msg.keyword || ''; document.getElementById('kw-current').textContent = kw || '- (deaktiviert)'; document.getElementById('kw-input').value = kw; break; }
+      if (msg.type === 'keyword') {
+        if ((msg.giveawayId || null) !== currentGiveaway) break;   // stale Antwort anderer Auswahl
+        const kw = msg.keyword || '';
+        document.getElementById('kw-current').textContent = kw || '- (deaktiviert)';
+        document.getElementById('kw-input').value = kw;
+        break;
+      }
       // Mutations
       if (msg.type === 'keyword_set') {
         const kw = msg.keyword || '';
@@ -559,7 +579,16 @@ function updateGwStatus() {
 function drawWinner() {
   var el = document.getElementById('prize-input');
   var prize = el ? el.value.trim() : '';
-  send({ event:'gw_cmd', cmd:'gw_draw_winner', prize: prize });
+  var payload = { event:'gw_cmd', cmd:'gw_draw_winner', prize: prize };
+  // Los-Giveaway zieht JE PREIS — Preis-Nr. abfragen (Liste via 🎁/Log).
+  if (selectedCore() === 'CORE_TicketBuy') {
+    send({ event: 'gw_cmd', cmd: 'gw_list_prizes' });
+    var pid = prompt('Preis-Nr. für die Ziehung (offene Preise siehe Log):', '');
+    if (pid === null || !pid.trim()) return;
+    payload.prizeId = parseInt(pid, 10);
+    payload.prize = '';
+  }
+  send(payload);
 }
 
 function showWinnerAnimation(winnerName, watchSec, coins, prize) {

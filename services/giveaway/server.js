@@ -1028,17 +1028,26 @@ async function runAdminCmd(send, msg, meta, ctx) {
       break;
     }
     case 'gw_set_keyword': {
+      // Mit giveawayId: Keyword der Sekundär-Instanz (Sofortverlosung etc.),
+      // sonst wie bisher das der Kampagne.
       const kw = sanitizeStr(msg.keyword || '', 100);
-      outcome.keywordBefore = await redis.get(K.gwKeyword(teamId)) || '';
+      const kGid = validGid(msg.giveawayId);
+      const kKey = (kGid && kGid !== await sid()) ? K.gKw(teamId, kGid) : K.gwKeyword(teamId);
+      outcome.keywordBefore = await redis.get(kKey) || '';
       outcome.keywordAfter  = kw;
-      await redis.set(K.gwKeyword(teamId), kw);
-      const s = await sid(); if (s) await pg.query('UPDATE sessions SET keyword=$1 WHERE id=$2', [kw, s]);
-      send({ event: 'gw_ack', type: 'keyword_set', keyword: kw });
+      if (kGid) outcome.giveawayId = kGid;
+      await redis.set(kKey, kw);
+      const s = kGid || await sid();
+      if (s) await pg.query('UPDATE sessions SET keyword=$1 WHERE id=$2', [kw, s]);
+      send({ event: 'gw_ack', type: 'keyword_set', keyword: kw, giveawayId: kGid || null });
       break;
     }
-    case 'gw_get_keyword':
-      send({ event: 'gw_ack', type: 'keyword', keyword: await redis.get(K.gwKeyword(teamId)) || '' });
+    case 'gw_get_keyword': {
+      const kGid = validGid(msg.giveawayId);
+      const kKey = (kGid && kGid !== await sid()) ? K.gKw(teamId, kGid) : K.gwKeyword(teamId);
+      send({ event: 'gw_ack', type: 'keyword', keyword: await redis.get(kKey) || '', giveawayId: kGid || null });
       break;
+    }
     case 'gw_get_channels': {
       let channels = await wte.getChannels(teamId);
       if (!owner) { const my = await memberChannel(meta.authUser, teamId); channels = channels.filter(c => c === my); }
