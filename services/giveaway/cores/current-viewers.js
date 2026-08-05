@@ -40,9 +40,16 @@ function buildPool(participants) {
     .map(p => ({ username: p.username, weight: 1, meta: p }));
 }
 
+function fmtWindow(sec) {
+  const s = Math.round(sec || WINDOW_SEC_DEF);
+  if (s < 120) return `${s} Sekunden`;
+  return s % 60 === 0 ? `${s / 60} Minuten`
+       : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} Minuten`;
+}
+
 function infoText({ keyword, windowSec }) {
   const kwTxt = keyword ? `"${keyword}"` : 'das Keyword';
-  return `⚡ SOFORTVERLOSUNG! Schreib jetzt ${kwTxt} in den Chat — das Anmeldefenster ist ${Math.round(windowSec || WINDOW_SEC_DEF)} Sekunden offen. Mitmachen kann, wer gerade zuschaut. Kein Sammeln, keine Vorleistung — die Ziehung macht der Streamer gleich live!`;
+  return `⚡ SOFORTVERLOSUNG! Schreib jetzt ${kwTxt} in den Chat — das Anmeldefenster ist ${fmtWindow(windowSec)} offen. Mitmachen kann, wer gerade zuschaut. Kein Sammeln, keine Vorleistung — die Ziehung macht der Streamer gleich live!`;
 }
 
 function prepText({ keyword }) {

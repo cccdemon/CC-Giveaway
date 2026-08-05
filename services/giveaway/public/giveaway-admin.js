@@ -322,7 +322,7 @@ function iwStart() {
       return;
     }
   }
-  if (t.fields.window)   payload.windowSec = CC.validate.sanitizeInt(document.getElementById('iw-window').value, 0, 3600, 60);
+  if (t.fields.window)   payload.windowSec = Math.round(CC.validate.sanitizeFloat(document.getElementById('iw-window').value, 0, 60, 1) * 60);
   if (t.fields.wagercmd) payload.wagerCmd  = (document.getElementById('iw-wagercmd').value.trim() || '!setzen').toLowerCase();
   if (t.fields.minwatch) payload.minWatchSec = CC.validate.sanitizeInt(document.getElementById('iw-minwatch').value, 0, 6000, 10) * 60;
 
@@ -343,8 +343,9 @@ document.getElementById('iw-overlay').addEventListener('click', function(e) {
 
 // ── Sofortverlosung: Anmeldefenster (Ziehung macht der Streamer mit ★) ──
 function cvOpenWindow() {
-  var secs = CC.validate.sanitizeInt(document.getElementById('cv-window').value, 10, 3600, 60);
-  send({ event: 'gw_cmd', cmd: 'gw_instant_window', giveawayId: currentGiveaway, windowSec: secs });
+  // UI rechnet in Minuten, die API in Sekunden.
+  var mins = CC.validate.sanitizeFloat(document.getElementById('cv-window').value, 0.5, 60, 1);
+  send({ event: 'gw_cmd', cmd: 'gw_instant_window', giveawayId: currentGiveaway, windowSec: Math.round(mins * 60) });
 }
 
 function cvUpdateState() {
@@ -353,7 +354,10 @@ function cvUpdateState() {
   var g = giveawayList.find(function(x){ return x.gid === currentGiveaway; });
   var now = Math.floor(Date.now() / 1000);
   if (g && g.windowEndsAt && g.windowEndsAt > now) {
-    badge.textContent = 'OFFEN · noch ' + (g.windowEndsAt - now) + 's';
+    var rest = g.windowEndsAt - now;
+    badge.textContent = 'OFFEN · noch ' + (rest >= 60
+      ? Math.floor(rest / 60) + ':' + String(rest % 60).padStart(2, '0') + ' min'
+      : rest + 's');
   } else {
     badge.textContent = 'ZU';
   }
