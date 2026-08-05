@@ -919,3 +919,24 @@ test('phase3b: Keyword zaehlt nur im offenen Anmeldefenster, Fenster mehrfach oe
   const r = await e.drawWinner(TEAM, 'sess_2', {});
   assert.ok(['bob', 'carol'].includes(r.winner));
 });
+
+test('phase3c: Chat-Ansagen der Sofortverlosung sind schaltbar (announce-Flag)', async () => {
+  const e = engine();
+  // Default: an — kein Redis-Key, listGiveaways meldet announce=true.
+  await e.openGiveawayInstance(TEAM, 'sess_2', { keyword: 'blitz', core: 'CORE_CurrentViewers' });
+  let g = (await e.listGiveaways(TEAM)).find(x => x.gid === 'sess_2');
+  assert.equal(g.announce, true);
+  assert.equal(await e.redis.get(K.gAnnounce(TEAM, 'sess_2')), null);
+  // Stumm geoeffnet → Flag gespeichert und gemeldet.
+  await e.openGiveawayInstance(TEAM, 'sess_3', { keyword: 'still', core: 'CORE_CurrentViewers', announce: false });
+  g = (await e.listGiveaways(TEAM)).find(x => x.gid === 'sess_3');
+  assert.equal(g.announce, false);
+  // Umschalten wie gw_set_announce (Server schreibt den Key direkt).
+  await e.redis.del(K.gAnnounce(TEAM, 'sess_3'));
+  g = (await e.listGiveaways(TEAM)).find(x => x.gid === 'sess_3');
+  assert.equal(g.announce, true);
+  // Cleanup raeumt das Flag mit ab.
+  await e.redis.set(K.gAnnounce(TEAM, 'sess_3'), 'false');
+  await e.cleanupGiveawayInstance(TEAM, 'sess_3');
+  assert.equal(await e.redis.get(K.gAnnounce(TEAM, 'sess_3')), null);
+});

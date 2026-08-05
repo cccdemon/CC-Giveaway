@@ -7,6 +7,15 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 5. August 2026
 
+### Sofortverlosung: Chat-Ansagen abschaltbar
+
+Die automatischen Chat-Nachrichten der Sofortverlosung (Start, Anmeldefenster
+öffnet/schließt, Zusatzzeile in `!los`) lassen sich jetzt je Instanz aus- und
+wieder einschalten — beim Start im Assistenten oder jederzeit über die
+Sofortverlosungs-Karte im Dashboard. Ausgeschaltet läuft die Verlosung still,
+der Streamer sagt sie selbst an. **Die Gewinner-Ansage kommt immer** — der
+Gewinner muss erfahren, dass er gezogen wurde.
+
 ### !los kennt jetzt alle laufenden Giveaways
 
 Der Status-Befehl `!los` nannte bisher nur die Kampagne. Läuft parallel eine

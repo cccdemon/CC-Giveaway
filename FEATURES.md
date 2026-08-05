@@ -48,7 +48,7 @@ jemand schaut.
 | Mechanik | Wer ist im Topf | Gewicht | Besonderes |
 |---|---|---|---|
 | **Kampagne** (Zuschauzeit & Chat) | Keyword + Follows + ≥1 Los | gesammelte Lose | das klassische Langzeit-Giveaway |
-| **Sofortverlosung** | Keyword im Zeitfenster **und** als Zuschauer gemeldet | gleich für alle | Anmeldefenster 10 s – 1 h, mehrfach öffenbar; Ziehung macht der Streamer selbst (★); nur Chat offen reicht nicht |
+| **Sofortverlosung** | Keyword im Zeitfenster **und** als Zuschauer gemeldet | gleich für alle | Anmeldefenster 10 s – 1 h, mehrfach öffenbar; Ziehung macht der Streamer selbst (★); nur Chat offen reicht nicht; Chat-Ansagen je Instanz schaltbar (Default an, Gewinner-Ansage immer) |
 | **Los-Giveaway** | wer Lose auf einen Preis setzt | Einsatz auf diesen Preis | Zuschauzeit wird Guthaben (bleibt teamweit erhalten, verfällt nach 12 Monaten Inaktivität); Preise mit Einsatz-Ende; Setzen per Chat-Befehl (Standard `!setzen`, umbenennbar) oder Seite „Lose setzen"; Rücknahme bis Einsatz-Ende; Ziehung je Preis, danach sind alle Einsätze des Preises verbraucht |
 | **Screenshot-Contest** | eingesendete Screenshots echter Zuschauer (Follow + Mindest-Viewtime, 1 pro Person) | höchste Punktsumme gewinnt (kein Zufall; Gleichstand wird ausgelost) | Freigabe jeder Einsendung durch den Streamer; Community-Voting 1–10 (eine Stimme je Person und Bild, Re-Vote überschreibt, eigenes Bild nicht wertbar, Viewtime-Schwelle gegen Votebots); Voting öffnen/pausieren/fortsetzen/schließen; Ersetzen der eigenen Einsendung verwirft deren Stimmen (mit Warnung) |
 

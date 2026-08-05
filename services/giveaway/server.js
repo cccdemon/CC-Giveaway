@@ -337,6 +337,8 @@ async function secondaryStatusLines(teamId, channel) {
       if (g.primary || g.paused) continue;
       // Kanal-limitierte Instanz nur auf ihren eigenen Kanälen ansagen.
       if (Array.isArray(g.channels) && ch && !g.channels.includes(ch)) continue;
+      // Stumm geschaltete Sofortverlosung taucht auch in !los nicht auf.
+      if (g.announce === false) continue;
       const core = CoreRegistry.getCore(g.core);
       if (typeof core.statusLine !== 'function') continue;
       const ctx = { keyword: g.keyword };
@@ -667,9 +669,10 @@ const MEMBER_CMDS = new Set([
   'gw_get_ingest_tokens', 'gw_gen_ingest_token', 'gw_get_ai_settings',
   'gw_open', 'gw_pause', 'gw_resume', 'gw_set_multiplier',
   'gw_list_giveaways', 'gw_list_prizes', 'gw_list_entries',
-  // Sofortverlosung darf jeder streamende Member fahren: Fenster öffnen
-  // UND ziehen (Entscheidung: Ziehung macht der jeweilige Kanalstreamer).
-  'gw_instant_window', 'gw_draw_winner',
+  // Sofortverlosung darf jeder streamende Member fahren: Fenster öffnen,
+  // ziehen (Entscheidung: Ziehung macht der jeweilige Kanalstreamer) und
+  // die Chat-Ansagen der Instanz stumm/laut schalten.
+  'gw_instant_window', 'gw_draw_winner', 'gw_set_announce',
 ]);
 
 // Abgelehnte Versuche gehoeren ins Protokoll — aber das Admin-Panel pollt die
@@ -859,12 +862,17 @@ async function runAdminCmd(send, msg, meta, ctx) {
                       VALUES ($1,$2,$3,$4,$5,'open',$6,$7,$8) ON CONFLICT (id) DO NOTHING`,
         [gid, teamId, keyword, JSON.stringify(channels.length ? channels : teamChans), coreId,
          JSON.stringify(coreConfig), iPrize || null, iSponsor || null]);
+      // Sofortverlosung: Chat-Ansagen abschaltbar (Fenster/Vorbereitung/!los).
+      // Die Gewinner-Ansage bleibt IMMER — der Gewinner muss es erfahren.
+      const announceOn = coreId !== 'CORE_CurrentViewers' || msg.announce !== false;
       await wte.openGiveawayInstance(teamId, gid, { keyword, channels: channels.length ? channels : null,
-                                                    core: coreId, windowSec, wagerCmd, minWatchSec });
+                                                    core: coreId, windowSec, wagerCmd, minWatchSec,
+                                                    announce: announceOn });
       Object.assign(outcome, { giveawayId: gid, keyword, core: coreId, windowSec: windowSec || undefined,
                                wagerCmd: wagerCmd || undefined, prize: iPrize || undefined,
-                               sponsor: iSponsor || undefined, channels: channels.length ? channels : 'alle' });
-      await announceChannels(teamId, channels.length ? channels : null,
+                               sponsor: iSponsor || undefined, channels: channels.length ? channels : 'alle',
+                               announce: announceOn });
+      if (announceOn) await announceChannels(teamId, channels.length ? channels : null,
         (coreId === 'CORE_CurrentViewers'
           ? (windowSec > 0 ? coreMod.infoText({ keyword, windowSec }) : coreMod.prepText({ keyword }))
         : coreId === 'CORE_ScreenshotContest' ? coreMod.infoText()
@@ -898,7 +906,7 @@ async function runAdminCmd(send, msg, meta, ctx) {
         // Kein Accrual-Zustand, der eine spätere Ziehung braucht (Contest-Daten
         // liegen in PG) → Redis-Reste sofort abräumen, keine g:-Leichen.
         await wte.cleanupGiveawayInstance(teamId, gid);
-        await announceChannels(teamId, known.channels,
+        if (known.announce !== false) await announceChannels(teamId, known.channels,
           known.core === 'CORE_CurrentViewers'
             ? '⚡ Die Sofortverlosung ist beendet.'
             : '📸 Der Screenshot-Contest ist beendet — danke an alle Einsender!');
@@ -972,8 +980,24 @@ async function runAdminCmd(send, msg, meta, ctx) {
       const w = await wte.openInstantWindow(teamId, gid, msg.windowSec);
       Object.assign(outcome, { giveawayId: gid, windowSec: w.windowSec });
       const CV = CoreRegistry.getCore('CORE_CurrentViewers');
-      await announceChannels(teamId, inst.channels, CV.infoText({ keyword: inst.keyword, windowSec: w.windowSec }));
+      if (inst.announce) await announceChannels(teamId, inst.channels, CV.infoText({ keyword: inst.keyword, windowSec: w.windowSec }));
       send({ event: 'gw_ack', type: 'instant_window', giveawayId: gid, windowSec: w.windowSec, endsAt: w.endsAt });
+      break;
+    }
+    // Chat-Ansagen der Sofortverlosung an/aus (Gewinner-Ansage bleibt immer).
+    case 'gw_set_announce': {
+      const gid = validGid(msg.giveawayId);
+      const inst = gid ? (await wte.listGiveaways(teamId)).find(g => g.gid === gid && g.core === 'CORE_CurrentViewers') : null;
+      if (!inst) {
+        Object.assign(outcome, { error: 'no_instant_instance' });
+        send({ event: 'gw_ack', type: 'error', error: 'Keine Sofortverlosungs-Instanz gewählt.' });
+        break;
+      }
+      const on = msg.on !== false;
+      if (on) await redis.del(K.gAnnounce(teamId, gid));
+      else    await redis.set(K.gAnnounce(teamId, gid), 'false');
+      Object.assign(outcome, { giveawayId: gid, announceBefore: inst.announce, announceAfter: on });
+      send({ event: 'gw_ack', type: 'announce_set', giveawayId: gid, announce: on });
       break;
     }
     // ── Phase 6: Screenshot-Contest ────────────────────────
@@ -2283,7 +2307,7 @@ function startInstantWatcher() {
 async function closeInstantWindow(teamId, g) {
   await redis.del(K.gWinEnd(teamId, g.gid));
   const n = (await wte.getInstantParticipants(teamId, g.gid)).filter(p => p.eligible).length;
-  await announceChannels(teamId, g.channels,
+  if (g.announce !== false) await announceChannels(teamId, g.channels,
     `⚡ Anmeldefenster geschlossen — ${n} im Topf. Die Ziehung macht der Streamer gleich live!`);
   broadcastTeam(teamId, { event: 'gw_ack', type: 'instant_window_closed', giveawayId: g.gid, eligible: n });
   await audit({ teamId, actor: 'system:instant', ip: null, action: 'instant_window_closed',

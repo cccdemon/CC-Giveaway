@@ -134,7 +134,7 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 ## Admin WS `gw_cmd` (`{event:'gw_cmd',cmd,...}`)
 `gw_open`(+keyword) · `gw_close` · `gw_draw_winner`(+`giveawayId`,+`prizeId` bei TicketBuy) · `gw_set_keyword` · `gw_get_keyword` · `gw_add_ticket`(user,amount) · `gw_sub_ticket` · `gw_ban`/`gw_unban` · `gw_reset`
 `gw_pause`/`gw_resume`/`gw_set_multiplier` (optional `giveawayId` → wirkt auf die Instanz)
-`gw_open_instance`(keyword, channels, core, windowSec, wagerCmd) · `gw_close_instance` · `gw_list_giveaways`
+`gw_open_instance`(keyword, channels, core, windowSec, wagerCmd, announce) · `gw_close_instance` · `gw_list_giveaways` · `gw_set_announce`(giveawayId, on — CV-Chat-Ansagen stumm/laut, Gewinner-Ansage bleibt immer)
 `gw_add_prize`(giveawayId, title, wagerEndMinutes) · `gw_list_prizes` · `gw_set_wager_cmd`(giveawayId, command)
 `gw_contest_voting`(giveawayId, action: open/pause/resume/close) · `gw_review_entry`(entryId, approve/reject) · `gw_list_entries`(giveawayId)
 

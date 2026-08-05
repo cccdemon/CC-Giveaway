@@ -299,6 +299,7 @@ function iwSelect(type) {
   document.getElementById('iw-f-sponsor').style.display = showPrize ? '' : 'none';
   document.getElementById('iw-f-keyword').style.display  = f.keyword  ? '' : 'none';
   document.getElementById('iw-f-window').style.display   = f.window   ? '' : 'none';
+  document.getElementById('iw-f-announce').style.display = f.window   ? '' : 'none';   // nur Sofortverlosung
   document.getElementById('iw-f-wagercmd').style.display = f.wagercmd ? '' : 'none';
   document.getElementById('iw-f-minwatch').style.display = f.minwatch ? '' : 'none';
   if (f.keyword) {
@@ -339,7 +340,10 @@ function iwStart() {
       return;
     }
   }
-  if (t.fields.window)   payload.windowSec = Math.round(CC.validate.sanitizeFloat(document.getElementById('iw-window').value, 0, 60, 1) * 60);
+  if (t.fields.window) {
+    payload.windowSec = Math.round(CC.validate.sanitizeFloat(document.getElementById('iw-window').value, 0, 60, 1) * 60);
+    payload.announce  = !!document.getElementById('iw-announce').checked;
+  }
   if (t.fields.wagercmd) payload.wagerCmd  = (document.getElementById('iw-wagercmd').value.trim() || '!setzen').toLowerCase();
   if (t.fields.minwatch) payload.minWatchSec = CC.validate.sanitizeInt(document.getElementById('iw-minwatch').value, 0, 6000, 10) * 60;
 
@@ -369,6 +373,17 @@ function cvOpenWindow() {
 }
 var cvLockUntil = 0;
 
+// Chat-Ansagen der Sofortverlosung an/aus (Karte). Kurze lokale Sperre,
+// damit der Sekunden-Refresh den Klick nicht sofort überschreibt.
+var cvAnnLockUntil = 0;
+function cvToggleAnnounce() {
+  var cb = document.getElementById('cv-announce');
+  if (!cb || !currentGiveaway) return;
+  cvAnnLockUntil = Date.now() + 3000;
+  send({ event: 'gw_cmd', cmd: 'gw_set_announce', giveawayId: currentGiveaway, on: !!cb.checked });
+  log('Chat-Ansagen der Sofortverlosung: ' + (cb.checked ? 'AN' : 'AUS'), 'cyan');
+}
+
 function cvUpdateState() {
   var badge = document.getElementById('cv-state');
   if (!badge) return;
@@ -387,6 +402,8 @@ function cvUpdateState() {
   // (plus kurze lokale Sperre, bis der Server-Stand eingetroffen ist).
   var btn = document.getElementById('cv-open-btn');
   if (btn) btn.disabled = open || Date.now() < cvLockUntil;
+  var ann = document.getElementById('cv-announce');
+  if (ann && g && Date.now() >= cvAnnLockUntil) ann.checked = g.announce !== false;
 }
 setInterval(cvUpdateState, 1000);
 
@@ -466,6 +483,7 @@ function handle(msg) {
       if (msg.type === 'entries')       { renderEntries(msg); break; }
       if (msg.type === 'prizes')        { renderPrizes(msg.prizes || []); break; }
       if (msg.type === 'instant_window') { log('Anmeldefenster offen: ' + msg.windowSec + 's', 'gold'); liveRefresh(); break; }
+      if (msg.type === 'announce_set')   { liveRefresh(); break; }
       if (msg.type === 'instant_window_closed') { log('Anmeldefenster zu — ' + msg.eligible + ' im Topf. Ziehen mit ★', 'gold'); liveRefresh(); break; }
       if (msg.type === 'channels')      { ingestChannels = msg.channels || []; renderIngest(); break; }
       if (msg.type === 'ingest_tokens') { ingestTokens = {}; (msg.tokens || []).forEach(t => ingestTokens[t.channel] = t.token); renderIngest(); break; }

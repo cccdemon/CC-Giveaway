@@ -173,6 +173,10 @@
         <div class="cfg-hint">Das Fenster ist nur die <b>Anmeldephase</b> (Keyword + zuschauen). Es kann mehrfach
         geöffnet werden — Teilnehmer bleiben angemeldet. Gezogen wird <b>nicht automatisch</b>:
         wenn du bereit bist → <b>★ GEWINNER ZIEHEN</b>.</div>
+        <label class="cfg-hint" style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-top:4px">
+          <input type="checkbox" id="cv-announce" checked onchange="cvToggleAnnounce()" style="width:auto">
+          Chat-Ansagen (Fenster, !los) — Gewinner-Ansage kommt immer
+        </label>
       </div>
 
       <!-- Los-Giveaway: Setz-Befehl, Preise, Ziehung je Preis -->
@@ -363,6 +367,13 @@
         <label for="iw-window">Erstes Anmeldefenster (Minuten, 0 = später öffnen)</label>
         <input type="number" id="iw-window" min="0" max="60" step="0.5" value="1">
         <div class="hint">Nur die Anmeldephase — mehrfach öffenbar (Karte rechts), 0,5 = 30 Sekunden. Gezogen wird nicht automatisch: ★ drückst du selbst.</div>
+      </div>
+      <div class="iw-field" id="iw-f-announce">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="iw-announce" checked style="width:auto">
+          Chat-Ansagen (Start, Fenster öffnen/schließen, !los)
+        </label>
+        <div class="hint">Aus = die Sofortverlosung läuft still; du sagst sie selbst an. Die Gewinner-Ansage kommt immer.</div>
       </div>
       <div class="iw-field" id="iw-f-wagercmd">
         <label for="iw-wagercmd">Chat-Befehl zum Setzen</label>

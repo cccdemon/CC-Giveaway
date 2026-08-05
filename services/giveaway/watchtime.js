@@ -92,6 +92,7 @@ const K = {
   gWagerCmd: (t, g) => `${K.GP(t, g)}wager_cmd`, // Setz-Befehl (Phase 4b, WebUI-konfigurierbar)
   gMinWatch: (t, g) => `${K.GP(t, g)}min_watch`, // Contest: Mindest-Viewtime Einsenden/Voten (Phase 6)
   gVoteState:(t, g) => `${K.GP(t, g)}vote_state`,// Contest: Voting closed|open|paused (Phase 6)
+  gAnnounce: (t, g) => `${K.GP(t, g)}announce`,  // CV: Chat-Ansagen ('false' = stumm; Gewinner-Ansage bleibt)
   abuseHist:  (t, u) => `${TP(t)}gw:abuse:hist:${u}`,     // letzte Msg-Hashes
   abuseTimes: (t, u) => `${TP(t)}gw:abuse:times:${u}`,    // letzte Timestamps (Rate)
 };
@@ -726,7 +727,7 @@ class WatchtimeEngine {
   // ── Phase 2c: Sekundär-Instanz (z.B. Sofortverlosung neben der Kampagne) ──
   // Läuft ausschließlich im g:-Namespace; channels = Teilmenge der
   // Team-Kanäle (leer/null = alle).
-  async openGiveawayInstance(teamId, gid, { keyword = '', channels = null, core = null, windowSec = 0, wagerCmd = '', minWatchSec = null } = {}) {
+  async openGiveawayInstance(teamId, gid, { keyword = '', channels = null, core = null, windowSec = 0, wagerCmd = '', minWatchSec = null, announce = true } = {}) {
     const t = sanitizeTeamId(teamId);
     this.validateSessionId(gid);
     if (!t) throw new Error('Invalid teamId');
@@ -748,6 +749,8 @@ class WatchtimeEngine {
     if (minWatchSec !== null && Number.isFinite(parseInt(minWatchSec, 10))) {
       await this.redis.set(K.gMinWatch(t, gid), String(Math.max(0, parseInt(minWatchSec, 10))));
     }
+    // Chat-Ansagen abschaltbar (Sofortverlosung): nur die Abweichung speichern.
+    if (announce === false) await this.redis.set(K.gAnnounce(t, gid), 'false');
     await this.redis.sadd(K.openTeams(), t);
     console.log(`[WTE] [${t}] instance ${gid} opened, core=${core || CORE.id}, keyword="${keyword}"`);
   }
@@ -803,7 +806,8 @@ class WatchtimeEngine {
                  paused: await this.redis.get(K.gPaused(t, g)) === 'true',
                  keyword: await this.redis.get(K.gKw(t, g)) || '',
                  channels: Array.isArray(chans) && chans.length ? chans : null,
-                 windowEndsAt: parseInt(await this.redis.get(K.gWinEnd(t, g)), 10) || null });
+                 windowEndsAt: parseInt(await this.redis.get(K.gWinEnd(t, g)), 10) || null,
+                 announce: await this.redis.get(K.gAnnounce(t, g)) !== 'false' });
     }
     return out;
   }
@@ -1060,7 +1064,7 @@ class WatchtimeEngine {
     }
     pipeline.del(K.gOpen(t, gid), K.gPaused(t, gid), K.gKw(t, gid), K.gChanList(t, gid),
                  K.gCore(t, gid), K.gWinEnd(t, gid), K.gMult(t, gid), K.gWagerCmd(t, gid),
-                 K.gMinWatch(t, gid), K.gVoteState(t, gid));
+                 K.gMinWatch(t, gid), K.gVoteState(t, gid), K.gAnnounce(t, gid));
     pipeline.srem(K.gwSet(t), gid);
     await pipeline.exec();
     console.log(`[WTE] [${t}] instance ${gid} cleaned`);
