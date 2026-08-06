@@ -163,10 +163,23 @@ function updateTicketBuyButtons() {
   updateActionButtons();
 }
 
+// Klartext-Bezeichnung einer Instanz für Bestätigungen/Logs — die rohe
+// sess_-ID hat schon zu versehentlichem Schließen der falschen Instanz
+// geführt (Audit 6.8., zwei close_instance in 18 s).
+var CORE_LABEL = { CORE_CurrentViewers: 'Sofortverlosung', CORE_TicketBuy: 'Los-Giveaway',
+                   CORE_ScreenshotContest: 'Screenshot-Contest' };
+function instanceLabel(gid) {
+  var g = giveawayList.find(function(x){ return x.gid === gid; });
+  if (!g) return gid;
+  return (CORE_LABEL[g.core] || 'Zusatz-Giveaway')
+    + (g.name ? ' „' + g.name + '"' : '')
+    + ' (' + String(gid).replace(/^sess_/, '#') + ')';
+}
+
 // SCHLIESSEN wirkt auf die Auswahl: Kampagne oder gewählte Zusatz-Instanz.
 function gwCloseSmart() {
   if (!currentGiveaway) { gwClose(); return; }
-  if (!confirm('Zusatz-Giveaway ' + currentGiveaway + ' schließen?')) return;
+  if (!confirm(instanceLabel(currentGiveaway) + ' wirklich schließen?')) return;
   send({ event: 'gw_cmd', cmd: 'gw_close_instance', giveawayId: currentGiveaway });
 }
 
@@ -597,7 +610,7 @@ setInterval(cvUpdateState, 1000);
 
 function closeInstance() {
   if (!currentGiveaway) { log('Keine Instanz gewählt', 'red'); return; }
-  if (!confirm('Instanz ' + currentGiveaway + ' schließen?')) return;
+  if (!confirm(instanceLabel(currentGiveaway) + ' wirklich schließen?')) return;
   send({ event: 'gw_cmd', cmd: 'gw_close_instance', giveawayId: currentGiveaway });
 }
 
@@ -740,7 +753,8 @@ function handle(msg) {
       if (msg.type === 'contest_voting') log('Contest-Voting: ' + (msg.voting || '?'), 'gold');
       if (msg.type === 'entry_reviewed') { log('Einsendung #' + msg.entryId + ' → ' + (msg.decision === 'approve' ? 'FREIGEGEBEN' : 'abgelehnt'), 'gold'); scLoadEntries(); }
       if (msg.type === 'entry_deleted')  { log('Einsendung #' + msg.entryId + ' von „' + maskName((msg.username || '').toLowerCase(), msg.username || '?') + '" endgültig gelöscht', 'gold'); scLoadEntries(); }
-      if (msg.type === 'instance_closed') log('Instanz geschlossen: ' + (msg.giveawayId || '?'), 'gold');
+      if (msg.type === 'instance_closed') log('Instanz geschlossen: ' + instanceLabel(msg.giveawayId || '?')
+            + ' — Nachweis unter Tools → 🗄 Vergangene Giveaways', 'gold');
       if (msg.type === 'instance_paused')  log('Instanz pausiert: '   + (msg.giveawayId || '?'), 'gold');
       if (msg.type === 'instance_resumed') log('Instanz läuft weiter: ' + (msg.giveawayId || '?'), 'cyan');
       if (msg.type === 'winner_drawn') { showWinnerAnimation(msg.winner, msg.watchSec, msg.coins, msg.prize); loadHistory(); }
