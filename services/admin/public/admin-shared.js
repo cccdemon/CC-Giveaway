@@ -204,6 +204,7 @@
     { href:'/giveaway/claim.html', label:'Gewinn melden', ic:'🏆' },
     { href:'/giveaway/wager.html', label:'Lose setzen', ic:'🎟' },
     { href:'/giveaway/contest.html', label:'Screenshot-Contest', ic:'📸' },
+    { href:'/admin/platform.html', label:'Plattform-Verwaltung', ic:'🏛', admin:true },
     { href:'/admin/users.html', label:'Benutzer', ic:'👥', admin:true },
     { href:'/admin/datenschutz-admin.html', label:'Betroffenenrechte', ic:'🛡', admin:true },
     { href:'/admin/nutzungsbedingungen.html', label:'Nutzungsbedingungen', ic:'§' },
@@ -336,7 +337,46 @@
     if (CC.isSuperadmin) {
       nav.querySelectorAll('.gwnav-adminonly').forEach(function(n){ n.style.display = ''; });
     }
+    showPlatformWarnings(nav);
   }).catch(function(){});
+
+  // ── Verwarnungs-Banner ──────────────────────────────────
+  // Unquittierte Verwarnungen der Plattform-Verwaltung, nicht-blockierend
+  // (anders als das TOS-Overlay). Fehler werden still geschluckt — das
+  // Banner darf keine Seite lahmlegen.
+  function showPlatformWarnings(nav) {
+    fetch('/admin/api/me/warnings').then(function(r){ return r.ok ? r.json() : null; }).then(function(list){
+      if (!list || !list.length) return;
+      var st2 = document.createElement('style');
+      st2.textContent =
+        '.gwwarn{background:rgba(240,165,0,.08);border-bottom:1px solid rgba(240,165,0,.4);padding:10px 16px;font-family:"Segoe UI",system-ui,sans-serif;font-size:13px;color:#f0d9a8;}' +
+        '.gwwarn .row{display:flex;align-items:center;gap:12px;max-width:1080px;margin:0 auto;padding:3px 0;}' +
+        '.gwwarn .tx b{color:#f0a500;}' +
+        '.gwwarn button{margin-left:auto;background:transparent;border:1px solid rgba(240,165,0,.5);color:#f0a500;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12px;white-space:nowrap;}' +
+        '.gwwarn button:hover{background:rgba(240,165,0,.15);}';
+      document.head.appendChild(st2);
+      var box = document.createElement('div');
+      box.className = 'gwwarn';
+      list.forEach(function(w){
+        var row = document.createElement('div');
+        row.className = 'row';
+        var when = new Date(w.created_at).toLocaleDateString('de-DE');
+        var scope = w.subject_type === 'team' && w.team_name ? ' (Team ' + w.team_name + ')' : '';
+        var tx = document.createElement('span');
+        tx.className = 'tx';
+        tx.innerHTML = '<b>Verwarnung vom ' + e(when) + e(scope) + ':</b> ' + e(w.reason);
+        var btn = document.createElement('button');
+        btn.textContent = 'Zur Kenntnis genommen';
+        btn.addEventListener('click', function(){
+          fetch('/admin/api/me/warnings/' + w.id + '/ack', { method:'POST' })
+            .catch(function(){})
+            .then(function(){ row.remove(); if (!box.querySelector('.row')) box.remove(); });
+        });
+        row.appendChild(tx); row.appendChild(btn); box.appendChild(row);
+      });
+      nav.after(box);
+    }).catch(function(){});
+  }
 })();
 
 // ── Debug Console ─────────────────────────────────────────

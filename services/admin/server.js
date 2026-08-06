@@ -17,6 +17,7 @@ const fs      = require('fs');
 const path    = require('path');
 const { Pool } = require('pg');
 const A = require('./auth.js');
+const { createBanCache } = require('./ban-cache.js');
 
 const unquote = (s) => String(s || '').replace(/^"|"$/g, '');
 
@@ -87,6 +88,19 @@ function sessionFromReq(req) {
   return A.verifyToken(cookies[A.COOKIE_NAME], CFG.sessionSecret);
 }
 
+// ── Plattform-Sperre (Login-Block) ────────────────────────
+// Sessions sind stateless (HMAC-Cookie, 12 h) — eine Sperre nur beim OAuth
+// wuerde eine laufende Session bis zu 12 h weiterarbeiten lassen. Deshalb
+// prueft /auth/verify zusaetzlich gegen diesen Cache; die Ban-/Unban-Routen
+// mutieren ihn synchron, der Intervall-Refresh faengt manuelle DB-Eingriffe ab.
+const bannedLogins = createBanCache();
+async function refreshBannedLogins() {
+  try {
+    const r = await pg.query('SELECT login FROM streamers WHERE banned_at IS NOT NULL');
+    bannedLogins.replaceAll(r.rows.map(x => x.login));
+  } catch (e) { logErr('Ban', 'refresh failed:', e.message); }
+}
+
 // ── Auth routes ───────────────────────────────────────────
 // forward_auth target. 200 (+identity headers) if valid, else 302 → login.
 app.get('/auth/verify', (req, res) => {
@@ -99,6 +113,10 @@ app.get('/auth/verify', (req, res) => {
     const safe = (orig.startsWith('/') && !orig.startsWith('//') && !orig.startsWith('/\\')) ? orig : '';
     return res.redirect(302, CFG.loginPath + (safe ? '?next=' + encodeURIComponent(safe) : ''));
   }
+  if (bannedLogins.has(sess.user)) {
+    res.set('Set-Cookie', A.clearSessionCookie({ secure: CFG.cookieSecure }));
+    return res.redirect(302, CFG.loginPath + '?err=banned');
+  }
   res.set('X-Auth-User', sess.user);
   res.set('X-Auth-Role', sess.role);
   res.status(200).end();
@@ -110,6 +128,10 @@ app.get('/auth/verify', (req, res) => {
 app.get('/auth/verify-superadmin', (req, res) => {
   const sess = sessionFromReq(req);
   if (!sess) return res.redirect(302, CFG.loginPath);
+  if (bannedLogins.has(sess.user)) {
+    res.set('Set-Cookie', A.clearSessionCookie({ secure: CFG.cookieSecure }));
+    return res.redirect(302, CFG.loginPath + '?err=banned');
+  }
   if (sess.role !== 'superadmin') {
     return res.status(403).type('text/plain; charset=utf-8')
       .send('403 — Diese Seite ist Plattform-Administratoren vorbehalten.');
@@ -122,6 +144,7 @@ app.get('/auth/verify-superadmin', (req, res) => {
 app.get('/auth/me', (req, res) => {
   const sess = sessionFromReq(req);
   if (!sess) return res.status(401).json({ error: 'unauthenticated' });
+  if (bannedLogins.has(sess.user)) return res.status(401).json({ error: 'banned' });
   res.json({ user: sess.user, role: sess.role });
 });
 
@@ -280,7 +303,14 @@ app.get('/auth/twitch/callback', async (req, res) => {
         token_expires = EXCLUDED.token_expires, scopes = EXCLUDED.scopes, last_login = NOW()
     `, [login, String(d.id || ''), (d.display_name || login).slice(0, 50), (d.profile_image_url || '').slice(0, 300),
         tokRes.access_token || null, tokRes.refresh_token || null, expires, scopes]);
-    const sr = await pg.query('SELECT is_platform_admin FROM streamers WHERE login=$1', [login]);
+    const sr = await pg.query('SELECT is_platform_admin, banned_at FROM streamers WHERE login=$1', [login]);
+    // Plattform-Sperre: Konto-Daten wurden aktualisiert (Upsert oben), aber
+    // eine Session gibt es nicht — der Login endet auf der Fehlermeldung.
+    if (sr.rows[0] && sr.rows[0].banned_at) {
+      res.append('Set-Cookie', `oauth_state=; Path=/; Max-Age=0`);
+      res.append('Set-Cookie', `oauth_next=; Path=/; Max-Age=0`);
+      return res.redirect(302, CFG.loginPath + '?err=banned');
+    }
     const role = sr.rows[0] && sr.rows[0].is_platform_admin ? 'superadmin' : 'streamer';
 
     issueSession(res, login, role);
@@ -810,7 +840,7 @@ async function auditGdpr(actor, action, target, result, detail) {
 // Alles, was zu einer Person gespeichert ist - Grundlage fuer Art. 15 DSGVO.
 async function collectSubjectData(u) {
   const q = (sql, p) => pg.query(sql, p).then(r => r.rows).catch(() => []);
-  const [user, events, participation, flags, audit, draws, teams, tos, claims, creditRows, wagerRows, contestEntries, contestVotes, consents] = await Promise.all([
+  const [user, events, participation, flags, audit, draws, teams, tos, claims, creditRows, wagerRows, contestEntries, contestVotes, consents, warnings, streamerAcct] = await Promise.all([
     q('SELECT username, display, last_seen FROM users WHERE username=$1', [u]),
     q(`SELECT team_id, channel, event_type, count(*)::int AS n, min(ts) AS first, max(ts) AS last,
               sum(delta_sec)::int AS total_sec
@@ -820,7 +850,7 @@ async function collectSubjectData(u) {
     q('SELECT session_id, team_id, reason, occurrences, first_seen, last_seen, detail FROM abuse_flags WHERE username=$1', [u]),
     q(`SELECT id, ts, team_id, actor, action, result, detail FROM audit_log
        WHERE target=$1 ORDER BY ts DESC LIMIT 500`, [u]),
-    q(`SELECT id, session_id, winner, winner_coins, drawn_at, is_test FROM giveaway_draws
+    q(`SELECT id, session_id, winner, winner_coins, core, prize_id, drawn_at, is_test FROM giveaway_draws
        WHERE winner=$1 ORDER BY drawn_at DESC`, [u]),
     q(`SELECT DISTINCT team_id FROM watchtime_events WHERE username=$1`, [u]),
     q('SELECT version, accepted_at FROM tos_acceptances WHERE login=$1 ORDER BY version', [u]),
@@ -846,19 +876,31 @@ async function collectSubjectData(u) {
     // P1c: protokollierte Kenntnisnahmen der Teilnahmebedingungen.
     q(`SELECT team_id, session_id, core, action, terms_version, source, created_at
        FROM participation_consents WHERE username=$1 ORDER BY created_at DESC LIMIT 500`, [u]),
+    // Plattform-Verwarnungen, in denen die Person vorkommt (als Betroffener,
+    // Aussteller oder Quittierender).
+    q(`SELECT id, subject_type, subject_id, reason, created_by, created_at,
+              acknowledged_at, acknowledged_by
+       FROM platform_warnings
+       WHERE subject_id=$1 OR created_by=$1 OR acknowledged_by=$1
+       ORDER BY created_at DESC LIMIT 100`, [u]),
+    // Streamer-Konto inkl. Plattform-Sperre — bewusst ohne Tokens.
+    q(`SELECT login, display, created_at, last_login, banned_at, banned_reason
+       FROM streamers WHERE login=$1`, [u]),
   ]);
   return {
     username: u,
     found: !!(user.length || events.length || participation.length || audit.length
               || draws.length || tos.length || claims.length || creditRows.length
               || wagerRows.length || contestEntries.length || contestVotes.length
-              || consents.length),
+              || consents.length || warnings.length || streamerAcct.length),
     user: user[0] || null, teams: teams.map(t => t.team_id),
     watchtimeEvents: events, participation, abuseFlags: flags,
     auditEntries: audit, draws, tosAcceptances: tos, winnerClaims: claims,
     creditLedger: creditRows, prizeWagers: wagerRows,
     contestEntries, contestVotes,
     participationConsents: consents,
+    platformWarnings: warnings,
+    streamerAccount: streamerAcct[0] || null,
   };
 }
 
@@ -938,6 +980,16 @@ async function eraseSubject(u, actor, action) {
     done.snapshots_pseudonymisiert = sn.rowCount;
     const al = await client.query('UPDATE audit_log SET target=$2 WHERE target=$1', [u, pseudo]);
     done.audit_log_pseudonymisiert = al.rowCount;
+    // Plattform-Verwarnungen: Historie bleibt als Nachweis der Moderation,
+    // der Personenbezug wird pseudonymisiert (Art. 17 Abs. 3 lit. e DSGVO).
+    const pwn = await client.query(
+      `UPDATE platform_warnings SET
+         subject_id      = CASE WHEN subject_type='streamer' AND subject_id=$1 THEN $2 ELSE subject_id END,
+         created_by      = CASE WHEN created_by=$1 THEN $2 ELSE created_by END,
+         acknowledged_by = CASE WHEN acknowledged_by=$1 THEN $2 ELSE acknowledged_by END
+       WHERE (subject_type='streamer' AND subject_id=$1) OR created_by=$1 OR acknowledged_by=$1`,
+      [u, pseudo]);
+    done.platform_warnings_pseudonymisiert = pwn.rowCount;
     // Gewinnermeldung: die Kontaktdaten sind echte Klardaten und fallen sofort
     // weg. Der Datensatz selbst bleibt pseudonymisiert stehen, weil er belegt,
     // dass der Gewinn gemeldet und zugestellt wurde (Art. 17 Abs. 3 lit. e).
@@ -1043,6 +1095,218 @@ app.post('/api/gdpr/subject/:username/delete', async (req, res) => {
     await auditGdpr(sess.user, 'gdpr_delete', u, 'error', { message: e.message });
     res.status(500).json({ error: e.message });
   }
+});
+
+// ── Plattform-Verwaltung (superadmin) ─────────────────────
+// Moderation der Plattform: Statistik, Teams deaktivieren/reaktivieren,
+// Streamer sperren, Verwarnungen. Team-Aktionen laufen über auditTeam (damit
+// sie im Team-Audit sichtbar sind), personen-/plattformbezogene über
+// auditPlatform (team_id NULL — gleiche Form wie die DSGVO-Vorgänge).
+const auditPlatform = auditGdpr;
+
+function sanitizeTeamIdParam(v) {
+  return String(v || '').replace(/[^a-zA-Z0-9_]/g, '').slice(0, 40);
+}
+
+app.get('/api/platform/stats', async (req, res) => {
+  if (!requireSuperadmin(req, res)) return;
+  try {
+    const n = (sql) => pg.query(sql).then(r => r.rows[0].n).catch(() => null);
+    const [teamsActive, teamsDeactivated, streamers, viewers, openGiveaways] = await Promise.all([
+      n(`SELECT COUNT(*)::int AS n FROM teams WHERE deactivated_at IS NULL`),
+      n(`SELECT COUNT(*)::int AS n FROM teams WHERE deactivated_at IS NOT NULL`),
+      // Nur Konten mit echtem Login — vorgemerkte Plattform-Admins ohne
+      // ersten Login (ensureSchema) zählen nicht als Benutzer.
+      n(`SELECT COUNT(*)::int AS n FROM streamers WHERE last_login IS NOT NULL`),
+      n(`SELECT COUNT(*)::int AS n FROM users`),
+      n(`SELECT COUNT(*)::int AS n FROM sessions WHERE status IN ('open','paused')`),
+    ]);
+    res.json({ teamsActive, teamsDeactivated, streamers, viewers, openGiveaways });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/platform/teams', async (req, res) => {
+  if (!requireSuperadmin(req, res)) return;
+  try {
+    const r = await pg.query(`
+      SELECT t.id, t.name, t.owner_login, t.created_at, t.deactivated_at,
+             (SELECT COUNT(*)::int FROM team_members m WHERE m.team_id = t.id) AS members,
+             EXISTS (SELECT 1 FROM sessions s
+                      WHERE s.team_id = t.id AND s.status IN ('open','paused')) AS open_giveaway,
+             (SELECT COUNT(*)::int FROM platform_warnings w
+               WHERE w.subject_type='team' AND w.subject_id = t.id
+                 AND w.acknowledged_at IS NULL) AS warnings_open
+      FROM teams t ORDER BY t.created_at DESC LIMIT 1000`);
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/platform/streamers', async (req, res) => {
+  if (!requireSuperadmin(req, res)) return;
+  try {
+    const r = await pg.query(`
+      SELECT s.login, s.display, s.created_at, s.last_login, s.is_platform_admin,
+             s.banned_at, s.banned_reason,
+             (SELECT COUNT(*)::int FROM teams t WHERE t.owner_login = s.login) AS owned_teams,
+             (SELECT COUNT(*)::int FROM platform_warnings w
+               WHERE w.subject_type='streamer' AND w.subject_id = s.login
+                 AND w.acknowledged_at IS NULL) AS warnings_open
+      FROM streamers s ORDER BY s.last_login DESC NULLS LAST LIMIT 1000`);
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/platform/warnings', async (req, res) => {
+  if (!requireSuperadmin(req, res)) return;
+  const type = String(req.query.type || '');
+  if (type !== 'team' && type !== 'streamer') return res.status(400).json({ error: 'bad_type' });
+  const id = type === 'team' ? sanitizeTeamIdParam(req.query.id) : A.sanitizeUserName(req.query.id);
+  if (!id) return res.status(400).json({ error: 'bad_id' });
+  try {
+    const r = await pg.query(`
+      SELECT id, reason, created_by, created_at, acknowledged_at, acknowledged_by
+      FROM platform_warnings WHERE subject_type=$1 AND subject_id=$2
+      ORDER BY created_at DESC LIMIT 100`, [type, id]);
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/platform/warn', async (req, res) => {
+  const sess = requireSuperadmin(req, res); if (!sess) return;
+  const type = String((req.body && req.body.subjectType) || '');
+  if (type !== 'team' && type !== 'streamer') return res.status(400).json({ error: 'bad_type' });
+  const id = type === 'team'
+    ? sanitizeTeamIdParam(req.body && req.body.subjectId)
+    : A.sanitizeUserName(req.body && req.body.subjectId);
+  if (!id) return res.status(400).json({ error: 'bad_id' });
+  const reason = String((req.body && req.body.reason) || '').trim().slice(0, 500);
+  if (!reason) return res.status(400).json({ error: 'reason_required' });
+  try {
+    const exists = type === 'team'
+      ? await pg.query('SELECT 1 FROM teams WHERE id=$1', [id])
+      : await pg.query('SELECT 1 FROM streamers WHERE login=$1', [id]);
+    if (!exists.rowCount) return res.status(404).json({ error: 'not_found' });
+    const ins = await pg.query(`
+      INSERT INTO platform_warnings (subject_type, subject_id, reason, created_by)
+      VALUES ($1,$2,$3,$4) RETURNING id`, [type, id, reason, sess.user]);
+    if (type === 'team') await auditTeam(id, sess.user, 'platform_warn', id, 'ok', { reason });
+    else await auditPlatform(sess.user, 'platform_warn', id, 'ok', { reason });
+    res.json({ ok: true, id: ins.rows[0].id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Deaktivierung durch die Plattform: wie die Owner-Route, aber ohne
+// confirmName (stattdessen Pflicht-Grund). Ein offenes Giveaway blockiert
+// weiterhin (409) — mit force werden die PG-Sessions vorher geschlossen,
+// denn der Cleanup räumt nur Redis ab, nicht sessions.status.
+app.post('/api/platform/teams/:id/deactivate', async (req, res) => {
+  const sess = requireSuperadmin(req, res); if (!sess) return;
+  const id = sanitizeTeamIdParam(req.params.id);
+  const reason = String((req.body && req.body.reason) || '').trim().slice(0, 500);
+  const force = !!(req.body && req.body.force);
+  if (!reason) return res.status(400).json({ error: 'reason_required' });
+  try {
+    const t = await pg.query('SELECT name, deactivated_at FROM teams WHERE id=$1', [id]);
+    if (!t.rowCount) return res.status(404).json({ error: 'not_found' });
+    if (t.rows[0].deactivated_at) return res.status(409).json({ error: 'already_deactivated' });
+    const open = await teamHasOpenGiveaway(id);
+    if (open && !force) return res.status(409).json({ error: 'giveaway_open' });
+    let forcedClosedSessions = 0;
+    if (open && force) {
+      const r = await pg.query(
+        `UPDATE sessions SET status='closed', closed_at=NOW()
+         WHERE team_id=$1 AND status IN ('open','paused')`, [id]);
+      forcedClosedSessions = r.rowCount;
+    }
+    await pg.query('UPDATE teams SET deactivated_at=NOW() WHERE id=$1', [id]);
+    const cleanup = await giveawayCleanup(id);
+    await auditTeam(id, sess.user, 'platform_team_deactivate', id, 'ok',
+                    { reason, force, forcedClosedSessions, cleanup });
+    res.json({ ok: true, forcedClosedSessions, cleanup });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/platform/teams/:id/reactivate', async (req, res) => {
+  const sess = requireSuperadmin(req, res); if (!sess) return;
+  const id = sanitizeTeamIdParam(req.params.id);
+  const reason = String((req.body && req.body.reason) || '').trim().slice(0, 500);
+  try {
+    const r = await pg.query(
+      'UPDATE teams SET deactivated_at=NULL WHERE id=$1 AND deactivated_at IS NOT NULL', [id]);
+    if (!r.rowCount) return res.status(409).json({ error: 'not_deactivated' });
+    await auditTeam(id, sess.user, 'platform_team_reactivate', id, 'ok', { reason });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/platform/streamers/:login/ban', async (req, res) => {
+  const sess = requireSuperadmin(req, res); if (!sess) return;
+  const login = A.sanitizeUserName(req.params.login);
+  const reason = String((req.body && req.body.reason) || '').trim().slice(0, 500);
+  if (!login) return res.status(400).json({ error: 'bad_login' });
+  if (login === sess.user) return res.status(400).json({ error: 'cannot_ban_self' });
+  if (!reason) return res.status(400).json({ error: 'reason_required' });
+  try {
+    const r = await pg.query('SELECT is_platform_admin, banned_at FROM streamers WHERE login=$1', [login]);
+    if (!r.rowCount) return res.status(404).json({ error: 'not_found' });
+    if (r.rows[0].is_platform_admin) return res.status(400).json({ error: 'cannot_ban_admin' });
+    if (r.rows[0].banned_at) return res.status(409).json({ error: 'already_banned' });
+    await pg.query('UPDATE streamers SET banned_at=NOW(), banned_reason=$2 WHERE login=$1', [login, reason]);
+    bannedLogins.add(login);
+    await auditPlatform(sess.user, 'platform_streamer_ban', login, 'ok', { reason });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/platform/streamers/:login/unban', async (req, res) => {
+  const sess = requireSuperadmin(req, res); if (!sess) return;
+  const login = A.sanitizeUserName(req.params.login);
+  if (!login) return res.status(400).json({ error: 'bad_login' });
+  try {
+    const r = await pg.query(
+      'UPDATE streamers SET banned_at=NULL, banned_reason=NULL WHERE login=$1 AND banned_at IS NOT NULL', [login]);
+    if (!r.rowCount) return res.status(409).json({ error: 'not_banned' });
+    bannedLogins.remove(login);
+    await auditPlatform(sess.user, 'platform_streamer_unban', login, 'ok', {});
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Verwarnungen: Sicht des Betroffenen ───────────────────
+// Sichtbar sind eigene Streamer-Verwarnungen und Team-Verwarnungen der Teams,
+// die man als Owner führt. Dasselbe Prädikat steht in der Ack-UPDATE — sonst
+// könnte jeder beliebige IDs quittieren.
+app.get('/api/me/warnings', async (req, res) => {
+  const s = requireSession(req, res); if (!s) return;
+  try {
+    const r = await pg.query(`
+      SELECT w.id, w.subject_type, w.reason, w.created_at, t.name AS team_name
+      FROM platform_warnings w
+      LEFT JOIN teams t ON w.subject_type='team' AND t.id = w.subject_id
+      WHERE w.acknowledged_at IS NULL AND (
+        (w.subject_type='streamer' AND w.subject_id = $1) OR
+        (w.subject_type='team' AND w.subject_id IN (
+          SELECT team_id FROM team_members WHERE login=$1 AND role='owner')))
+      ORDER BY w.created_at`, [s.user]);
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/me/warnings/:id/ack', async (req, res) => {
+  const s = requireSession(req, res); if (!s) return;
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' });
+  try {
+    const r = await pg.query(`
+      UPDATE platform_warnings SET acknowledged_at=NOW(), acknowledged_by=$2
+      WHERE id=$1 AND acknowledged_at IS NULL AND (
+        (subject_type='streamer' AND subject_id = $2) OR
+        (subject_type='team' AND subject_id IN (
+          SELECT team_id FROM team_members WHERE login=$2 AND role='owner')))`, [id, s.user]);
+    if (!r.rowCount) return res.status(404).json({ error: 'not_found' });
+    await auditPlatform(s.user, 'platform_warning_ack', String(id), 'ok', {});
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── Public (kein Login): statische Anleitungen (md) ───────
@@ -1211,6 +1475,10 @@ async function ensureSchema() {
   for (const col of ['access_token TEXT','refresh_token TEXT','token_expires TIMESTAMPTZ','scopes TEXT']) {
     await pg.query(`ALTER TABLE streamers ADD COLUMN IF NOT EXISTS ${col}`);
   }
+  // Plattform-Sperre (Plattform-Verwaltung): Login-Block als Flag, kein
+  // Datenlöschen — Löschung läuft weiterhin über die DSGVO-Pfade.
+  await pg.query(`ALTER TABLE streamers ADD COLUMN IF NOT EXISTS banned_at TIMESTAMPTZ`);
+  await pg.query(`ALTER TABLE streamers ADD COLUMN IF NOT EXISTS banned_reason TEXT`);
   await pg.query(`
     CREATE TABLE IF NOT EXISTS teams (
       id          TEXT PRIMARY KEY,
@@ -1269,6 +1537,21 @@ async function ensureSchema() {
       PRIMARY KEY (login, version)
     )`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_tos_login ON tos_acceptances(login, version DESC)`);
+  // Verwarnungen der Plattform-Verwaltung. Ack-Status ist mutierbarer Zustand
+  // und gehört deshalb nicht ins append-only audit_log; die Aktion selbst
+  // wird dort zusätzlich protokolliert.
+  await pg.query(`
+    CREATE TABLE IF NOT EXISTS platform_warnings (
+      id              BIGSERIAL PRIMARY KEY,
+      subject_type    TEXT NOT NULL CHECK (subject_type IN ('team','streamer')),
+      subject_id      TEXT NOT NULL,
+      reason          TEXT NOT NULL,
+      created_by      TEXT NOT NULL,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      acknowledged_at TIMESTAMPTZ,
+      acknowledged_by TEXT
+    )`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_pw_subject ON platform_warnings(subject_type, subject_id)`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_tm_login ON team_members(login)`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_teams_code ON teams(invite_code)`);
   const { rows } = await pg.query('SELECT COUNT(*)::int AS n FROM admin_users');
@@ -1308,6 +1591,10 @@ async function pgReady() {
 async function main() {
   await pgReady();
   await ensureSchema();
+  // Sperr-Cache VOR listen füllen — sonst gäbe es ein Fenster, in dem ein
+  // gebannter Login mit gültigem Cookie durch /auth/verify käme.
+  await refreshBannedLogins();
+  setInterval(refreshBannedLogins, 60000).unref();
   app.listen(CFG.port, () => log('Admin', `Service on port ${CFG.port}`));
 }
 main().catch(e => { logErr('FATAL', e.message); process.exit(1); });

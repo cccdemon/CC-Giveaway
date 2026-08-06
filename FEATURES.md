@@ -231,6 +231,25 @@ jemand schaut.
 
 ---
 
+## Plattform-Verwaltung (Betreiber)
+
+Plattform-Administratoren (Rolle superadmin) haben eine eigene Seite zur
+Moderation der Plattform:
+
+- **Überblick:** aktive und deaktivierte Teams, registrierte Streamer,
+  Zuschauer, laufende Giveaways.
+- **Teams deaktivieren und reaktivieren.** Die Deaktivierung räumt den
+  Live-State ab und blockt neue Giveaways; ein laufendes Giveaway muss
+  ausdrücklich erzwungen beendet werden. Alles mit Pflicht-Grund.
+- **Streamer sperren und entsperren.** Eine Sperre blockt nur den Login,
+  sofort auch für laufende Sitzungen. Daten bleiben erhalten; Auskunft und
+  Löschung laufen weiter über die DSGVO-Pfade. Plattform-Administratoren
+  lassen sich nicht sperren.
+- **Verwarnungen** an Teams oder Streamer. Der Betroffene sieht sie beim
+  nächsten Besuch als Banner und bestätigt die Kenntnisnahme; die Historie
+  bleibt für den Betreiber einsehbar.
+- Jede Aktion steht mit Grund und Handelndem im Audit-Log.
+
 ## Rechtlicher Rahmen
 
 - **Kein Glücksspiel — und das ist verbindlich.** Die Nutzungsbedingungen

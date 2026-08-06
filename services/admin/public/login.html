@@ -47,7 +47,7 @@
   var f = document.getElementById('loginForm');
   var err = document.getElementById('err');
   var btn = document.getElementById('btn');
-  var ERRMAP = { state:'Sitzung abgelaufen, bitte erneut.', token:'Twitch-Login fehlgeschlagen.', profile:'Twitch-Profil nicht lesbar.', notadmin:'Kein Zugang für diesen Account.', server:'Serverfehler beim Login.' };
+  var ERRMAP = { state:'Sitzung abgelaufen, bitte erneut.', token:'Twitch-Login fehlgeschlagen.', profile:'Twitch-Profil nicht lesbar.', notadmin:'Kein Zugang für diesen Account.', banned:'Dieses Konto wurde vom Betreiber gesperrt.', server:'Serverfehler beim Login.' };
   var qe = new URLSearchParams(location.search).get('err');
   if (qe) err.textContent = ERRMAP[qe] || ('Fehler: ' + qe);
   // Ursprünglich angeforderte Seite an den Twitch-Login durchreichen —
