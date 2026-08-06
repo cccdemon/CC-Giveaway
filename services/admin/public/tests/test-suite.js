@@ -264,16 +264,18 @@
   });
 
   it('updateStats aggregates only non-banned participants into the DOM', function() {
-    withEls(['s-total', 's-tickets', 's-msgs'], function(els) {
+    withEls(['cb-stats'], function(els) {
       participants = {
         a: { coins: 1.5, msgs: 4, banned: false },
         b: { coins: 2.5, msgs: 6, banned: false },
         c: { coins: 99,  msgs: 99, banned: true }   // ausgeschlossen
       };
+      gwCore = null;   // Kampagnen-Layout (Kacheln je Core seit Aug 2026)
       updateStats();
-      expect(els[0].textContent).toBe('2');     // s-total: aktive
-      expect(els[1].textContent).toBe('4');     // s-tickets: 1.5 + 2.5
-      expect(els[2].textContent).toBe('10');    // s-msgs: 4 + 6
+      var html = els[0].innerHTML;
+      expect(html.indexOf('>2</span><label>CREW') >= 0).toBe(true);      // aktive
+      expect(html.indexOf('>4</span><label>COINS') >= 0).toBe(true);     // 1.5 + 2.5
+      expect(html.indexOf('>10</span><label>MSGS') >= 0).toBe(true);     // 4 + 6
     });
   });
 

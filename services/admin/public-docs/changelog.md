@@ -53,7 +53,10 @@ Zahlen nichts aussagen. Jetzt passt sich die Tabelle der Mechanik an:
 **Los-Giveaway** zeigt Guthaben und gesetzte Lose je Teilnehmer, der
 **Contest** zeigt Einsendung, Status, Punkte und Stimmen. Die
 Giveaway-Auswahl oben zeigt zu jeder laufenden Instanz jetzt außerdem
-**Teilnehmerzahl und Startzeit**.
+**Teilnehmerzahl und Startzeit**. Auch die Statistik-Kacheln in der
+Kopfzeile passen sich an: Sofortverlosung zeigt Angemeldet/Anwesend/Im Topf,
+das Los-Giveaway Konten/gesetzte Lose/freies Guthaben/Setzer, der Contest
+Einsendungen/Freigegeben/Stimmen/Punkte.
 
 ### Preise mit Bild und Beschreibung
 

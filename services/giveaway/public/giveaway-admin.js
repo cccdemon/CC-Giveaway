@@ -1125,22 +1125,59 @@ function sortBy(f) {
 }
 
 // ── Stats & Overlay ───────────────────────────────────────
+// Kacheln in der Command-Bar je Mechanik: die Coin-/Msg-Zahlen der Kampagne
+// sagen bei Sofortverlosung/Los-Giveaway/Contest nichts aus.
+function statTile(t) {
+  return '<div class="stat ' + (t.cls || '') + '"' + (t.title ? ' title="' + esc(t.title) + '"' : '') + '>'
+    + '<span>' + esc(String(t.v)) + '</span><label>' + esc(t.l) + '</label></div>';
+}
+function fmtStatNum(n) { return ((Math.round(n * 100) / 100).toFixed(2).replace(/\.?0+$/, '')) || '0'; }
+
 function updateStats() {
+  const host = document.getElementById('cb-stats');
+  if (!host) return;
   const active = Object.values(participants).filter(p=>!p.banned);
-  document.getElementById('s-total').textContent   = active.length;
-  document.getElementById('s-tickets').textContent = active.reduce((s,p)=>s+(parseFloat(p.coins)||0),0).toFixed(4).replace(/\.?0+$/,'');
-  document.getElementById('s-msgs').textContent    = active.reduce((s,p)=>s+(parseInt(p.msgs)||0),0);
-  // Berechtigte = Server-Flag `eligible` (Keyword + Follow-Gate + ≥drawMinSec Viewtime)
-  const elig    = active.filter(p => p.eligible).length;
-  const pending = active.filter(isPending).length;
-  const noKey   = active.filter(p => !p.registered && (p.coins||0) >= 1).length;
-  document.getElementById('s-eligible').textContent = pending ? `${elig}+${pending}` : String(elig);
-  document.getElementById('s-eligible-lbl').textContent = pending ? 'LOSTOPF + VORGEMERKT' : 'IM LOSTOPF (≥1 COIN)';
-  document.getElementById('s-eligible-box').title =
-    `${elig} im Lostopf (Keyword + ≥${gwFollowMin} Follows + ≥1 Coin)\n`
-    + `${pending} vorgemerkt (Keyword da, Bedingung offen)\n`
-    + `${noKey} hätten ≥1 Coin, aber kein Keyword\n`
-    + `1 Coin = ${fmtDurShort(gwDrawMinSec)} Viewtime`;
+  let tiles;
+  if (gwCore === 'CORE_CurrentViewers') {
+    tiles = [
+      { v: active.filter(p=>p.registered).length, l: 'ANGEMELDET', title: 'Keyword im Anmeldefenster geschrieben' },
+      { v: active.filter(p=>p.present).length,    l: 'ANWESEND', cls: 'plain', title: 'Gerade als Zuschauer gemeldet (viewer_tick)' },
+      { v: active.filter(p=>p.eligible).length,   l: 'IM TOPF', cls: 'green',
+        title: 'Angemeldet + anwesend — Stand jetzt in der Ziehung' },
+    ];
+  } else if (gwCore === 'CORE_TicketBuy') {
+    tiles = [
+      { v: active.length, l: 'KONTEN', title: 'Zuschauer mit Guthaben oder Einsatz' },
+      { v: fmtStatNum(active.reduce((s,p)=>s+(parseFloat(p.stake)||0),0)),   l: 'GESETZTE LOSE', cls: 'gold' },
+      { v: fmtStatNum(active.reduce((s,p)=>s+(parseFloat(p.balance)||0),0)), l: 'FREIES GUTHABEN', cls: 'plain',
+        title: 'Ledger-Saldo (ohne live erspielten Stand der laufenden Instanz)' },
+      { v: active.filter(p=>p.eligible).length, l: 'SETZER', cls: 'green', title: 'Mindestens 1 Los gesetzt' },
+    ];
+  } else if (gwCore === 'CORE_ScreenshotContest') {
+    tiles = [
+      { v: active.length, l: 'EINSENDUNGEN' },
+      { v: active.filter(p=>p.status==='approved').length, l: 'FREIGEGEBEN', cls: 'green' },
+      { v: active.reduce((s,p)=>s+(parseInt(p.votes)||0),0), l: 'STIMMEN', cls: 'plain' },
+      { v: active.reduce((s,p)=>s+(parseInt(p.score)||0),0), l: 'PUNKTE', cls: 'gold' },
+    ];
+  } else {
+    // Kampagne (Watchtime): unverändertes Layout.
+    const elig    = active.filter(p => p.eligible).length;
+    const pending = active.filter(isPending).length;
+    const noKey   = active.filter(p => !p.registered && (p.coins||0) >= 1).length;
+    tiles = [
+      { v: active.length, l: 'CREW' },
+      { v: (active.reduce((s,p)=>s+(parseFloat(p.coins)||0),0).toFixed(4).replace(/\.?0+$/,'')) || '0', l: 'COINS', cls: 'gold' },
+      { v: active.reduce((s,p)=>s+(parseInt(p.msgs)||0),0), l: 'MSGS', cls: 'plain' },
+      { v: pending ? (elig + '+' + pending) : elig,
+        l: pending ? 'LOSTOPF + VORGEMERKT' : 'IM LOSTOPF (≥1 COIN)', cls: 'green',
+        title: `${elig} im Lostopf (Keyword + ≥${gwFollowMin} Follows + ≥1 Coin)\n`
+             + `${pending} vorgemerkt (Keyword da, Bedingung offen)\n`
+             + `${noKey} hätten ≥1 Coin, aber kein Keyword\n`
+             + `1 Coin = ${fmtDurShort(gwDrawMinSec)} Viewtime` },
+    ];
+  }
+  host.innerHTML = tiles.map(statTile).join('');
 }
 
 // OBS-Overlay (giveaway-overlay.html) ist winner-only. Der Server broadcastet
@@ -1512,6 +1549,7 @@ function clearLog() {
 // ── Init ──────────────────────────────────────────────────
 if (!window._sfUnitTests) {
   applyPrivacy();               // vor connectWS: Zustand steht, bevor Daten kommen
+  updateStats();                // Kacheln sofort zeigen (Nullstand, Kampagnen-Layout)
   connectWS();
   log('Admin-Panel gestartet', 'cyan');
   if (privacyOn) log('Streamermodus aktiv (gespeichert)', 'gold');

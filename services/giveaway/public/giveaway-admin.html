@@ -92,12 +92,8 @@
       <button class="btn btn-red btn-sm" id="gw-close-inst" onclick="closeInstance()" title="Gewählte Zusatz-Instanz schließen" style="display:none;">✕</button>
       <div class="state-chip idle" id="gw-txt">IDLE</div>
     </div>
-    <div class="cb-stats">
-      <div class="stat"><span id="s-total">0</span><label>CREW</label></div>
-      <div class="stat gold"><span id="s-tickets">0</span><label>COINS</label></div>
-      <div class="stat plain"><span id="s-msgs">0</span><label>MSGS</label></div>
-      <div class="stat green" id="s-eligible-box" title="Teilnehmer im Lostopf"><span id="s-eligible">0</span><label id="s-eligible-lbl">IM LOSTOPF</label></div>
-    </div>
+    <!-- Kacheln je Mechanik — updateStats() rendert passend zum Core -->
+    <div class="cb-stats" id="cb-stats"></div>
     <div class="cb-right">
       <div id="privacy-badge" class="ws-badge priv off" onclick="togglePrivacy()"
            title="Streamermodus: blendet Zuschauernamen und Tokens aus – für Screenshare / Stream">&#128065; STREAMERMODUS: AUS</div>
