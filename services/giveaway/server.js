@@ -1908,14 +1908,16 @@ app.get('/api/wager/state', async (req, res) => {
       if (!prizes.length && available <= 0) continue;   // nichts zu zeigen
       const withStake = [];
       for (const p of prizes) withStake.push({ ...p, myStake: await wte.prizeStake(p.id, user) });
-      let wagerCmd = null;   // Chat-Befehl der laufenden Los-Instanz (Hinweistext)
+      let wagerCmd = null, tbChannels = null;   // Chat-Befehl + Kanäle der Los-Instanz
       for (const g of await wte.listGiveaways(t)) {
         if (g.core === 'CORE_TicketBuy' && g.gid) {
           wagerCmd = (await redis.get(K.gWagerCmd(t, g.gid))) || '!setzen';
+          tbChannels = g.channels;
           break;
         }
       }
-      out.push({ teamId: t, teamName: await teamName(t), available, prizes: withStake, wagerCmd });
+      out.push({ teamId: t, teamName: await teamName(t), available, prizes: withStake, wagerCmd,
+                 channels: tbChannels || await wte.getChannels(t) });
     }
     res.json({ user, teams: out });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -2157,6 +2159,7 @@ app.get('/api/contest/state', async (req, res) => {
         entries.push({ ...s, myScore: v.rowCount ? v.rows[0].score : null, own: s.username === user });
       }
       out.push({ teamId: t, teamName: await teamName(t), giveawayId: inst.gid,
+                 channels: inst.channels || await wte.getChannels(t),
                  voting: await wte.getContestVoting(t, inst.gid),
                  canSubmit: elig.followsHost && elig.watchOk,
                  canVote: elig.watchOk,
