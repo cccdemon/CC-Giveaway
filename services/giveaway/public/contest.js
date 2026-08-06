@@ -43,7 +43,7 @@ function load() {
 
 function renderContest(c) {
   var votingTxt = { open: 'Voting OFFEN', paused: 'Voting pausiert', closed: 'Voting geschlossen' }[c.voting] || c.voting;
-  var head = '<div class="sc-team" id="ct-' + esc(c.teamId) + '"><h2>' + esc(c.teamId) + '</h2>'
+  var head = '<div class="sc-team" id="ct-' + esc(c.teamId) + '"><h2>' + esc(c.teamName || c.teamId) + '</h2>'
     + '<div class="sc-state">' + votingTxt
     + (c.minWatch ? ' · Mindest-Zuschauzeit: ' + Math.round(c.minWatch / 60) + ' min (du: ' + Math.round(c.watchSec / 60) + ' min)' : '')
     + '</div>';

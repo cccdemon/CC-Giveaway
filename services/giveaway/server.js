@@ -1915,7 +1915,7 @@ app.get('/api/wager/state', async (req, res) => {
           break;
         }
       }
-      out.push({ teamId: t, available, prizes: withStake, wagerCmd });
+      out.push({ teamId: t, teamName: await teamName(t), available, prizes: withStake, wagerCmd });
     }
     res.json({ user, teams: out });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -2108,6 +2108,14 @@ async function contestInstance(teamId) {
 // begegnet, folgt vielleicht längst. Dann einmalig via Helix nachprüfen
 // (Owner-Token des Kanals) und das Flag setzen, wie es das Live-Event täte.
 // Kanäle ohne eingeloggten Owner liefern null → kein Nachweis, kein Flag.
+// Anzeigename des Teams für die Zuschauer-Seiten (Fallback: id).
+async function teamName(teamId) {
+  try {
+    const r = await pg.query('SELECT name FROM teams WHERE id=$1', [teamId]);
+    return (r.rowCount && r.rows[0].name) || teamId;
+  } catch { return teamId; }
+}
+
 async function helixFollowFallback(teamId, gid, user) {
   try {
     if (!helix.configured) return false;
@@ -2148,7 +2156,7 @@ app.get('/api/contest/state', async (req, res) => {
         const v = await pg.query(`SELECT score FROM contest_votes WHERE entry_id=$1 AND voter=$2`, [s.entryId, user]);
         entries.push({ ...s, myScore: v.rowCount ? v.rows[0].score : null, own: s.username === user });
       }
-      out.push({ teamId: t, giveawayId: inst.gid,
+      out.push({ teamId: t, teamName: await teamName(t), giveawayId: inst.gid,
                  voting: await wte.getContestVoting(t, inst.gid),
                  canSubmit: elig.followsHost && elig.watchOk,
                  canVote: elig.watchOk,

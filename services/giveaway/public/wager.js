@@ -46,7 +46,7 @@ function load() {
 function renderTeam(t) {
   var prizes = (t.prizes || []).map(function(p) { return renderPrize(t.teamId, p); }).join('')
             || '<span class="wg-empty">Keine offenen Preise.</span>';
-  return '<div class="wg-team"><h2>' + esc(t.teamId) + '</h2>'
+  return '<div class="wg-team"><h2>' + esc(t.teamName || t.teamId) + '</h2>'
     + '<div class="wg-balance">Dein Guthaben: <b>' + Number(t.available).toFixed(2) + '</b> Lose</div>'
     + (t.wagerCmd ? '<div class="wg-cmd">Geht auch im Chat: „' + esc(t.wagerCmd)
         + ' &lt;preis-nr&gt; &lt;anzahl&gt;" · Rücknahme mit Anzahl 0.</div>' : '')
