@@ -88,12 +88,21 @@ module.exports = {
   winnerText,
   emptyDrawText,
 
+  // UI-Vertrag (P5): gemeinsame Oberflächen lesen NUR diese Deklaration.
   display: {
+    css:        'core-contest',
+    icon:       '📸',
+    unit:       'Punkte',
+    winnerStat: 'score',       // winner_coins = Punktsumme aus dem Voting
+    drawKind:   'score',       // höchste Punktsumme gewinnt, Los nur bei Gleichstand
+    emptyPool:  'Keine freigegebene Einsendung mit Stimmen — kein Sieger ermittelbar.',
     columns: [
       { key: 'title', label: 'Screenshot', mask: false },
       { key: 'score', label: 'Punkte',     mask: false },
       { key: 'votes', label: 'Stimmen',    mask: false },
     ],
-    tiles: ['entryCount', 'voteCount'],
+    // Kachel-IDs aus der Panel-Registry (STAT_TILES in giveaway-admin.js).
+    tiles: ['entryCount', 'approvedCount', 'voteSum', 'scoreSum'],
+    panelCard: 'contest',   // Rail-Karte card-contest + Einsendungs-Loader
   },
 };

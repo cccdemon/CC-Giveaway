@@ -30,12 +30,22 @@ Die Gewinner werden am **[Datum]** live auf **[Haupt-Kanal]** ausgelost.
 Teilnahmeberechtigt sind natürliche Personen, die
 * mindestens 18 Jahre alt sind bzw. das an ihrem Wohnsitz erforderliche Mindestalter erreicht haben,
 * einen gültigen Twitch-Account besitzen,
-* diese Teilnahmebedingungen akzeptieren (Opt-in per Keyword im Chat, siehe § 4).
+* diese Teilnahmebedingungen akzeptieren. Die Zustimmung erklärst du je nach Mechanik:
+  per **Keyword im Chat** (Kampagne § 4, Sofortverlosung § 4b), mit deinem **ersten
+  Los-Einsatz** (Los-Giveaway § 4c) oder mit deiner **Einsendung bzw. Stimmabgabe**
+  (Screenshot-Contest § 4d). Auf den Webseiten bestätigst du die Kenntnisnahme zusätzlich
+  per Checkbox; Zeitpunkt und geltende Fassung werden protokolliert.
 
 Ausgeschlossen sind die Veranstalter, an der Durchführung Beteiligte, automatisierte
 Accounts (Bots) sowie Personen, die gegen diese Bedingungen verstoßen.
 
-## § 4 Teilnahme & Gewinnchance
+## § 4 Kampagne: Teilnahme & Gewinnchance
+
+> Der Veranstalter kann vier Mechaniken einsetzen: die **Kampagne** (dieser § 4),
+> die **Sofortverlosung** (§ 4b), das **Los-Giveaway** (§ 4c) und den
+> **Screenshot-Contest** (§ 4d). Die §§ 1–3 und 5–15 gelten für alle Mechaniken;
+> welche Mechanik läuft, wird jeweils im Chat bzw. auf den Teilnahme-Seiten angesagt.
+
 1. **Anmelden (Opt-in):** Gib das **Keyword** im Chat ein. Damit stimmst du diesen Bedingungen zu und bist angemeldet — das kann **jeder**.
 2. **Berücksichtigt für die Ziehung** (Aufnahme in den Lostopf) wirst du erst, wenn du zusätzlich **beides** erfüllst:
    * du **folgst der vom Veranstalter vorgegebenen Mindestanzahl** der in § 1 genannten Kanäle, **und**
@@ -44,10 +54,10 @@ Accounts (Bots) sowie Personen, die gegen diese Bedingungen verstoßen.
 3. **Deine Gewinnchance** ergibt sich aus deiner **aktiven Teilnahme** und steigt über die Mindest-Zuschauzeit hinaus weiter mit:
    * **Zuschauzeit (Viewtime)** auf den teilnehmenden Kanälen, und
    * **sinnvoller Chatbeteiligung**.
-   Zuschauzeit und Chat zählen auf **dasselbe Konto**. Es werden **keine „Lose" oder Tickets** vergeben — je mehr aktive Teilnahme, desto höher die Chance.
-4. Die Chance zählt nur, solange du dem jeweiligen Kanal **folgst**, den Stream **tatsächlich verfolgst** und dich **sinnvoll am Chat beteiligst**. Reines Zuschauen („Lurken") erhöht die Chance nicht.
+   Zuschauzeit und Chat zählen auf **dasselbe Konto**. In der Kampagne gibt es **keine getrennt gehandelten Lose oder Tickets** — dein Punktestand aus aktiver Teilnahme ist dein Ziehungsgewicht (zum Los-Giveaway mit Guthaben und Einsätzen siehe § 4c).
+4. Deine Chance wächst mit der **erfassten Zuschauzeit**; **sinnvolle Chatbeteiligung** gibt zusätzliche Zuschauzeit-Gutschriften. In den Lostopf kommst du erst mit Anmeldung, den nötigen **Follows** und der **Mindest-Zuschauzeit** (Nr. 2) — anwesend gezählt wird nur, wer den Stream tatsächlich verfolgt.
 5. Die teilnehmenden Creator streamen grundsätzlich **nicht gleichzeitig** — parallele Streams musst du nicht verfolgen.
-6. Die Ziehung erfolgt **zufällig** unter allen berechtigten Teilnehmern, **gewichtet nach der gesammelten aktiven Teilnahme** (Zuschauzeit + Chat). Ein Anspruch auf eine bestimmte Gewinnchance besteht nicht.
+6. Die Ziehung der **Kampagne** erfolgt **zufällig** unter allen berechtigten Teilnehmern, **gewichtet nach der gesammelten aktiven Teilnahme** (Zuschauzeit + Chat). Für Sofortverlosung, Los-Giveaway und Screenshot-Contest gelten die abweichenden Ziehungsregeln der § 4b–4d. Ein Anspruch auf eine bestimmte Gewinnchance besteht nicht.
 
 ## § 4a Aktuell gültige Werte
 Die konkreten Werte — Mindest-Zuschauzeit für den Lostopf, Anzahl der zu folgenden Kanäle,
@@ -82,7 +92,9 @@ ergänzend zu § 4:
    nicht übertragen** werden und ist kein Zahlungsmittel. **Restguthaben
    verfällt nach zwölf Monaten ohne Bewegung.**
 3. Du setzt Lose gezielt auf einzelne, vom Veranstalter angelegte **Preise** —
-   im Chat über den angesagten Befehl oder auf der Seite „Lose setzen". Bis zum
+   im Chat über den angesagten Befehl oder auf der Seite „Lose setzen". **Dein
+   erster Einsatz in einem Los-Giveaway gilt als Zustimmung zu diesen
+   Bedingungen** (auf der Webseite zusätzlich per Checkbox bestätigt). Bis zum
    angegebenen **Einsatz-Ende** kannst du einen Einsatz vollständig
    zurücknehmen; danach ist er gebunden.
 4. Gezogen wird **je Preis** per Zufall, **gewichtet nach dem Einsatz** auf
@@ -95,7 +107,9 @@ ergänzend zu § 4:
 Der Veranstalter kann **Screenshot-Wettbewerbe** durchführen. Dabei gilt
 abweichend von § 4:
 1. **Einsenden** darf, wer einem der Contest-Kanäle **folgt** und die genannte
-   **Mindest-Zuschauzeit** erreicht hat. **Eine Einsendung pro Person**;
+   **Mindest-Zuschauzeit** erreicht hat. **Mit der Einsendung (per Checkbox
+   bestätigt) bzw. mit deiner ersten Stimmabgabe stimmst du diesen Bedingungen
+   zu.** **Eine Einsendung pro Person**;
    erneutes Einsenden ersetzt die eigene. **Achtung: beim Ersetzen verfallen
    bereits abgegebene Stimmen für den vorherigen Screenshot** — darauf wird
    vor dem Ersetzen hingewiesen.
@@ -131,8 +145,15 @@ Bereits erworbene Gewinnchancen können vollständig entfallen.
 Gewinne ergeben sich aus der jeweiligen Ankündigung. Barauszahlung, Umtausch und Übertragung sind ausgeschlossen.
 
 ## § 8 Gewinnermittlung und Meldung
-Auslosung live auf **[Haupt-Kanal]** per Zufallsprinzip aus allen gültigen Teilnahmen, gewichtet
-nach der Zahl der Lose.
+Auslosung live auf **[Haupt-Kanal]**. Die Gewinnermittlung folgt der jeweiligen Mechanik:
+* **Kampagne (§ 4):** Zufall, gewichtet nach aktiver Teilnahme.
+* **Sofortverlosung (§ 4b):** Zufall, **alle Berechtigten mit derselben Chance**.
+* **Los-Giveaway (§ 4c):** Zufall **je Preis**, gewichtet nach dem Einsatz auf diesen Preis.
+* **Screenshot-Contest (§ 4d):** **höchste Punktsumme** aus dem Voting; nur bei
+  Punktgleichstand entscheidet das Los.
+
+Jede Ziehung wird mit einem reproduzierbaren Nachweis (Teilnehmerstand, Gewichte, Zufallswert)
+protokolliert.
 
 Der Gewinner wird im Chat der teilnehmenden Kanäle bekanntgegeben und meldet sich **selbst** über
 die Seite **„Gewinn melden"** (Anmeldung mit dem eigenen Twitch-Konto). Dort trägt er die zur
@@ -150,6 +171,14 @@ Steuerkosten — diese trägt ggf. der Gewinner.
 ## § 10 Datenschutz
 Verarbeitet werden nur die zur Durchführung erforderlichen Daten. Für alle Teilnehmer ist das der
 **Twitch-Benutzername** nebst Zuschauzeit, Nachrichtenzahl und Follow-Status.
+
+Je nach Mechanik kommen hinzu:
+* **Los-Giveaway (§ 4c):** dein Los-Guthaben (Buchungsjournal) und deine Einsätze je Preis —
+  sie sind Teil des Ziehungsnachweises. Restguthaben verfällt nach zwölf Monaten ohne Bewegung.
+* **Screenshot-Contest (§ 4d):** dein eingesendetes Bild (bis zum Rückzug, zur Löschung oder als
+  Teil des Contest-Nachweises) sowie deine abgegebenen Wertungen.
+* **Kenntnisnahme-Protokoll:** je Giveaway wird festgehalten, wann du erstmals teilgenommen bzw.
+  zugestimmt hast und welche Fassung dieser Bedingungen dabei galt.
 
 Bei Gewinnern kommen die selbst gemeldeten Angaben hinzu: **Name, E-Mail-Adresse** und, sofern der
 Gewinn versandt wird, **Anschrift**. Verwendung ausschließlich zur Kontaktaufnahme und

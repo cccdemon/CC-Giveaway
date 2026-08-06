@@ -16,8 +16,9 @@ immer aus dem Token, nie aus der Meldung selbst. Wer länger als 10 Minuten
 keine Meldung hat, gilt nicht mehr als anwesend.
 
 **Chat zählt dazu — der Inhalt wird nicht gespeichert.** Jede sinnvolle
-Chat-Nachricht mit mehr als 3 Wörtern gibt einen kleinen Zuschauzeit-Bonus
-(Standard: +2 Sekunden), mit Abkühlzeit gegen Spam. Gespeichert wird nur,
+Chat-Nachricht ab einer einstellbaren Mindestlänge (Standard: mehr als
+3 Wörter) gibt einen kleinen Zuschauzeit-Bonus (Standard: +2 Sekunden),
+mit Abkühlzeit gegen Spam. Gespeichert wird nur,
 DASS eine Nachricht gewertet wurde — nicht ihr Text. Optional kann der
 Veranstalter eine KI die Wortzählung ersetzen lassen; fällt die KI aus,
 gilt automatisch wieder die Wortregel, der Chat blockiert nie.
@@ -33,7 +34,10 @@ jedes Giveaway eine eigene Kopie. Änderungen während des Laufs wirken nur
 auf dieses eine Giveaway.
 
 **Die Ziehung ist nachrechenbar.** Gezogen wird mit kryptographischem
-Zufall, gewichtet nach Losen. Zu jeder Ziehung wird ein vollständiger
+Zufall; das Gewicht bestimmt die jeweilige Mechanik (Kampagne: Lose,
+Los-Giveaway: Einsatz je Preis, Sofortverlosung: alle gleich; beim
+Screenshot-Contest entscheidet die Punktsumme, gelost wird nur bei
+Gleichstand). Zu jeder Ziehung wird ein vollständiger
 Schnappschuss des Lostopfs gespeichert (wer, mit wie vielen Losen, mit
 welchem Zufallswert). Ziehungsnachweise werden nie gelöscht — nach zwölf
 Monaten nur anonymisiert. Jede Verwaltungsaktion landet in einem

@@ -90,11 +90,20 @@ module.exports = {
   emptyDrawText,
   winnerText,
 
+  // UI-Vertrag (P5): gemeinsame Oberflächen lesen NUR diese Deklaration.
   display: {
+    css:        'core-instant',
+    icon:       '⚡',
+    unit:       null,          // keine Gewichtseinheit — alle gleich
+    winnerStat: null,          // winner_coins hat hier keine Aussage
+    drawKind:   'equal',       // gleiche Chance für alle Berechtigten
+    emptyPool:  'Niemand angemeldet und anwesend — kein Teilnehmer im Topf.',
     columns: [
       { key: 'present',  label: 'Anwesend', mask: false },
       { key: 'eligible', label: 'Im Topf',  mask: false },
     ],
-    tiles: ['eligibleCount'],
+    // Kachel-IDs aus der Panel-Registry (STAT_TILES in giveaway-admin.js).
+    tiles: ['registeredCount', 'presentCount', 'inPotCount'],
+    panelCard: 'instant',   // Rail-Karte card-instant (CSS-Matrix via css)
   },
 };

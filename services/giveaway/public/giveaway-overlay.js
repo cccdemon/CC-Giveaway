@@ -26,15 +26,30 @@ function schedule() { setTimeout(connect, wsRetry); wsRetry = Math.min(wsRetry *
 function handle(msg) {
   if (!msg) return;
   if (msg.event === 'gw_overlay') {
-    if (msg.winner) showWinner(msg.winner, msg.coins || 0);
+    if (msg.winner) showWinner(msg.winner, msg.coins || 0, msg);
     else hideWinner();
   }
 }
 
-function showWinner(name, tickets) {
+// P4: CORE-korrekte Zweitzeile. Der Server schickt unit/drawKind/votes aus
+// dem Core-Vertrag mit; alte Payloads ohne diese Felder → "Punkte" wie bisher.
+function statLine(tickets, sem) {
+  var kind = (sem && sem.drawKind) || 'weighted';
+  var unit = sem && sem.unit !== undefined ? sem.unit : 'Punkte';
+  var n = Math.round(parseFloat(tickets) || 0);
+  if (kind === 'equal')    return { count: null, text: 'Gleiche Chance für alle 🍀' };
+  if (kind === 'score')    return { count: n, suffix: ' Punkte · ' + ((sem && sem.votes) || 0) + ' Stimmen' };
+  if (kind === 'perPrize') return { count: n, suffix: ' ' + (unit || 'Lose') + ' gesetzt' };
+  return { count: n, suffix: ' ' + (unit || 'Punkte') };
+}
+
+function showWinner(name, tickets, sem) {
   var wo = document.getElementById('winner');
   document.getElementById('ov-winner-name').textContent = String(name).toUpperCase();
-  countTo(document.getElementById('ov-winner-tickets'), Math.round(parseFloat(tickets) || 0));
+  var st = statLine(tickets, sem);
+  var el = document.getElementById('ov-winner-tickets');
+  if (st.count === null) { if (el) el.innerHTML = st.text; }
+  else countTo(el, st.count, st.suffix);
   wo.classList.add('show');
   burst();
   if (hideTimer) clearTimeout(hideTimer);
@@ -42,9 +57,9 @@ function showWinner(name, tickets) {
 }
 function hideWinner() { document.getElementById('winner').classList.remove('show'); }
 
-function countTo(el, target) {
+function countTo(el, target, suffix) {
   if (!el) return;
-  var suffix = ' Punkte';
+  suffix = suffix || ' Punkte';
   if (reduce) { el.innerHTML = target + suffix; return; }
   var start = performance.now(), dur = 900;
   (function step(t) {

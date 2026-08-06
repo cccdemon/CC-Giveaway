@@ -183,4 +183,18 @@ module.exports = {
 
   // Defaults für die Engine (Re-Export erhält die alte watchtime.js-API)
   defaults: { SECS_PER_COIN, CHAT_BONUS_SEC, CHAT_COOLDOWN, CHAT_MIN_WORDS, MIN_CHANNELS, JOIN_MIN_COINS },
+
+  // UI-Vertrag (P5): gemeinsame Oberflächen lesen NUR diese Deklaration.
+  // columns=null → das Panel behält sein Standard-Kampagnen-Layout.
+  display: {
+    css:        'core-watchtime',
+    icon:       '📈',
+    unit:       'Punkte',
+    winnerStat: 'coins',       // winner_coins = Coins/Punkte aus aktiver Teilnahme
+    drawKind:   'weighted',    // Zufall, gewichtet nach Punkten
+    emptyPool:  'Keine Teilnehmer mit Punkten im Lostopf.',
+    columns: null,
+    tiles: null,       // null = Standard-Kampagnen-Kacheln des Panels
+    panelCard: null,   // Kampagne hat keine eigene Rail-Karte
+  },
 };

@@ -507,7 +507,7 @@ class WatchtimeEngine {
 
     // Keyword-Anmeldung je Giveaway (Keyword kann je Instanz abweichen;
     // Primary nutzt den Legacy-Schlüssel).
-    let regResult = null, matchedAny = false;
+    let regResult = null, matchedAny = false, cvConfirm = null;
     for (const g of targets) {
       const kw = g.primary ? await this.redis.get(K.gwKeyword(t))
                            : await this.redis.get(K.gKw(t, g.gid));
@@ -522,8 +522,17 @@ class WatchtimeEngine {
       await this._bumpMsgs(t, g.gid, ch, u, primaryGid);
       const r = await this._tryRegister(t, u, username, g.gid);
       if (g.primary) regResult = r;
+      // P6: Bestätigung der Instant-Anmeldung — bisher blieb sie stumm.
+      else if (getCore(g.core).id === 'CORE_CurrentViewers' && r.isNew) cvConfirm = g;
     }
-    if (matchedAny) return regResult;
+    if (matchedAny) {
+      if (!regResult && cvConfirm
+          && await this.redis.get(K.gAnnounce(t, cvConfirm.gid)) !== 'false') {
+        return { channel: ch,
+          chatReply: `@${u} ⚡ Du bist bei der Sofortverlosung angemeldet — bleib im Stream, gezogen wird live!` };
+      }
+      return regResult;
+    }
 
     if (await this.redis.get(K.gwBanned(t, u)) === '1') return null;
     // Msgs/Bonus nur für Cores mit Watchtime-Accrual — die Sofortverlosung
@@ -567,6 +576,26 @@ class WatchtimeEngine {
     return primaryResult;
   }
 
+  // P1c: Kenntnisnahme/Zustimmung je Teilnehmeraktion protokollieren —
+  // append-only, die ERSTE Aktion je (Session, Nutzer, Aktion) zählt
+  // (UNIQUE + ON CONFLICT DO NOTHING). core/terms_version kommen aus der
+  // sessions-Zeile: das ist die Fassung, die beim Start festgeschrieben wurde.
+  async recordConsent(teamId, gid, username, action, source = 'chat') {
+    const t = sanitizeTeamId(teamId), u = sanitizeUsername(username);
+    if (!t || !u || !gid) return;
+    try {
+      const s = await this.pg.query(`SELECT core, terms_version FROM sessions WHERE id=$1`, [gid]);
+      const core = (s.rows[0] && s.rows[0].core) || null;
+      const tv   = s.rows[0] && Number.isFinite(parseInt(s.rows[0].terms_version, 10))
+                 ? parseInt(s.rows[0].terms_version, 10) : null;
+      await this.pg.query(`
+        INSERT INTO participation_consents (team_id, session_id, core, username, action, terms_version, source)
+        VALUES ($1,$2,$3,$4,$5,$6,$7)
+        ON CONFLICT (team_id, session_id, username, action) DO NOTHING`,
+        [t, gid, core, u, action, tv, source]);
+    } catch (e) { console.error('[WTE] recordConsent:', e.message); }
+  }
+
   async _tryRegister(teamId, username, displayName, explicitGid = undefined) {
     // Opt-in per Keyword: JEDER kann sich anmelden (= Zustimmung Regeln).
     // Für den Lostopf zählt separat die Berechtigung (Follows + ≥2h Viewtime),
@@ -582,8 +611,24 @@ class WatchtimeEngine {
       INSERT INTO users (username, display) VALUES ($1, $2)
       ON CONFLICT (username) DO UPDATE SET display = EXCLUDED.display, last_seen = NOW()
     `, [username, sanitizeStr(displayName, 50) || username]);
+    if (!already) await this.recordConsent(teamId, gid, username, 'register', 'chat');
     const agg = await this.getUserAggregate(teamId, username, gid);
     return { ...agg, registered: true, isNew: !already };
+  }
+
+  // P6: Teilnahme selbst zurückziehen (Kampagne/Sofortverlosung) — entfernt
+  // nur das Opt-in. Zuschauzeit/Coins bleiben Messwerte und laufen weiter;
+  // ohne erneutes Keyword kommt die Person aber nicht mehr in den Lostopf.
+  async unregisterUser(teamId, username, explicitGid = undefined) {
+    const t = sanitizeTeamId(teamId), u = sanitizeUsername(username);
+    if (!t || !u) return { error: 'bad_request' };
+    const primary = await this._gid(t);
+    const gid = explicitGid === undefined ? primary : explicitGid;
+    const regKey = this._kReg(t, gid, u);
+    if (gid && gid === primary) await this._migrateKey(regKey, K.gwRegistered(t, u));
+    if (!await this.redis.get(regKey)) return { error: 'not_registered' };
+    await this.redis.del(regKey);
+    return { ok: true, giveawayId: gid || null };
   }
 
   async registerUser(teamId, username) {
@@ -832,6 +877,46 @@ class WatchtimeEngine {
       }));
     }
     return result;
+  }
+
+  // P6: Teilnehmer-Vorschau VOR dem Start — wie viele Zuschauer würden die
+  // Bedingungen der Mechanik jetzt erfüllen. Reine Schätzung auf dem
+  // Team-/Kampagnenstand (bzw. Präsenz/Guthaben), ohne Opt-in-Anteil.
+  async previewEligible(teamId, { core = 'CORE_WatchtimeChatActivity', channels = null, minWatchSec = 0 } = {}) {
+    const t = sanitizeTeamId(teamId);
+    const chans = Array.isArray(channels) && channels.length ? channels : await this.getChannels(t);
+    if (core === 'CORE_CurrentViewers') {
+      // Wer ist JETZT auf den gewählten Kanälen anwesend?
+      const now = Math.floor(Date.now() / 1000);
+      let n = 0;
+      for (const u of await this.redis.smembers(K.gwUsers(t))) {
+        if (await this.redis.get(K.gwBanned(t, u)) === '1') continue;
+        for (const ch of chans) {
+          const ts = parseInt(await this.redis.get(K.chLastTick(t, ch, u)), 10);
+          if (Number.isFinite(ts) && now - ts < PRESENCE_TTL) { n++; break; }
+        }
+      }
+      return { count: n, basis: 'present' };
+    }
+    if (core === 'CORE_TicketBuy') {
+      // Konten mit positivem Ledger-Saldo (Live-Anteil entsteht erst im Lauf).
+      const r = await this.pg.query(`
+        SELECT COUNT(*)::int AS n FROM (
+          SELECT username FROM credit_ledger WHERE team_id=$1
+          GROUP BY username HAVING SUM(amount) > 0) x`, [t]);
+      return { count: (r.rows[0] && r.rows[0].n) || 0, basis: 'credit' };
+    }
+    const parts = await this.getAllParticipants(t);   // Kampagnen-/Legacy-Stand
+    if (core === 'CORE_ScreenshotContest') {
+      const n = parts.filter(p => !p.banned
+        && chans.some(ch => p.perChannel[ch] && p.perChannel[ch].follows)
+        && p.totalWatchSec >= (minWatchSec || 0)).length;
+      return { count: n, basis: 'contest', minWatchSec: minWatchSec || 0 };
+    }
+    const followMin = await this.getFollowMin(t);
+    const n = parts.filter(p => !p.banned
+      && p.channelsQualified >= followMin && p.totalCoins >= 1).length;
+    return { count: n, basis: 'campaign', followMin };
   }
 
   // ── Panel-Teilnehmerlisten je Mechanik (CORE.display) ───
@@ -1099,7 +1184,7 @@ class WatchtimeEngine {
   // blockiert gegen gleichzeitige Ziehung (afterDraw) und Storno. Der
   // Redis-Live-Anteil kann nicht gesperrt werden — er wächst nur (Viewtime),
   // ein Doppel-Spend ist über den serialisierten Ledger ausgeschlossen.
-  async placeWager(teamId, gid, username, prizeId, amount) {
+  async placeWager(teamId, gid, username, prizeId, amount, { source = 'chat' } = {}) {
     const t = sanitizeTeamId(teamId), u = sanitizeUsername(username);
     const client = await this.pg.connect();
     try {
@@ -1134,6 +1219,7 @@ class WatchtimeEngine {
       await this.credit.book(t, u, 'wager', amt, { refPrize: prizeId, client });
       await client.query('COMMIT');
       await this._touchUser(t, u);
+      await this.recordConsent(t, gid, u, 'wager', source);   // erster Einsatz = Kenntnisnahme
       return { amount: amt, stake: await this.prizeStake(prizeId, u), prizeTitle: prize.title,
                balance: await this.availableCredit(t, u) };
     } catch (e) {
@@ -1225,6 +1311,7 @@ class WatchtimeEngine {
         image_token=EXCLUDED.image_token, status='pending', created_at=NOW()
     `, [t, gid, u, sanitizeStr(title, 100), mime, image, randomBytes(16).toString('hex')]);
     await this._touchUser(t, u);
+    await this.recordConsent(t, gid, u, 'contest_entry', 'web');
     return { ok: true, replaced: existing.rowCount > 0 };
   }
 
@@ -1289,6 +1376,7 @@ class WatchtimeEngine {
       VALUES ($1,$2,$3,$4,$5)
       ON CONFLICT (entry_id, voter) DO UPDATE SET score=EXCLUDED.score, created_at=NOW()
     `, [entryId, t, gid, u, score]);
+    await this.recordConsent(t, gid, u, 'contest_vote', 'web');
     return { ok: true, score };
   }
 
@@ -1361,7 +1449,9 @@ class WatchtimeEngine {
     } else {
       poolSource = await this.getAllParticipants(t, sessionId || undefined);
     }
-    const pool = drawCore.buildPool(poolSource);
+    let pool = drawCore.buildPool(poolSource);
+    // P6: Ersatzziehung — der ursprüngliche Gewinner wird ausgeschlossen.
+    if (opts.excludeWinner) pool = pool.filter(e => e.username !== opts.excludeWinner);
     if (!pool.length) return null;
     const eligible = pool.map(e => e.meta);
 
@@ -1402,11 +1492,13 @@ class WatchtimeEngine {
       const ins = await client.query(`
         INSERT INTO giveaway_draws
           (session_id, winner, winner_coins, winner_watch_sec, total_coins,
-           eligible_count, rand_value, draw_index, is_test, prize, eligible_snapshot, core, prize_id)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id
+           eligible_count, rand_value, draw_index, is_test, prize, eligible_snapshot, core, prize_id,
+           reroll_of, reroll_reason)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id
       `, [sessionId || null, winner.username, winner.totalCoins, Math.round(winner.totalWatchSec || 0),
           totalRounded, eligible.length, randRounded, drawIndex, isTest, prize, JSON.stringify(snapshot),
-          drawCoreId, drawPrizeId]);   // Mechanik + Preis — Nachvollziehbarkeit (§7)
+          drawCoreId, drawPrizeId,   // Mechanik + Preis — Nachvollziehbarkeit (§7)
+          opts.rerollOf || null, opts.rerollReason || null]);
       drawId = ins.rows[0].id;
       if (!isTest) {
         let prevWinner = null;
@@ -1432,7 +1524,10 @@ class WatchtimeEngine {
     console.log(`[WTE] [${t}] Draw #${drawId}: ${winner.username} won, coins=${winner.totalCoins}, eligible=${eligible.length}, test=${isTest}`);
     return { winner: winner.username, coins: winner.totalCoins, watchSec: Math.round(winner.totalWatchSec || 0),
              drawId, drawIndex, sessionId, eligibleCount: eligible.length,
-             total: totalRounded, rand: randRounded, isTest, prize, prizeId: drawPrizeId };
+             total: totalRounded, rand: randRounded, isTest, prize, prizeId: drawPrizeId,
+             // P4: Semantik für die Anzeige — core sagt, was `coins` bedeutet
+             // (Punkte/Einsatz/Score); msgs trägt beim Contest die Stimmenzahl.
+             core: drawCoreId, msgs: winner.msgs || 0 };
   }
 
   async closeGiveaway(teamId, sessionId) {

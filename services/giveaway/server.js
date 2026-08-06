@@ -250,6 +250,7 @@ const AUDIT_SKIP = new Set([
   'gw_get_channels', 'gw_get_multiplier', 'gw_get_stream_settings',
   'gw_get_keyword', 'gw_get_ingest_tokens', 'gw_get_ai_settings', 'gw_list_ai_models',
   'gw_list_giveaways', 'gw_list_prizes', 'gw_list_entries', 'gw_list_drafts',
+  'gw_preflight',
 ]);
 
 // Obergrenze gleichzeitiger Giveaways je Team (Entscheidung §10.2:
@@ -257,6 +258,9 @@ const AUDIT_SKIP = new Set([
 // bis dahin gilt die Summe). Konstante, per ENV überschreibbar — bewusst
 // nicht im Admin-Panel einstellbar.
 const MAX_PARALLEL_GIVEAWAYS = Math.max(1, parseInt(process.env.MAX_PARALLEL_GIVEAWAYS || '4', 10) || 4);
+// Interner Weg zum admin-Service (Compose-Servicename) — nur für den
+// Terms-Snapshot beim ersten Giveaway eines Teams (P1b), lesend/öffentliche Route.
+const ADMIN_URL = process.env.ADMIN_URL || 'http://admin:3005';
 
 const validGid = (s) => (typeof s === 'string' && /^sess_\d+$/i.test(s)) ? s : null;
 
@@ -397,8 +401,9 @@ async function openGiveaway(teamId, keyword, prize = '', sponsor = '') {
   // Gelesen wird zur Laufzeit weiterhin aus Redis; der Snapshot dokumentiert,
   // mit welcher Konfiguration dieses Giveaway gestartet ist.
   const coreConfig = await snapshotCoreConfig(teamId);
-  await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels, core, status, core_config, prize, sponsor) VALUES ($1,$2,$3,$4,$5,'open',$6,$7,$8) ON CONFLICT (id) DO NOTHING`,
-    [sid, teamId, keyword || '', JSON.stringify(chans), CORE.id, JSON.stringify(coreConfig), prize || null, sponsor || null]);
+  const termsV = await snapshotTermsVersion(teamId);
+  await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels, core, status, core_config, prize, sponsor, terms_version) VALUES ($1,$2,$3,$4,$5,'open',$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`,
+    [sid, teamId, keyword || '', JSON.stringify(chans), CORE.id, JSON.stringify(coreConfig), prize || null, sponsor || null, termsV]);
   broadcastTeam(teamId, { event: 'gw_status', status: 'open' });
   await announceTeam(teamId, '🎉 Das Giveaway ist ERÖFFNET!' + prizeLine(prize, sponsor) + ' ' + await giveawayInfoText(teamId));
   log('GW', `[${teamId}] opened session ${sid}, kw="${keyword}", channels=${chans.join(',')}`);
@@ -422,6 +427,48 @@ async function snapshotCoreConfig(teamId) {
     followMin:   await wte.getFollowMin(teamId),
     chat:        await wte.getChatConfig(teamId),
   };
+}
+// P6: Startprüfung — Warnungen, die den Start nicht blockieren, aber im
+// Panel sichtbar werden. Blocker (TOS, Impressum, Gewinn) bleiben Gates.
+// Erkennung: eckige Platzhalter wie "[Datum]" im eigenen Rechtstext —
+// Markdown-Links "[Text](url)" sind ausgenommen.
+async function startWarnings(teamId) {
+  const w = [];
+  try {
+    const tr = await pg.query('SELECT terms FROM teams WHERE id=$1', [teamId]);
+    const terms = tr.rowCount ? tr.rows[0].terms : null;
+    if (!terms) w.push('terms_default');
+    else if (/\[[^\]\n]{2,60}\](?!\()/.test(terms)) w.push('terms_placeholders');
+  } catch (e) { logErr('GW', 'startWarnings:', e.message); }
+  return w;
+}
+
+// Geltende Teilnahmebedingungen je Session festhalten (sessions.terms_version).
+// terms_versions schreibt der admin-Service; Fassung 0 = unveränderte Vorlage.
+// Damit auch dieser Stand unveränderlich ist, wird beim ersten Giveaway eines
+// Teams ein v1-Snapshot der effektiven Bedingungen angelegt (Quelle: die
+// öffentliche Team-Seite des admin-Service). Schlägt das fehl, bleibt 0 —
+// Archiv/Terms-Seite kennzeichnen das als "Vorlage, nicht eingefroren".
+// Spätere Änderungen laufen über PUT /api/teams/:id/terms und zählen ab v2.
+async function snapshotTermsVersion(teamId) {
+  try {
+    const r = await pg.query(
+      `SELECT COALESCE(MAX(version),0) AS v FROM terms_versions WHERE team_id=$1`, [teamId]);
+    const v = parseInt(r.rows[0] && r.rows[0].v, 10) || 0;
+    if (v > 0) return v;
+    const resp = await fetch(`${ADMIN_URL}/pub/team/${encodeURIComponent(teamId)}`,
+      { signal: AbortSignal.timeout(3000) });
+    if (!resp.ok) return 0;
+    const info = await resp.json();
+    if (!info || !info.terms) return 0;
+    // WHERE NOT EXISTS: parallele Opens desselben Teams erzeugen keine zwei v1.
+    await pg.query(`
+      INSERT INTO terms_versions (team_id, version, terms, changed_by, note, sections)
+      SELECT $1, 1, $2, 'system', 'Automatischer Snapshot beim ersten Giveaway-Start', $3
+      WHERE NOT EXISTS (SELECT 1 FROM terms_versions WHERE team_id=$1)`,
+      [teamId, info.terms, JSON.stringify([{ section: '(alle)', kind: 'neu' }])]);
+    return 1;
+  } catch (e) { logErr('GW', 'snapshotTermsVersion:', e.message); return 0; }
 }
 // Ansage nur in bestimmte Kanäle (Instanz mit Kanal-Teilmenge);
 // channels null = alle Team-Kanäle.
@@ -640,11 +687,15 @@ async function sendTeamData(meta, gid = null) {
   if (coreId && coreId !== CORE.id) {
     try { display = (CoreRegistry.getCore(coreId).display || {}).columns || null; } catch { /* Standard-Spalten */ }
   }
+  // P5: kompletter Anzeige-Vertrag des Cores (unit, drawKind, emptyPool, …) —
+  // `display` bleibt aus Kompatibilität die reine Spaltenliste.
+  let coreMeta = null;
+  try { coreMeta = CoreRegistry.getCore(coreId || CORE.id).display || null; } catch { /* Standard */ }
   const open = await wte.isOpen(teamId, gid || undefined);
   const paused = await wte.isPaused(teamId, gid || undefined);
   const session = gid || await wte.getSessionId(teamId);
   const channels = await wte.getChannels(teamId);
-  send({ event: 'gw_data', teamId, giveawayId: gid, core: coreId, display, open, paused, session, participants, channels });
+  send({ event: 'gw_data', teamId, giveawayId: gid, core: coreId, display, coreMeta, open, paused, session, participants, channels });
 }
 
 async function handleClientMessage(meta, msg) {
@@ -714,7 +765,7 @@ const MEMBER_CMDS = new Set([
   'gw_get_channels', 'gw_get_multiplier', 'gw_get_stream_settings', 'gw_get_keyword',
   'gw_get_ingest_tokens', 'gw_gen_ingest_token', 'gw_get_ai_settings',
   'gw_open', 'gw_pause', 'gw_resume', 'gw_set_multiplier',
-  'gw_list_giveaways', 'gw_list_prizes', 'gw_list_entries',
+  'gw_list_giveaways', 'gw_list_prizes', 'gw_list_entries', 'gw_preflight',
   // Sofortverlosung darf jeder streamende Member fahren: Fenster öffnen,
   // ziehen (Entscheidung: Ziehung macht der jeweilige Kanalstreamer) und
   // die Chat-Ansagen der Instanz stumm/laut schalten.
@@ -799,6 +850,12 @@ async function runAdminCmd(send, msg, meta, ctx) {
       }
       Object.assign(outcome, { prize: oPrize, sponsor: oSponsor || undefined });
       outcome.sessionOpened = await openGiveaway(teamId, sanitizeStr(msg.keyword || '', 100), oPrize, oSponsor);
+      // P6: nicht blockierende Startwarnungen (Platzhalter in den Bedingungen).
+      const oWarn = await startWarnings(teamId);
+      if (oWarn.length) {
+        outcome.warnings = oWarn;
+        send({ event: 'gw_ack', type: 'open_warnings', warnings: oWarn });
+      }
       send({ event: 'gw_status', status: 'open' });
       break;
     }
@@ -838,7 +895,17 @@ async function runAdminCmd(send, msg, meta, ctx) {
     }
     // ── Phase 2d: Parallel-Instanzen (z.B. Sofortverlosung neben Kampagne) ──
     case 'gw_list_giveaways': {
-      send({ event: 'gw_ack', type: 'giveaways', giveaways: await wte.listGiveaways(teamId, { stats: true }),
+      // P5: Anzeige-Metadaten je Instanz aus dem Core-Vertrag — das Panel
+      // braucht damit keine eigenen CORE_LABEL/ICON/CSS-Tabellen mehr.
+      const gwList = (await wte.listGiveaways(teamId, { stats: true })).map(g => {
+        let d = {};
+        try { const c = CoreRegistry.getCore(g.core); d = c.display || {}; g.coreLabel = c.label; } catch { /* Fallback unten */ }
+        return { ...g, coreLabel: g.coreLabel || g.core || 'Kampagne',
+                 coreIcon: d.icon || '🎁', coreCss: d.css || 'core-watchtime',
+                 coreUnit: d.unit !== undefined ? d.unit : 'Punkte', drawKind: d.drawKind || 'weighted',
+                 corePanelCard: d.panelCard !== undefined ? d.panelCard : null };
+      });
+      send({ event: 'gw_ack', type: 'giveaways', giveaways: gwList,
              maxParallel: MAX_PARALLEL_GIVEAWAYS });
       break;
     }
@@ -864,6 +931,15 @@ async function runAdminCmd(send, msg, meta, ctx) {
         wagerCmd: sanitizeStr(cfg.wagerCmd || '', 30).trim().toLowerCase(),
         minWatchSec: Math.max(0, parseInt(cfg.minWatchSec, 10) || 0),
         channels: Array.isArray(cfg.channels) ? cfg.channels.map(sanitizeChannel).filter(Boolean).slice(0, 20) : [],
+        // P6: Los-Giveaway-Preise schon im Entwurf — werden beim Start angelegt.
+        prizes: dType === 'ticketbuy' && Array.isArray(cfg.prizes)
+          ? cfg.prizes.slice(0, 20).map(p => ({
+              title: sanitizeStr((p && p.title) || '', 100).trim(),
+              sponsor: sanitizeStr((p && p.sponsor) || '', 100).trim(),
+              description: sanitizeStr((p && p.description) || '', 500).trim(),
+              wagerEndMinutes: Math.max(0, parseInt(p && p.wagerEndMinutes, 10) || 0),
+            })).filter(p => p.title)
+          : [],
       };
       const updId = parseInt(msg.draftId, 10);
       let draftId = null;
@@ -879,6 +955,19 @@ async function runAdminCmd(send, msg, meta, ctx) {
       }
       Object.assign(outcome, { draftId, draftType: dType, name: clean.name || undefined });
       send({ event: 'gw_ack', type: 'draft_saved', draftId });
+      break;
+    }
+    // P6: Teilnehmer-Vorschau vor dem Start — wie viele Zuschauer würden die
+    // Bedingungen der gewählten Mechanik JETZT erfüllen. Read-only.
+    case 'gw_preflight': {
+      const pfCore = CoreRegistry.CORES[msg.core] ? msg.core : CoreRegistry.DEFAULT_CORE_ID;
+      const pfTeamChans = await wte.getChannels(teamId);
+      const pfWanted = Array.isArray(msg.channels) ? msg.channels.map(sanitizeChannel).filter(Boolean) : [];
+      const pfChans = pfWanted.filter(ch => pfTeamChans.includes(ch));
+      const pf = await wte.previewEligible(teamId, {
+        core: pfCore, channels: pfChans.length ? pfChans : null,
+        minWatchSec: Math.max(0, parseInt(msg.minWatchSec, 10) || 0) });
+      send({ event: 'gw_ack', type: 'preflight', core: pfCore, ...pf });
       break;
     }
     case 'gw_list_drafts': {
@@ -984,10 +1073,11 @@ async function runAdminCmd(send, msg, meta, ctx) {
                        : coreId === 'CORE_ScreenshotContest' ? { minWatchSec }
                        : coreId === 'CORE_TicketBuy' ? { ...(await snapshotCoreConfig(teamId)), wagerCmd }
                        : await snapshotCoreConfig(teamId);
-      await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels, core, status, core_config, prize, sponsor)
-                      VALUES ($1,$2,$3,$4,$5,'open',$6,$7,$8) ON CONFLICT (id) DO NOTHING`,
+      const termsV = await snapshotTermsVersion(teamId);
+      await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels, core, status, core_config, prize, sponsor, terms_version)
+                      VALUES ($1,$2,$3,$4,$5,'open',$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`,
         [gid, teamId, keyword, JSON.stringify(channels.length ? channels : teamChans), coreId,
-         JSON.stringify(coreConfig), iPrize || null, iSponsor || null]);
+         JSON.stringify(coreConfig), iPrize || null, iSponsor || null, termsV]);
       // Sofortverlosung: Chat-Ansagen abschaltbar (Fenster/Vorbereitung/!los).
       // Die Gewinner-Ansage bleibt IMMER — der Gewinner muss es erfahren.
       const announceOn = coreId !== 'CORE_CurrentViewers' || msg.announce !== false;
@@ -1006,6 +1096,26 @@ async function runAdminCmd(send, msg, meta, ctx) {
         : coreId === 'CORE_TicketBuy' ? coreMod.infoText({ cmd: wagerCmd, url: publicHost() + '/viewer/wager' })
         : '🎁 Zusätzliches Giveaway gestartet!' + (keyword ? ` Mitmachen: schreib "${keyword}" im Chat.` : ''))
         + prizeLine(iPrize, iSponsor));
+      // P6: vorbereitete Preise direkt beim Start anlegen (Los-Giveaway) —
+      // aus dem Modal oder aus einem Entwurf (draftStart sendet dessen config).
+      if (coreId === 'CORE_TicketBuy' && Array.isArray(msg.prizes) && msg.prizes.length) {
+        const created = [];
+        try {
+          for (const p of msg.prizes.slice(0, 20)) {
+            const pTitle = sanitizeStr((p && p.title) || '', 100).trim();
+            if (!pTitle) continue;
+            const endMin = Math.max(0, parseInt(p && p.wagerEndMinutes, 10) || 0);
+            const newPrizeId = await wte.addPrize(teamId, gid, {
+              title: pTitle,
+              description: sanitizeStr((p && p.description) || '', 500),
+              wagerEndTs: endMin ? Math.floor(Date.now() / 1000) + endMin * 60 : null });
+            const pSpons = sanitizeStr((p && p.sponsor) || '', 100).trim();
+            if (pSpons) await pg.query(`UPDATE giveaway_prizes SET sponsor=$1 WHERE id=$2`, [pSpons, newPrizeId]);
+            created.push(newPrizeId);
+          }
+        } catch (e) { logErr('GW', 'draft prizes:', e.message); }
+        if (created.length) Object.assign(outcome, { startPrizes: created });
+      }
       // Start aus einem Entwurf: der Entwurf ist damit verbraucht.
       const usedDraft = parseInt(msg.draftId, 10);
       if (Number.isFinite(usedDraft) && usedDraft > 0) {
@@ -1014,9 +1124,13 @@ async function runAdminCmd(send, msg, meta, ctx) {
           Object.assign(outcome, { draftId: usedDraft });
         } catch (e) { logErr('GW', 'draft cleanup:', e.message); }
       }
+      // P6: Startprüfung — nicht blockierende Warnungen (z.B. Platzhalter
+      // in den Teilnahmebedingungen). Blocker stehen weiter oben als Gates.
+      const openWarnings = await startWarnings(teamId);
       send({ event: 'gw_ack', type: 'instance_opened', giveawayId: gid, keyword, core: coreId,
              windowSec: windowSec || null, wagerCmd: wagerCmd || null,
-             channels: channels.length ? channels : null });
+             channels: channels.length ? channels : null,
+             warnings: openWarnings.length ? openWarnings : null });
       break;
     }
     case 'gw_close_instance': {
@@ -1548,19 +1662,80 @@ async function runAdminCmd(send, msg, meta, ctx) {
             }
           } catch (e) { logErr('GW', 'draw prize lookup:', e.message); }
         }
-        const result = await wte.drawWinner(teamId, drawGid, { test: !!msg.test, prize: drawPrize, prizeId: msg.prizeId });
-        if (!result) { outcome.winner = null; send({ event: 'gw_ack', type: 'no_winner' }); break; }
+        // P6: Ersatzziehung — verknüpft mit der Ursprungsziehung, mit Grund;
+        // der ursprüngliche Gewinner ist ausgeschlossen (abschaltbar über
+        // excludeWinner:false), sein Claim wird danach 'replaced'.
+        let rerollOf = parseInt(msg.rerollOf, 10);
+        let rerollWinner = null, rerollReason = null;
+        if (Number.isFinite(rerollOf) && rerollOf > 0) {
+          const orig = await pg.query(`
+            SELECT d.id, d.winner FROM giveaway_draws d JOIN sessions s ON s.id = d.session_id
+            WHERE d.id=$1 AND s.team_id=$2`, [rerollOf, teamId]);
+          if (!orig.rowCount) {
+            Object.assign(outcome, { error: 'reroll_not_found', rerollOf });
+            send({ event: 'gw_ack', type: 'draw_error', error: 'Ursprungsziehung nicht gefunden.' });
+            break;
+          }
+          rerollWinner = orig.rows[0].winner;
+          rerollReason = sanitizeStr(msg.reason || '', 200).trim() || 'Gewinner hat sich nicht fristgerecht gemeldet';
+        } else { rerollOf = null; }
+        const result = await wte.drawWinner(teamId, drawGid, {
+          test: !!msg.test, prize: drawPrize, prizeId: msg.prizeId,
+          rerollOf, rerollReason,
+          excludeWinner: rerollOf && msg.excludeWinner !== false ? rerollWinner : null });
+        if (!result) {
+          outcome.winner = null;
+          // P4: Leermeldung aus dem Core-Vertrag statt pauschal "keine Coins".
+          let emptyMsg = null;
+          try {
+            const cid = drawGid ? await wte.getCoreId(teamId, drawGid) : CORE.id;
+            emptyMsg = (CoreRegistry.getCore(cid).display || {}).emptyPool || null;
+          } catch { /* Standardtext im Panel */ }
+          send({ event: 'gw_ack', type: 'no_winner', message: emptyMsg });
+          break;
+        }
+        // P4: semantische Felder aus dem Core-Vertrag — winner_coins bleibt
+        // aus Kompatibilität, `weight`/`unit`/`drawKind` sagen, was es IST.
+        let dMeta = {};
+        try { dMeta = CoreRegistry.getCore(result.core || CORE.id).display || {}; } catch { /* Standard */ }
+        const semantic = { core: result.core || null, unit: dMeta.unit !== undefined ? dMeta.unit : 'Punkte',
+                           winnerStat: dMeta.winnerStat || 'coins', drawKind: dMeta.drawKind || 'weighted',
+                           weight: result.coins, votes: result.msgs || 0,
+                           prizeId: result.prizeId || null, eligibleCount: result.eligibleCount };
         Object.assign(outcome, { winner: result.winner, winnerCoins: result.coins, drawId: result.drawId,
                                  eligibleCount: result.eligibleCount, totalCoins: result.total,
-                                 randValue: result.rand, isTest: !!result.isTest });
-        send({ event: 'gw_ack', type: 'winner_drawn', winner: result.winner, watchSec: result.watchSec, coins: result.coins, drawId: result.drawId, prize: result.prize });
-        broadcastTeam(teamId, { event: 'gw_overlay', winner: result.winner, coins: result.coins });
+                                 randValue: result.rand, isTest: !!result.isTest, core: result.core || null });
+        send({ event: 'gw_ack', type: 'winner_drawn', winner: result.winner, watchSec: result.watchSec,
+               coins: result.coins, drawId: result.drawId, prize: result.prize, ...semantic });
+        broadcastTeam(teamId, { event: 'gw_overlay', winner: result.winner, coins: result.coins,
+                                prize: result.prize || null, ...semantic });
         // Testziehungen erzeugen keine Meldefrist und keine Ansage.
         if (!result.isTest) {
+          // Ersatzziehung: alten Claim als ersetzt markieren (sofern der
+          // Gewinner nicht schon erfolgreich gemeldet hatte) — der Datensatz
+          // bleibt als Nachweis, die Meldeseite weist ihn ab.
+          if (rerollOf) {
+            const rc = await pg.query(`
+              UPDATE draw_claims SET status='replaced'
+              WHERE draw_id=$1 AND team_id=$2 AND status <> 'claimed' RETURNING id, winner`, [rerollOf, teamId]);
+            Object.assign(outcome, { rerollOf, rerollReason,
+                                     replacedClaim: rc.rowCount ? rc.rows[0].id : null });
+          }
           const claim = await createClaim(teamId, result);
           outcome.claimDeadline = claim ? claim.deadlineAt : null;
-          await announceTeam(teamId, `🎉 Gewinner: @${result.winner} — herzlichen Glückwunsch! `
-            + `Melde dich innerhalb von ${CLAIM_DEADLINE_DAYS} Tagen unter ${publicHost()}/viewer/claim `
+          // P4: Gewinner-Ansage aus dem Core (Einsatz/Score/Sofort-Wortlaut),
+          // Fallback = bisheriger generischer Text. Die Meldefrist-Zeile
+          // bleibt immer dran — der Gewinner muss wissen, wie es weitergeht.
+          let winLine = `🎉 Gewinner: @${result.winner} — herzlichen Glückwunsch!`;
+          try {
+            const wc = CoreRegistry.getCore(result.core || CORE.id);
+            if (typeof wc.winnerText === 'function') {
+              winLine = wc.winnerText({ winner: result.winner, coins: result.coins,
+                                        prizeTitle: result.prize || 'Preis' });
+            }
+          } catch { /* generisch */ }
+          await announceTeam(teamId, winLine
+            + ` Melde dich innerhalb von ${CLAIM_DEADLINE_DAYS} Tagen unter ${publicHost()}/viewer/claim `
             + '(Login mit Twitch), sonst wird ein Ersatzgewinner gezogen.');
         }
       } catch (e) {
@@ -1975,15 +2150,24 @@ app.get('/api/wager/state', async (req, res) => {
       if (!prizes.length && available <= 0) continue;   // nichts zu zeigen
       const withStake = [];
       for (const p of prizes) withStake.push({ ...p, myStake: await wte.prizeStake(p.id, user) });
-      let wagerCmd = null, tbChannels = null;   // Chat-Befehl + Kanäle der Los-Instanz
+      let wagerCmd = null, tbChannels = null, tbGid = null;   // Chat-Befehl + Kanäle der Los-Instanz
       for (const g of await wte.listGiveaways(t)) {
         if (g.core === 'CORE_TicketBuy' && g.gid) {
           wagerCmd = (await redis.get(K.gWagerCmd(t, g.gid))) || '!setzen';
           tbChannels = g.channels;
+          tbGid = g.gid;
           break;
         }
       }
+      // P1c: schon zugestimmt? Dann zeigt die Seite keine Checkbox mehr.
+      let consented = false;
+      if (tbGid) {
+        const seen = await pg.query(`SELECT 1 FROM participation_consents
+          WHERE team_id=$1 AND session_id=$2 AND username=$3 AND action='wager'`, [t, tbGid, user]);
+        consented = seen.rowCount > 0;
+      }
       out.push({ teamId: t, teamName: await teamName(t), available, prizes: withStake, wagerCmd,
+                 consented, giveawayId: tbGid,
                  channels: tbChannels || await wte.getChannels(t) });
     }
     res.json({ user, teams: out });
@@ -2003,7 +2187,22 @@ app.post('/api/wager', express.json(), async (req, res) => {
       return res.status(400).json({ error: 'bad_request' });
     }
     if (!await rateLimit(`wager:${user}`, 1)) return res.status(429).json({ error: 'rate_limited' });
-    const r = await wte.placeWager(teamId, null, user, prizeId, amount);
+    // P1c: erster Web-Einsatz braucht die sichtbare Kenntnisnahme der
+    // Bedingungen (Checkbox). Chat-Einsätze laufen ohne Checkbox — dort
+    // steht die Kenntnisnahme in den Bedingungen selbst (Befehl = Teilnahme).
+    let tbGid = null;
+    for (const g of await wte.listGiveaways(teamId)) {
+      if (g.core === 'CORE_TicketBuy' && g.gid) { tbGid = g.gid; break; }
+    }
+    if (amount > 0 && tbGid && !(req.body && req.body.acceptTerms)) {
+      const seen = await pg.query(`SELECT 1 FROM participation_consents
+        WHERE team_id=$1 AND session_id=$2 AND username=$3 AND action='wager'`, [teamId, tbGid, user]);
+      if (!seen.rowCount) {
+        return res.status(428).json({ error: 'terms_required',
+          termsUrl: `/viewer/terms?team=${encodeURIComponent(teamId)}` });
+      }
+    }
+    const r = await wte.placeWager(teamId, tbGid, user, prizeId, amount, { source: 'web' });
     if (r.error) return res.status(409).json({ error: r.error });
     // Zustandsändernd ausserhalb der Admin-WS → eigener Audit-Eintrag.
     await audit({ teamId, actor: user, ip: req.ip, action: amount === 0 ? 'wager_retract' : 'wager_set',
@@ -2225,11 +2424,15 @@ app.get('/api/contest/state', async (req, res) => {
         const v = await pg.query(`SELECT score FROM contest_votes WHERE entry_id=$1 AND voter=$2`, [s.entryId, user]);
         entries.push({ ...s, myScore: v.rowCount ? v.rows[0].score : null, own: s.username === user });
       }
+      // P1c: schon zugestimmt? Dann zeigt die Seite keine Checkbox mehr.
+      const consentSeen = await pg.query(`SELECT 1 FROM participation_consents
+        WHERE team_id=$1 AND session_id=$2 AND username=$3 AND action='contest_entry'`, [t, inst.gid, user]);
       out.push({ teamId: t, teamName: await teamName(t), giveawayId: inst.gid,
                  channels: inst.channels || await wte.getChannels(t),
                  voting: await wte.getContestVoting(t, inst.gid),
                  canSubmit: elig.followsHost && elig.watchOk,
                  canVote: elig.watchOk,
+                 consented: consentSeen.rowCount > 0,
                  minWatch: elig.minWatch, watchSec: Math.round(elig.watchSec),
                  followsHost: elig.followsHost,
                  myEntry: mine ? { entryId: mine.entryId, title: mine.title, status: mine.status, votes: mine.votes } : null,
@@ -2262,6 +2465,17 @@ app.post('/api/contest/entry', express.json({ limit: '12mb' }), async (req, res)
                                     width: dims ? dims.w : null, height: dims ? dims.h : null });
     }
     if (!await rateLimit(`centry:${user}`, 15)) return res.status(429).json({ error: 'rate_limited' });
+    // P1c: Upload braucht die sichtbare Kenntnisnahme der Bedingungen —
+    // beim Ersetzen reicht die bereits protokollierte Zustimmung.
+    if (!(req.body && req.body.acceptTerms)) {
+      const seen = await pg.query(`SELECT 1 FROM participation_consents
+        WHERE team_id=$1 AND session_id=$2 AND username=$3 AND action='contest_entry'`,
+        [teamId, inst.gid, user]);
+      if (!seen.rowCount) {
+        return res.status(428).json({ error: 'terms_required',
+          termsUrl: `/viewer/terms?team=${encodeURIComponent(teamId)}` });
+      }
+    }
     const r = await wte.submitContestEntry(teamId, inst.gid, user, {
       title: req.body.title, mime, image, confirmReplace: !!req.body.confirmReplace });
     if (r.error) return res.status(r.error === 'votes_would_be_lost' ? 409 : 403).json(r);
@@ -2288,6 +2502,32 @@ app.post('/api/contest/vote', express.json(), async (req, res) => {
     const r = await wte.castContestVote(teamId, inst.gid, user, entryId, score);
     if (r.error) return res.status(403).json(r);
     res.json(r);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// P6: Laufende Kampagnen-/Sofortverlosungs-Teilnahme selbst zurückziehen —
+// entfernt das Opt-in (kein Lostopf mehr), Zuschauzeit bleibt Messwert.
+app.post('/api/participation/withdraw', express.json(), async (req, res) => {
+  try {
+    const user = reqUser(req);
+    if (!user) return res.status(401).json({ error: 'unauthenticated' });
+    const teamId = sanitizeTeamId(req.body && req.body.team);
+    if (!teamId) return res.status(400).json({ error: 'bad_request' });
+    if (!await rateLimit(`withdraw:${user}`, 5)) return res.status(429).json({ error: 'rate_limited' });
+    const gid = validGid(req.body && req.body.giveawayId);
+    if (gid) {
+      // Rückzug aus einer Instanz nur für Mechaniken mit Keyword-Opt-in.
+      const g = (await wte.listGiveaways(teamId)).find(x => x.gid === gid);
+      if (!g) return res.status(404).json({ error: 'unknown_instance' });
+      if (g.core === 'CORE_TicketBuy' || g.core === 'CORE_ScreenshotContest') {
+        return res.status(409).json({ error: 'use_specific_withdraw' });
+      }
+    }
+    const r = await wte.unregisterUser(teamId, user, gid || undefined);
+    if (r.error) return res.status(409).json({ error: r.error });
+    await audit({ teamId, actor: user, ip: req.ip, action: 'participation_withdraw', target: user,
+                  sessionId: r.giveawayId, detail: { giveawayId: r.giveawayId } });
+    res.json({ ok: true, giveawayId: r.giveawayId });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2333,13 +2573,20 @@ app.get('/api/claim/mine', async (req, res) => {
     if (!user) return res.status(401).json({ error: 'unauthenticated' });
     const r = await pg.query(`
       SELECT c.id, c.team_id, c.session_id, c.status, c.deadline_at, c.claimed_at, c.purge_at,
-             c.real_name, c.email, c.street, c.zip, c.city, c.country, c.note,
-             d.drawn_at, d.prize, d.winner_coins, t.name AS team_name
+             c.real_name, c.email, c.street, c.zip, c.city, c.country, c.note, c.handling,
+             d.drawn_at, d.prize, d.winner_coins, d.core, t.name AS team_name
       FROM draw_claims c
       JOIN giveaway_draws d ON d.id = c.draw_id
       LEFT JOIN teams t ON t.id = c.team_id
       WHERE c.winner = $1 ORDER BY d.drawn_at DESC`, [user]);
-    res.json({ user, claims: r.rows.map(c => ({ ...c, overdue: c.status === 'pending' && new Date(c.deadline_at) < new Date() })) });
+    // P4: Gewichtssemantik je Mechanik mitliefern — die Claim-Seite soll
+    // Einsätze/Scores nicht pauschal "Punkte" nennen.
+    res.json({ user, claims: r.rows.map(c => {
+      let d = {};
+      try { d = CoreRegistry.getCore(c.core).display || {}; } catch { /* Standard */ }
+      return { ...c, unit: d.unit !== undefined ? d.unit : 'Punkte', drawKind: d.drawKind || 'weighted',
+               overdue: c.status === 'pending' && new Date(c.deadline_at) < new Date() };
+    }) });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2440,13 +2687,23 @@ app.post('/api/claim', express.json(), async (req, res) => {
   try {
     if (!user) return res.status(401).json({ error: 'unauthenticated' });
     if (!await rateLimit(`claim:${user}`, 5)) return res.status(429).json({ error: 'rate_limited' });
-    const cur = await pg.query('SELECT id, team_id, status, deadline_at FROM draw_claims WHERE id=$1 AND winner=$2', [id, user]);
+    const cur = await pg.query('SELECT id, team_id, session_id, status, handling, deadline_at FROM draw_claims WHERE id=$1 AND winner=$2', [id, user]);
     if (!cur.rowCount) return res.status(404).json({ error: 'Keine Gewinnmeldung fuer dich unter dieser Nummer' });
     const c = cur.rows[0];
+    if (c.status === 'replaced') {
+      return res.status(410).json({ error: 'Fuer diese Ziehung wurde bereits ein Ersatzgewinner gezogen' });
+    }
     if (new Date(c.deadline_at) < new Date()) {
       await audit({ teamId: c.team_id, actor: user, ip: req.ip, action: 'claim_submit', target: user,
                     result: 'denied', detail: { claimId: id, reason: 'deadline_passed' } });
       return res.status(410).json({ error: 'Die Meldefrist ist abgelaufen' });
+    }
+    // P6: Korrektur nur solange der Veranstalter die Meldung noch nicht
+    // bearbeitet (kontaktiert/versendet/erledigt) — danach ist sie fixiert.
+    if (c.handling) {
+      await audit({ teamId: c.team_id, actor: user, ip: req.ip, action: 'claim_submit', target: user,
+                    result: 'denied', detail: { claimId: id, reason: 'already_handled', handling: c.handling } });
+      return res.status(409).json({ error: 'Der Veranstalter bearbeitet deine Meldung bereits — Aenderungen bitte direkt mit ihm klaeren' });
     }
     if (!req.body.acceptTerms) return res.status(400).json({ error: 'Bitte die Teilnahmebedingungen bestaetigen' });
 
@@ -2456,7 +2713,16 @@ app.post('/api/claim', express.json(), async (req, res) => {
     if (!vals.email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(vals.email)) {
       return res.status(400).json({ error: 'E-Mail-Adresse sieht nicht gueltig aus' });
     }
-    const tv = await pg.query('SELECT MAX(version) AS v FROM terms_versions WHERE team_id=$1', [c.team_id]).catch(() => ({ rows: [{}] }));
+    // P1b: massgeblich ist die beim Start der Session eingefrorene Fassung;
+    // nur wenn keine vorliegt (Altbestand), die aktuell juengste des Teams.
+    let tv = { rows: [{}] };
+    try {
+      const sv = c.session_id
+        ? await pg.query('SELECT terms_version AS v FROM sessions WHERE id=$1 AND terms_version > 0', [c.session_id])
+        : { rowCount: 0 };
+      tv = sv.rowCount ? sv
+         : await pg.query('SELECT MAX(version) AS v FROM terms_versions WHERE team_id=$1', [c.team_id]);
+    } catch { /* Fallback unten: null */ }
     const purge = new Date(Date.now() + CLAIM_RETENTION_DAYS * 86400 * 1000);
 
     await pg.query(`
@@ -2533,7 +2799,14 @@ app.get('/api/archive', async (req, res) => {
       }
       campaigns.reverse();
     } catch (e) { logErr('GW', 'campaign grouping:', e.message); campaigns = []; }
-    res.json({ team: teamId, sessions: r.rows, campaigns });
+    // P3: Mechanik-Badges für die Liste aus dem Core-Vertrag.
+    const sessionsOut = r.rows.map(s => {
+      let d = {}, label = null;
+      try { const c = CoreRegistry.getCore(s.core); d = c.display || {}; label = c.label; } catch { /* Kampagne */ }
+      return { ...s, coreLabel: label || 'Kampagne', coreIcon: d.icon || '📈',
+               coreUnit: d.unit !== undefined ? d.unit : 'Punkte', drawKind: d.drawKind || 'weighted' };
+    });
+    res.json({ team: teamId, sessions: sessionsOut, campaigns });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2580,10 +2853,10 @@ async function archiveDossier(teamId, sessionId, withContact) {
   const contact = withContact
     ? 'c.real_name, c.email, c.street, c.zip, c.city, c.country, c.note, c.claim_ip,'
     : '';
-  const [session, draws, participation, claims, auditRows, activity] = await Promise.all([
+  const [session, draws, participation, claims, auditRows, activity, consents] = await Promise.all([
     q(`SELECT * FROM sessions WHERE id=$1 AND team_id=$2`, [sessionId, teamId]),
     q(`SELECT id, winner, winner_coins, winner_watch_sec, total_coins, eligible_count,
-              rand_value, draw_index, is_test, prize, drawn_at, eligible_snapshot
+              rand_value, draw_index, is_test, prize, drawn_at, eligible_snapshot, core, prize_id
        FROM giveaway_draws WHERE session_id=$1 ORDER BY drawn_at`, [sessionId]),
     q(`SELECT username, channel, watch_sec, msgs, coins, follows, valid
        FROM campaign_participation WHERE session_id=$1 ORDER BY coins DESC, username`, [sessionId]),
@@ -2598,9 +2871,47 @@ async function archiveDossier(teamId, sessionId, withContact) {
     // Core-Umbau) — das Dossier zeigt darum beides.
     q(`SELECT MIN(ts) AS first_event, MAX(ts) AS last_event, COUNT(*)::bigint AS events
        FROM watchtime_events WHERE session_id=$1`, [sessionId]),
+    // P1c: Kenntnisnahme-Protokoll (verdichtet — wer wann welcher Fassung
+    // zugestimmt hat, steht personenbezogen in participation_consents).
+    q(`SELECT action, COUNT(*)::int AS n, MIN(created_at) AS first, MAX(created_at) AS last
+       FROM participation_consents WHERE session_id=$1 GROUP BY action ORDER BY action`, [sessionId]),
   ]);
+  // P3: mechanik-spezifische Dossier-Teile — TicketBuy (Preise, Einsätze,
+  // Guthaben-Buchungen) und Contest (Einsendungen, Voting) waren bisher
+  // nicht Teil des Nachweises.
+  const core = session[0] ? (session[0].core || 'CORE_WatchtimeChatActivity') : null;
+  const extras = {};
+  if (core === 'CORE_TicketBuy') {
+    extras.prizes = await q(
+      `SELECT id, title, sponsor, description, status, wager_end, created_at
+       FROM giveaway_prizes WHERE session_id=$1 ORDER BY id`, [sessionId]);
+    extras.wagers = await q(
+      `SELECT w.prize_id, w.username, w.amount, w.created_at
+       FROM prize_wagers w JOIN giveaway_prizes p ON p.id = w.prize_id
+       WHERE p.session_id=$1 ORDER BY w.created_at`, [sessionId]);
+    extras.ledger = await q(
+      `SELECT username, entry_type, amount, ref_prize, created_at FROM credit_ledger
+       WHERE ref_session=$1
+          OR ref_prize IN (SELECT id FROM giveaway_prizes WHERE session_id=$1)
+       ORDER BY created_at`, [sessionId]);
+  } else if (core === 'CORE_ScreenshotContest') {
+    extras.entries = await q(
+      `SELECT e.id, e.username, e.title, e.status, e.created_at,
+              COALESCE(SUM(v.score),0)::int AS score, COUNT(v.id)::int AS votes
+       FROM contest_entries e LEFT JOIN contest_votes v ON v.entry_id = e.id
+       WHERE e.session_id=$1 GROUP BY e.id
+       ORDER BY score DESC, votes DESC, e.id`, [sessionId]);
+    extras.voteStats = (await q(
+      `SELECT COUNT(*)::int AS votes, COUNT(DISTINCT voter)::int AS voters
+       FROM contest_votes WHERE session_id=$1`, [sessionId]))[0] || null;
+  }
+  let coreMeta = null;
+  try {
+    const c = CoreRegistry.getCore(core);
+    coreMeta = { label: c.label, ...(c.display || {}) };
+  } catch { /* Kampagne / unbekannt */ }
   return { session: session[0] || null, draws, participation, claims, audit: auditRows,
-           activity: activity[0] || null };
+           activity: activity[0] || null, consents, coreMeta, ...extras };
 }
 
 app.get('/api/archive/:sessionId', async (req, res) => {
@@ -2644,6 +2955,12 @@ app.get('/api/archive/:sessionId/export', async (req, res) => {
       { name: 'ziehungen.csv',      content: toCsv(d.draws.map(({ eligible_snapshot, ...r }) => r)) },
       { name: 'gewinnermeldung.csv',content: toCsv(d.claims) },
       { name: 'audit.csv',          content: toCsv(d.audit) },
+      // P3: mechanik-spezifische Nachweise (nur vorhanden, wenn befüllt).
+      { name: 'preise.csv',         content: toCsv(d.prizes || []) },
+      { name: 'einsaetze.csv',      content: toCsv(d.wagers || []) },
+      { name: 'guthaben.csv',       content: toCsv(d.ledger || []) },
+      { name: 'einsendungen.csv',   content: toCsv(d.entries || []) },
+      { name: 'zustimmungen.csv',   content: toCsv(d.consents || []) },
     ].filter(f => f.content);
 
     const manifest = [
@@ -2651,6 +2968,10 @@ app.get('/api/archive/:sessionId/export', async (req, res) => {
       '',
       `Team:        ${teamId}`,
       `Sitzung:     ${sid}`,
+      `Mechanik:    ${(d.coreMeta && d.coreMeta.label) || d.session.core || 'Kampagne'}`,
+      `Bedingungen: ${d.session.terms_version > 0
+        ? `Fassung ${d.session.terms_version} (öffentlich: /viewer/terms?team=${teamId}&version=${d.session.terms_version})`
+        : 'Standard-Vorlage (Fassung nicht eingefroren)'}`,
       `Eroeffnet:   ${d.session.opened_at ? new Date(d.session.opened_at).toISOString() : '–'}`,
       `Geschlossen: ${d.session.closed_at ? new Date(d.session.closed_at).toISOString() : 'noch offen'}`,
       `Erstellt:    ${now.toISOString()} von ${actor}`,
@@ -2686,6 +3007,10 @@ app.get('/api/archive/:sessionId/export', async (req, res) => {
 });
 
 // Zuschauer-Statusseite: eigener Stand über alle Teams (nur eigene Daten).
+// P2: "Meine Teilnahmen" — CORE-übergreifender Selbstauskunfts-Endpunkt.
+// Je Team: Kampagnen-Stand (wie bisher), aktive Instanzen mit mechanik-
+// spezifischem Eigen-Status, Los-Guthaben samt Journal (auch ohne laufende
+// Instanz) und die eigene Contest-Historie (inkl. Bild-Token nach Ende).
 app.get('/api/my-status', async (req, res) => {
   try {
     const user = reqUser(req);
@@ -2694,7 +3019,6 @@ app.get('/api/my-status', async (req, res) => {
     const out = [];
     for (const t of teamIds) {
       const a = await wte.getUserAggregate(t, user);
-      if (a.totalCoins <= 0 && !a.registered) continue;   // veraltet/leer überspringen
       const nr = await pg.query('SELECT name FROM teams WHERE id=$1', [t]);
       if (!nr.rowCount) continue;
       let chance = 0;
@@ -2703,9 +3027,76 @@ app.get('/api/my-status', async (req, res) => {
         const pool = all.filter(p => p.eligible).reduce((s, p) => s + p.totalCoins, 0);
         chance = pool > 0 ? (a.totalCoins / pool * 100) : 0;
       }
+      // Aktive Sekundär-Instanzen mit Eigen-Status je Mechanik.
+      const giveaways = [];
+      for (const g of await wte.listGiveaways(t)) {
+        if (g.primary) continue;
+        let d = {}, label = g.core;
+        try { const c = CoreRegistry.getCore(g.core); d = c.display || {}; label = c.label; } catch { /* Fallback */ }
+        const row = { gid: g.gid, core: g.core, label, icon: d.icon || '🎁',
+                      unit: d.unit !== undefined ? d.unit : 'Punkte', drawKind: d.drawKind || 'weighted',
+                      name: g.name || null, keyword: g.keyword || null, paused: !!g.paused };
+        if (g.core === 'CORE_CurrentViewers') {
+          const me = (await wte.getInstantParticipants(t, g.gid)).find(p => p.username === user);
+          const end = parseInt(await redis.get(K.gWinEnd(t, g.gid)), 10);
+          row.instant = {
+            registered: !!me, present: !!(me && me.present), eligible: !!(me && me.eligible),
+            windowOpen: Number.isFinite(end) && end * 1000 > Date.now(),
+            windowEndsIn: (Number.isFinite(end) && end * 1000 > Date.now())
+              ? end - Math.floor(Date.now() / 1000) : null,
+          };
+        } else if (g.core === 'CORE_TicketBuy') {
+          const prizes = await wte.listPrizes(t);
+          const withStake = [];
+          for (const p of prizes) {
+            withStake.push({ id: p.id, title: p.title, status: p.status, wagerEnd: p.wager_end,
+                             totalStake: p.total_stake, myStake: await wte.prizeStake(p.id, user) });
+          }
+          row.ticketBuy = { balance: await wte.availableCredit(t, user), prizes: withStake };
+        } else if (g.core === 'CORE_ScreenshotContest') {
+          const standings = await wte.getContestStandings(t, g.gid, { all: true });
+          const approved = standings.filter(s => s.status === 'approved');
+          const mine = standings.find(s => s.username === user) || null;
+          const mv = await pg.query(
+            `SELECT COUNT(*)::int AS n FROM contest_votes WHERE session_id=$1 AND voter=$2`, [g.gid, user]);
+          row.contest = {
+            voting: await wte.getContestVoting(t, g.gid),
+            myVotes: mv.rows[0].n,
+            myEntry: mine ? { title: mine.title, status: mine.status, score: mine.score, votes: mine.votes,
+                              rank: mine.status === 'approved'
+                                ? approved.findIndex(s => s.entryId === mine.entryId) + 1 : null,
+                              imageToken: mine.imageToken } : null,
+          };
+        }
+        giveaways.push(row);
+      }
+      // Los-Guthaben: bleibt team-weit über Instanzen hinweg bestehen —
+      // Journal = verständliche Guthabenhistorie (Beleg je Buchung).
+      let credit = null;
+      try {
+        const bal = await wte.credit.balance(t, user);
+        const stmt = await wte.credit.statement(t, user, 15);
+        if (bal !== 0 || stmt.length) credit = { balance: bal, statement: stmt };
+      } catch { /* kein Guthaben-Journal */ }
+      // Eigene Contest-Historie (auch abgeschlossene Contests, Bild bleibt
+      // über den Token erreichbar, solange die Einsendung gespeichert ist).
+      const hist = await pg.query(`
+        SELECT e.session_id, e.title, e.status, e.created_at, e.image_token,
+               COALESCE(SUM(v.score),0)::int AS score, COUNT(v.id)::int AS votes,
+               s.closed_at, s.prize
+        FROM contest_entries e
+        LEFT JOIN contest_votes v ON v.entry_id = e.id
+        LEFT JOIN sessions s ON s.id = e.session_id
+        WHERE e.team_id=$1 AND e.username=$2
+        GROUP BY e.id, s.closed_at, s.prize
+        ORDER BY e.created_at DESC LIMIT 10`, [t, user]);
+      const hasAny = a.totalCoins > 0 || a.registered || giveaways.length || credit || hist.rowCount;
+      if (!hasAny) continue;   // veraltet/leer überspringen
       out.push({ teamId: t, name: nr.rows[0].name, coins: a.totalCoins, watchSec: a.totalWatchSec,
-                 channelsQualified: a.channelsQualified, followMin: a.followMin, drawMinSec: a.drawMinSec, registered: a.registered, eligible: a.eligible,
-                 chance, open: await wte.isOpen(t), paused: await wte.isPaused(t), perChannel: a.perChannel });
+                 channelsQualified: a.channelsQualified, followMin: a.followMin, drawMinSec: a.drawMinSec,
+                 registered: a.registered, eligible: a.eligible,
+                 chance, open: await wte.isOpen(t), paused: await wte.isPaused(t), perChannel: a.perChannel,
+                 giveaways, credit, contestHistory: hist.rows });
     }
     res.json({ login: user, teams: out.sort((x, y) => y.coins - x.coins) });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -2726,10 +3117,17 @@ app.get('/api/draws', async (req, res) => {
     if (!await isMember(reqUser(req), teamId)) return res.status(403).json({ error: 'forbidden' });
     const limit = Math.min(parseInt(req.query.limit || '50'), 500);
     const cols = req.query.full === '1' ? 'd.*'
-      : 'd.id, d.session_id, d.winner, d.winner_coins, d.total_coins, d.eligible_count, d.rand_value, d.draw_index, d.is_test, d.prize, d.drawn_at';
+      : 'd.id, d.session_id, d.winner, d.winner_coins, d.total_coins, d.eligible_count, d.rand_value, d.draw_index, d.is_test, d.prize, d.drawn_at, d.core, d.prize_id';
     const r = await pg.query(`SELECT ${cols} FROM giveaway_draws d JOIN sessions s ON s.id=d.session_id
                               WHERE s.team_id=$1 ORDER BY d.drawn_at DESC LIMIT $2`, [teamId, limit]);
-    res.json(r.rows);
+    // P4: Semantik je Zeile aus dem Core-Vertrag — die Historie soll Einsätze,
+    // Scores und Sofortverlosungen nicht pauschal als "Coins" beschriften.
+    res.json(r.rows.map(row => {
+      let d = {};
+      try { d = CoreRegistry.getCore(row.core).display || {}; } catch { /* Standard */ }
+      return { ...row, unit: d.unit !== undefined ? d.unit : 'Punkte',
+               drawKind: d.drawKind || 'weighted' };
+    }));
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2774,6 +3172,27 @@ async function ensureSchema() {
   // (Transparenz gegenüber Teilnehmern; Bestand bleibt NULL-tolerant).
   await pg.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS prize TEXT`);
   await pg.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS sponsor TEXT`);
+  // P1b: Welche Bedingungen-Fassung galt beim Start dieser Session
+  // (terms_versions des admin-Service; 0/NULL = Vorlage ohne Snapshot).
+  await pg.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS terms_version INTEGER`);
+  // P1c: Kenntnisnahme/Zustimmung je Teilnehmeraktion — append-only, die
+  // ERSTE Aktion je (Session, Nutzer, Aktion) zählt (ON CONFLICT DO NOTHING).
+  // Personenbezogen → collectSubjectData()/eraseSubject() im admin-Service
+  // sind mitgezogen (Pseudonymisierung statt Löschung, Art. 17 Abs. 3 lit. e).
+  await pg.query(`
+    CREATE TABLE IF NOT EXISTS participation_consents (
+      id BIGSERIAL PRIMARY KEY,
+      team_id       TEXT NOT NULL,
+      session_id    TEXT NOT NULL,
+      core          TEXT,
+      username      TEXT NOT NULL,
+      action        TEXT NOT NULL,
+      terms_version INTEGER,
+      source        TEXT,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (team_id, session_id, username, action))`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_consents_user ON participation_consents(username)`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_consents_session ON participation_consents(session_id)`);
   await pg.query(`ALTER TABLE giveaway_prizes ADD COLUMN IF NOT EXISTS sponsor TEXT`);
   // Preis-Bild fürs Formular/Setz-Seite (Roadmap-Feinschliff) — BYTEA wie
   // beim Contest, Grenzen (MIME/Größe) identisch. Kein Personenbezug.
@@ -2797,6 +3216,10 @@ async function ensureSchema() {
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_entries_imgtok ON contest_entries(image_token)`);
   await pg.query(`ALTER TABLE giveaway_draws ADD COLUMN IF NOT EXISTS core TEXT`);
   await pg.query(`ALTER TABLE giveaway_draws ADD COLUMN IF NOT EXISTS prize_id BIGINT`);
+  // P6: Ersatzziehung ist mit der Ursprungsziehung verknüpft (statt einer
+  // unverbundenen Neuziehung) — inkl. Grund; der alte Claim wird 'replaced'.
+  await pg.query(`ALTER TABLE giveaway_draws ADD COLUMN IF NOT EXISTS reroll_of BIGINT`);
+  await pg.query(`ALTER TABLE giveaway_draws ADD COLUMN IF NOT EXISTS reroll_reason TEXT`);
   // Phase 4a (CORE_TicketBuy, §5.2/§10.1): team-weites Guthaben-Journal,
   // append-only. Kontostand = SUM(amount); Korrekturen nur per Gegenbuchung.
   // Personenbezogen → collectSubjectData()/eraseSubject() im admin-Service

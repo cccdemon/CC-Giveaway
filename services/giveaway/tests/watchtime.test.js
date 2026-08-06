@@ -39,10 +39,21 @@ function makeRedis() {
 function makePg(channels) {
   // In-Memory-Tabellen für die TicketBuy-Pfade (Phase 4b) — die übrigen
   // Queries laufen wie bisher auf die Dummy-Antwort.
-  const prizes = [], wagers = [], ledger = [], entries = [], cvotes = [];
-  let prizeSeq = 1, entrySeq = 1;
+  const prizes = [], wagers = [], ledger = [], entries = [], cvotes = [], consents = [], drawIns = [];
+  let prizeSeq = 1, entrySeq = 1, drawSeq = 1;
   async function query(sql, p = []) {
     if (/from team_members/i.test(sql)) return { rows: (channels || []).map(c => ({ channel: c })) };
+    // P1c: Zustimmungsprotokoll (append-only, UNIQUE je (team, session, user, action))
+    if (/INSERT INTO participation_consents/.test(sql)) {
+      const ex = consents.find(c => c.team_id === p[0] && c.session_id === p[1]
+                                 && c.username === p[3] && c.action === p[4]);
+      if (!ex) consents.push({ team_id: p[0], session_id: p[1], core: p[2], username: p[3],
+                               action: p[4], terms_version: p[5], source: p[6] });
+      return { rowCount: ex ? 0 : 1, rows: [] };
+    }
+    if (/SELECT core, terms_version FROM sessions WHERE id=\$1/.test(sql)) {
+      return { rows: [{ core: null, terms_version: 7 }], rowCount: 1 };
+    }
     if (/INSERT INTO giveaway_prizes/.test(sql)) {
       const row = { id: prizeSeq++, team_id: p[0], session_id: p[1], title: p[2],
                     description: p[3], wager_end: p[4], status: 'open' };
@@ -86,6 +97,13 @@ function makePg(channels) {
     if (/AS total FROM prize_wagers WHERE prize_id=\$1/.test(sql)) {
       const total = wagers.filter(w => w.prize_id === p[0]).reduce((s, w) => s + w.amount, 0);
       return { rows: [{ total }] };
+    }
+    // P6: Teilnehmer-Vorschau TicketBuy — Konten mit positivem Saldo
+    // (VOR dem Wager-GROUP-BY prüfen, beide SQLs enthalten dieselbe Klausel).
+    if (/FROM credit_ledger[\s\S]*HAVING SUM\(amount\) > 0/.test(sql)) {
+      const by = new Map();
+      for (const r of ledger) if (r.team_id === p[0]) by.set(r.username, (by.get(r.username) || 0) + r.amount);
+      return { rows: [{ n: [...by.values()].filter(v => v > 0).length }] };
     }
     if (/GROUP BY username HAVING/.test(sql)) {
       const by = new Map();
@@ -185,7 +203,7 @@ function makePg(channels) {
     return { rows: [{ n: 0 }], rowCount: 1 };
   }
   return {
-    prizes, wagers, ledger, entries, cvotes,
+    prizes, wagers, ledger, entries, cvotes, consents, drawIns,
     query,
     async connect() {
       // TX-Client: BEGIN/COMMIT/Locks sind No-Ops, Draw-Spezialfälle bleiben,
@@ -197,7 +215,11 @@ function makePg(channels) {
           const pr = prizes.find(x => x.id === p[0]); if (pr) pr.status = 'drawn';
           return { rowCount: pr ? 1 : 0, rows: [] };
         }
-        if (/INSERT INTO giveaway_draws/.test(sql)) return { rows: [{ id: 1 }] };
+        if (/INSERT INTO giveaway_draws/.test(sql)) {
+          // Parameter festhalten — P6-Tests pruefen reroll_of/reroll_reason.
+          drawIns.push(p);
+          return { rows: [{ id: drawSeq++ }] };
+        }
         if (/SELECT winner FROM sessions/.test(sql)) return { rows: [{}] };
         return query(sql, p);
       }, release() {} };
@@ -1212,4 +1234,146 @@ test('panel: listGiveaways stats — Angemeldete bei der Sofortverlosung', async
   // Ohne stats keine Zusatzfelder (interne Aufrufer zahlen nichts mit)
   const g2 = (await e.listGiveaways(TEAM)).find(x => x.gid === 'sess_2');
   assert.equal(g2.participants, undefined);
+});
+
+// ── P1c: Zustimmungsprotokoll (participation_consents) ────
+test('consent: Keyword-Anmeldung protokolliert genau einmal, mit Session-Fassung', async () => {
+  const e = engine();
+  await e.openGiveaway(TEAM, 'join', 'sess_1');
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'join', true);
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'join', true);   // erneut → kein zweiter Eintrag
+  const rows = e.pg.consents.filter(c => c.action === 'register');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].username, 'bob');
+  assert.equal(rows[0].session_id, 'sess_1');
+  assert.equal(rows[0].terms_version, 7);          // aus der sessions-Zeile (Mock)
+  assert.equal(rows[0].source, 'chat');
+});
+
+test('consent: erster Einsatz protokolliert (Quelle web), Folge-Einsatz und Ruecknahme nicht', async () => {
+  const e = engine();
+  await e.credit.book(TEAM, 'bob', 'earn', 5);
+  await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy' });
+  const p1 = await e.addPrize(TEAM, 'sess_2', { title: 'Headset' });
+  await e.placeWager(TEAM, 'sess_2', 'bob', p1, 2, { source: 'web' });
+  await e.placeWager(TEAM, 'sess_2', 'bob', p1, 1);                    // Folge-Einsatz
+  await e.placeWager(TEAM, 'sess_2', 'bob', p1, 0);                    // Ruecknahme
+  const rows = e.pg.consents.filter(c => c.action === 'wager');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].source, 'web');
+  assert.equal(rows[0].session_id, 'sess_2');
+});
+
+test('consent: Contest-Einsendung und -Stimme protokollieren (Re-Vote nicht doppelt)', async () => {
+  const e = await contestSetup(0);
+  await e.submitContestEntry(TEAM, 'sess_9', 'bob', { mime: 'image/png', image: IMG });
+  await e.reviewContestEntry(TEAM, 1, true);
+  await e.setContestVoting(TEAM, 'sess_9', 'open');
+  await e.castContestVote(TEAM, 'sess_9', 'carol', 1, 8);
+  await e.castContestVote(TEAM, 'sess_9', 'carol', 1, 9);   // Re-Vote ueberschreibt
+  assert.equal(e.pg.consents.filter(c => c.action === 'contest_entry').length, 1);
+  assert.equal(e.pg.consents.filter(c => c.action === 'contest_vote').length, 1);
+});
+
+// ── P6: Teilnahme selbst zurueckziehen ────────────────────
+test('withdraw: Rueckzug entfernt Opt-in, Messwerte bleiben, doppelt faellt durch', async () => {
+  const e = engine();
+  await e.openGiveaway(TEAM, 'join', 'sess_1');
+  await e.handleViewerTick(TEAM, 'justcallmedeimos', 'bob', true);
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'join', true);
+  const before = await e.getUserAggregate(TEAM, 'bob');
+  assert.equal(before.registered, true);
+  const r = await e.unregisterUser(TEAM, 'bob');
+  assert.equal(r.ok, true);
+  assert.equal(r.giveawayId, 'sess_1');
+  const after = await e.getUserAggregate(TEAM, 'bob');
+  assert.equal(after.registered, false);
+  assert.equal(after.totalWatchSec, before.totalWatchSec);   // Zuschauzeit unangetastet
+  assert.equal((await e.unregisterUser(TEAM, 'bob')).error, 'not_registered');
+});
+
+// ── P6: Ersatzziehung (reroll_of + Ausschluss) ────────────
+test('reroll: bisheriger Gewinner ausgeschlossen, Verknuepfung + Grund gespeichert', async () => {
+  const e = engine();
+  await e.openGiveaway(TEAM, 'join', 'sess_1');
+  for (const u of ['alice', 'bob']) {
+    await e.redis.set(K.gWatch(TEAM, 'sess_1', 'justcallmedeimos', u), String(SECS_PER_COIN));
+    for (const ch of CH) await e.redis.set(K.chFollows(TEAM, ch, u), '1');
+    await e.redis.set(K.gReg(TEAM, 'sess_1', u), '1');
+    await e.redis.sadd(K.gwUsers(TEAM), u);
+  }
+  const first = await e.drawWinner(TEAM, 'sess_1', {});
+  assert.ok(first && first.winner);
+  const second = await e.drawWinner(TEAM, 'sess_1', {
+    rerollOf: first.drawId, rerollReason: 'keine Meldung in der Frist',
+    excludeWinner: first.winner });
+  assert.ok(second && second.winner);
+  assert.notEqual(second.winner, first.winner);              // Ausschluss greift
+  const last = e.pg.drawIns[e.pg.drawIns.length - 1];
+  assert.equal(last[13], first.drawId);                      // reroll_of
+  assert.equal(last[14], 'keine Meldung in der Frist');      // reroll_reason
+});
+
+// ── P6: Bestaetigung der Instant-Anmeldung ────────────────
+test('instant: Anmeldung wird im Chat bestaetigt (einmal; announce=false bleibt still)', async () => {
+  const e = engine();
+  await e.openGiveawayInstance(TEAM, 'sess_2', { keyword: 'blitz', core: 'CORE_CurrentViewers', windowSec: 60 });
+  const r1 = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'blitz', true);
+  assert.ok(r1 && r1.chatReply && /Sofortverlosung/.test(r1.chatReply));
+  const r2 = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'blitz', true);
+  assert.equal(r2, null);                                    // schon angemeldet → still
+  await e.openGiveawayInstance(TEAM, 'sess_3', { keyword: 'still', core: 'CORE_CurrentViewers',
+                                                 windowSec: 60, announce: false });
+  const r3 = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'carol', 'still', true);
+  assert.equal(r3, null);                                    // stumm geoeffnet → keine Ansage
+  const parts = await e.getInstantParticipants(TEAM, 'sess_3');
+  assert.ok(parts.find(p => p.username === 'carol'));        // angemeldet ist sie trotzdem
+});
+
+// ── P6: Teilnehmer-Vorschau (previewEligible) ─────────────
+test('preflight: Kampagne zaehlt Follows + >=1 Coin, ohne Anmeldung', async () => {
+  const e = engine();
+  // bob erfuellt beides, carol folgt zu wenig, dave hat zu wenig Viewtime
+  for (const ch of CH) {
+    await e.redis.set(K.chFollows(TEAM, ch, 'bob'), '1');
+    await e.redis.set(K.chFollows(TEAM, ch, 'dave'), '1');
+  }
+  await e.redis.set(K.chFollows(TEAM, 'justcallmedeimos', 'carol'), '1');
+  await e.redis.set(K.chWatch(TEAM, 'justcallmedeimos', 'bob'), String(SECS_PER_COIN));
+  await e.redis.set(K.chWatch(TEAM, 'justcallmedeimos', 'carol'), String(SECS_PER_COIN));
+  await e.redis.set(K.chWatch(TEAM, 'justcallmedeimos', 'dave'), '60');
+  for (const u of ['bob', 'carol', 'dave']) await e.redis.sadd(K.gwUsers(TEAM), u);
+  const r = await e.previewEligible(TEAM, { core: 'CORE_WatchtimeChatActivity' });
+  assert.equal(r.basis, 'campaign');
+  assert.equal(r.count, 1);                       // nur bob
+});
+
+test('preflight: Sofortverlosung zaehlt aktuelle Anwesenheit je Kanalauswahl', async () => {
+  const e = engine();
+  await e.handleViewerTick(TEAM, 'justcallmedeimos', 'bob', true);
+  await e.handleViewerTick(TEAM, 'jerichoramirez', 'carol', true);
+  let r = await e.previewEligible(TEAM, { core: 'CORE_CurrentViewers' });
+  assert.equal(r.basis, 'present');
+  assert.equal(r.count, 2);                       // beide Kanaele
+  r = await e.previewEligible(TEAM, { core: 'CORE_CurrentViewers', channels: ['justcallmedeimos'] });
+  assert.equal(r.count, 1);                       // nur bob auf dem gewaehlten Kanal
+});
+
+test('preflight: TicketBuy zaehlt Konten mit positivem Guthaben, Contest Follow+minWatch', async () => {
+  const e = engine();
+  await e.credit.book(TEAM, 'bob', 'earn', 3);
+  await e.credit.book(TEAM, 'carol', 'earn', 1);
+  await e.credit.book(TEAM, 'carol', 'expire', 1);   // Saldo 0 → zaehlt nicht
+  let r = await e.previewEligible(TEAM, { core: 'CORE_TicketBuy' });
+  assert.equal(r.basis, 'credit');
+  assert.equal(r.count, 1);
+  // Contest: Follow auf Instanz-Kanal + Mindest-Viewtime
+  await e.redis.set(K.chFollows(TEAM, 'justcallmedeimos', 'bob'), '1');
+  await e.redis.set(K.chWatch(TEAM, 'justcallmedeimos', 'bob'), '3600');
+  await e.redis.sadd(K.gwUsers(TEAM), 'bob');
+  r = await e.previewEligible(TEAM, { core: 'CORE_ScreenshotContest', minWatchSec: 600 });
+  assert.equal(r.basis, 'contest');
+  assert.equal(r.count, 1);
+  r = await e.previewEligible(TEAM, { core: 'CORE_ScreenshotContest', minWatchSec: 7200 });
+  assert.equal(r.count, 0);                       // Schwelle zu hoch
 });

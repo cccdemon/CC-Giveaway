@@ -46,8 +46,12 @@ Person, die hier ein Konto anlegt und ein Gewinnspiel durchführt (nachfolgend
 
 1. Der Betreiber stellt die Plattform unentgeltlich zur Verfügung. Ein
    Vergütungsanspruch besteht beiderseits nicht.
-2. Die Plattform ermittelt Lose ausschließlich aus **Zuschauzeit** und
-   **Chataktivität** und zieht daraus zufällig einen Gewinner.
+2. Die Plattform ermittelt Gewinnchancen ausschließlich aus **Zuschauzeit**,
+   **Chataktivität**, **Anwesenheit** oder **Community-Voting** — je nach
+   Mechanik: bei Kampagnen und Los-Giveaways zufällig gewichtet nach
+   Zuschauzeit bzw. gesetzten Losen, bei Sofortverlosungen zufällig mit
+   gleicher Chance für alle Berechtigten, bei Screenshot-Wettbewerben nach
+   der höchsten Punktsumme des Votings (Los nur bei Gleichstand).
 3. Der Betreiber nimmt keine Auswahl des Gewinners vor und beeinflusst das
    Ergebnis der Ziehung nicht.
 

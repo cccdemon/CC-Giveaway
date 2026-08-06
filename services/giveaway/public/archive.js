@@ -78,11 +78,17 @@ async function loadList() {
 function renderSessionItem(s) {
   var closed = !!s.closed_at;
   var chans = Array.isArray(s.channels) ? s.channels : [];
+  // P3: mechanikgerechte Kennzahlen — "Punkte" nur bei gewichteter Kampagne,
+  // die anderen Mechaniken haben eigene Größen (bzw. keine).
+  var stats = num(s.total_participants) + ' Teilnehmer';
+  if (!s.drawKind || s.drawKind === 'weighted') stats += ' · ' + num(s.total_coins).toFixed(2) + ' Punkte';
   return '<div class="ar-item" data-id="' + esc(s.id) + '">'
-    + '<h4>' + fmt(s.opened_at, false) + (s.keyword ? ' · „' + esc(s.keyword) + '"' : '')
+    + '<h4>' + esc(s.coreIcon || '📈') + ' ' + fmt(s.opened_at, false)
+    + (s.keyword ? ' · „' + esc(s.keyword) + '"' : '')
     + '<span class="badge ' + (closed ? 'closed' : 'open') + '">' + (closed ? 'ABGESCHLOSSEN' : 'LÄUFT') + '</span></h4>'
-    + '<div class="sub">' + (chans.length ? esc(chans.join(', ')) : '–') + '<br>'
-    + num(s.total_participants) + ' Teilnehmer · ' + num(s.total_coins).toFixed(2) + ' Punkte · '
+    + '<div class="sub">' + esc(s.coreLabel || 'Kampagne') + ' · '
+    + (chans.length ? esc(chans.join(', ')) : '–') + '<br>'
+    + stats + ' · '
     + num(s.draws) + ' Ziehung' + (num(s.draws) === 1 ? '' : 'en')
     + (num(s.test_draws) ? ' (+' + s.test_draws + ' Test)' : '')
     + (s.winners ? '<br>Gewinner: ' + mask(s.winners) : '')
@@ -165,8 +171,12 @@ function renderDetail(sid, d) {
   var act = d.activity || {};
   var migrated = act.first_event && s.opened_at
     && (new Date(s.opened_at) - new Date(act.first_event)) > 3600000;
+  var meta = d.coreMeta || {};
+  var isCampaign = !s.core || s.core === 'CORE_WatchtimeChatActivity';
+  var termsV = num(s.terms_version);
   var html = '<div class="ar-sec"><h3>SITZUNG</h3><div class="ar-kv">'
     + kv('ID', esc(sid))
+    + kv('MECHANIK', esc((meta.icon ? meta.icon + ' ' : '') + (meta.label || 'Kampagne')))
     + kv('KEYWORD', s.keyword ? esc(s.keyword) : '–')
     + kv('KANÄLE', chans.length ? esc(chans.join(', ')) : '–')
     + kv('ERÖFFNET', fmt(migrated ? act.first_event : s.opened_at))
@@ -174,15 +184,24 @@ function renderDetail(sid, d) {
     + kv('DAUER', dur(migrated ? act.first_event : s.opened_at, s.closed_at))
     + (act.first_event ? kv('DATEN VON/BIS', fmt(act.first_event) + ' – ' + fmt(act.last_event)) : '')
     + kv('TEILNEHMER', num(s.total_participants))
-    + kv('PUNKTE GESAMT', num(s.total_coins).toFixed(2))
+    + (isCampaign ? kv('PUNKTE GESAMT', num(s.total_coins).toFixed(2)) : '')
+    + kv('BEDINGUNGEN', termsV > 0
+        ? '<a href="/viewer/terms?team=' + encodeURIComponent(currentTeam) + '&version=' + termsV
+          + '" target="_blank" rel="noopener">Fassung ' + termsV + ' ↗</a>'
+        : 'Standard-Vorlage (Fassung nicht eingefroren)')
     + '</div>'
     + (migrated ? '<div class="ar-note" style="margin-top:6px">Die Kampagne lief schon vor der Anlage dieses '
         + 'Sitzungsdatensatzes (Systemumstellung) — Eröffnung laut ältestem Viewtime-Event.</div>' : '')
     + '</div>';
 
-  html += drawsSection(d.draws);
+  html += drawsSection(d.draws, meta);
   html += claimsSection(d.claims, d.contactVisible);
-  html += participantsSection(d.participation);
+  // P3: mechanik-spezifische Sektionen statt Watchtime-Terminologie.
+  if (s.core === 'CORE_TicketBuy')             html += prizesSection(d);
+  else if (s.core === 'CORE_ScreenshotContest') html += contestSection(d);
+  else if (s.core === 'CORE_CurrentViewers')    html += instantSection(d);
+  else                                          html += participantsSection(d.participation);
+  html += consentsSection(d.consents);
   html += auditSection(d.audit);
 
   html += '<div class="ar-foot">'
@@ -196,24 +215,37 @@ function renderDetail(sid, d) {
 }
 
 // ── Wiederverwendbare Dossier-Sektionen (Einzel-Sitzung + Kampagne) ──
-function drawsSection(draws) {
+// P3: Beschriftung der Gewichtsspalte + Erklärtext kommen aus dem
+// Core-Vertrag (meta.unit / meta.drawKind), nicht mehr pauschal "Punkte".
+function drawsSection(draws, meta) {
+  meta = meta || {};
+  var unit = meta.unit !== undefined ? meta.unit : 'Punkte';
+  var kind = meta.drawKind || 'weighted';
+  var wCol = kind === 'equal' ? null : (kind === 'perPrize' ? 'Einsatz' : kind === 'score' ? 'Punkte (Voting)' : (unit || 'Punkte'));
   var real = (draws || []).filter(function(x){ return !x.is_test; });
   var test = (draws || []).filter(function(x){ return x.is_test; });
   var html = '<div class="ar-sec"><h3>ZIEHUNGEN (' + real.length
        + (test.length ? ' + ' + test.length + ' TEST' : '') + ')</h3>';
   if (!draws || !draws.length) html += '<div class="wsc-empty">Keine Ziehung erfolgt.</div>';
   else html += '<div class="ar-scroll"><table class="ar-tbl"><tr>'
-    + '<th>#</th><th>Zeitpunkt</th><th>Gewinner</th><th>Punkte</th><th>Lostopf</th>'
-    + '<th>Summe</th><th>Zufallswert</th><th>Preis</th><th>Art</th></tr>'
+    + '<th>#</th><th>Zeitpunkt</th><th>Gewinner</th>' + (wCol ? '<th>' + wCol + '</th>' : '')
+    + '<th>' + (kind === 'perPrize' ? 'Setzer' : 'Lostopf') + '</th>'
+    + (kind === 'equal' ? '' : '<th>Summe</th>') + '<th>Zufallswert</th><th>Preis</th><th>Art</th></tr>'
     + draws.map(function(x){
         return '<tr><td>' + x.draw_index + '</td><td>' + fmt(x.drawn_at) + '</td>'
-          + '<td>' + mask(x.winner) + '</td><td>' + num(x.winner_coins).toFixed(2) + '</td>'
-          + '<td>' + num(x.eligible_count) + '</td><td>' + num(x.total_coins).toFixed(2) + '</td>'
+          + '<td>' + mask(x.winner) + '</td>'
+          + (wCol ? '<td>' + num(x.winner_coins).toFixed(kind === 'weighted' ? 2 : 0) + '</td>' : '')
+          + '<td>' + num(x.eligible_count) + '</td>'
+          + (kind === 'equal' ? '' : '<td>' + num(x.total_coins).toFixed(kind === 'weighted' ? 2 : 0) + '</td>')
           + '<td>' + num(x.rand_value).toFixed(6) + '</td><td>' + esc(x.prize || '–') + '</td>'
           + '<td>' + (x.is_test ? 'TEST' : 'echt') + '</td></tr>';
       }).join('') + '</table></div>'
-    + '<div class="ar-note" style="margin:6px 0 0">Der Zufallswert liegt zwischen 0 und der Punktesumme. '
-    + 'Mit dem Snapshot im Export ist jede Ziehung nachrechenbar.</div>';
+    + '<div class="ar-note" style="margin:6px 0 0">'
+    + (kind === 'equal'    ? 'Alle Berechtigten gehen mit gleichem Gewicht in die Ziehung — der Zufallswert liegt zwischen 0 und der Teilnehmerzahl.'
+     : kind === 'score'    ? 'Es gewinnt die höchste Punktsumme des Votings; nur bei Punktgleichstand entscheidet der Zufallswert unter den Führenden.'
+     : kind === 'perPrize' ? 'Ziehung je Preis: Gewicht = gesetzte Lose auf diesen Preis. Der Zufallswert liegt zwischen 0 und der Einsatzsumme.'
+                           : 'Der Zufallswert liegt zwischen 0 und der Punktesumme.')
+    + ' Mit dem Snapshot im Export ist jede Ziehung nachrechenbar.</div>';
   return html + '</div>';
 }
 
@@ -288,6 +320,93 @@ function participantsSection(participation) {
         }).join('') + '</table></div>';
   }
   return html + '</div>';
+}
+
+// ── P3: Los-Giveaway — Preise, Einsätze, Guthaben-Buchungen ──
+function prizesSection(d) {
+  var prizes = d.prizes || [], wagers = d.wagers || [], ledger = d.ledger || [];
+  var stByPrize = {};
+  wagers.forEach(function(w){
+    var e = stByPrize[w.prize_id] || (stByPrize[w.prize_id] = { total: 0, users: {} });
+    e.total += num(w.amount);
+    e.users[w.username] = (e.users[w.username] || 0) + num(w.amount);
+  });
+  var html = '<div class="ar-sec"><h3>PREISE & EINSÄTZE (' + prizes.length + ' Preise, '
+    + wagers.length + ' Einsatz-Buchungen)</h3>';
+  if (!prizes.length) html += '<div class="wsc-empty">Keine Preise angelegt.</div>';
+  else html += prizes.map(function(p){
+    var st = stByPrize[p.id] || { total: 0, users: {} };
+    var setters = Object.keys(st.users).filter(function(u){ return st.users[u] > 0; });
+    var status = p.status === 'drawn' ? 'GEZOGEN' : (p.status === 'cancelled' ? 'STORNIERT (Einsätze zurückgebucht)' : 'offen');
+    return '<div style="margin-bottom:10px"><b>#' + p.id + ' ' + esc(p.title) + '</b>'
+      + (p.sponsor ? ' — bereitgestellt von ' + esc(p.sponsor) : '')
+      + ' · ' + status
+      + '<div class="ar-note">Gebundene Einsätze: ' + st.total.toFixed(0) + ' Lose von ' + setters.length + ' Setzern'
+      + (setters.length ? ' — ' + setters.map(function(u){ return mask(u) + ' (' + st.users[u].toFixed(0) + ')'; }).join(', ') : '')
+      + '</div></div>';
+  }).join('');
+  if (ledger.length) {
+    var LBL = { earn: 'Gutschrift', wager: 'Einsatz', refund: 'Erstattung', admin: 'Korrektur', expire: 'Verfall', erase: 'Löschung' };
+    html += '<div class="ar-note" style="margin:8px 0 4px">GUTHABEN-BUCHUNGEN MIT BEZUG ZU DIESER SITZUNG ('
+      + ledger.length + ')</div><div class="ar-scroll"><table class="ar-tbl">'
+      + '<tr><th>Zeitpunkt</th><th>Zuschauer</th><th>Vorgang</th><th>Lose</th></tr>'
+      + ledger.map(function(l){
+          return '<tr><td>' + fmt(l.created_at) + '</td><td>' + mask(l.username) + '</td>'
+            + '<td>' + esc(LBL[l.entry_type] || l.entry_type) + (l.ref_prize ? ' (Preis #' + l.ref_prize + ')' : '') + '</td>'
+            + '<td>' + (num(l.amount) > 0 ? '+' : '') + num(l.amount).toFixed(2) + '</td></tr>';
+        }).join('') + '</table></div>'
+      + '<div class="ar-note" style="margin-top:4px">Das Guthaben-Journal ist append-only — Rücknahmen und Stornos '
+      + 'stehen als Gegenbuchungen, nichts wird gelöscht. Beim Schließen wandert der erspielte Stand als Gutschrift ins Journal.</div>';
+  }
+  return html + '</div>';
+}
+
+// ── P3: Screenshot-Contest — Einsendungen, Moderation, Voting ──
+function contestSection(d) {
+  var entries = d.entries || [];
+  var vs = d.voteStats || {};
+  var html = '<div class="ar-sec"><h3>EINSENDUNGEN & VOTING (' + entries.length + ' Einsendungen, '
+    + num(vs.votes) + ' Stimmen von ' + num(vs.voters) + ' Votern)</h3>';
+  if (!entries.length) return html + '<div class="wsc-empty">Keine Einsendungen (oder bereits gelöscht/zurückgezogen).</div></div>';
+  var ST = { approved: 'freigegeben', pending: 'nicht freigegeben', rejected: 'abgelehnt' };
+  var rank = 0, lastScore = null;
+  html += '<div class="ar-scroll"><table class="ar-tbl">'
+    + '<tr><th>Rang</th><th>Einsender</th><th>Titel</th><th>Moderation</th><th>Punkte</th><th>Stimmen</th></tr>'
+    + entries.map(function(e, i){
+        var r = '';
+        if (e.status === 'approved') { if (e.score !== lastScore) { rank = i + 1; lastScore = e.score; } r = rank; }
+        return '<tr><td>' + r + '</td><td>' + mask(e.username) + '</td><td>' + esc(e.title || '–') + '</td>'
+          + '<td>' + (ST[e.status] || esc(e.status)) + '</td><td>' + num(e.score) + '</td><td>' + num(e.votes) + '</td></tr>';
+      }).join('') + '</table></div>'
+    + '<div class="ar-note" style="margin-top:6px">Endrangliste nach Punktsumme (nur freigegebene Einsendungen). '
+    + 'Bei Punktgleichstand an der Spitze hat der protokollierte Zufallswert der Ziehung entschieden. '
+    + 'Moderationsentscheidungen stehen im Protokoll unten.</div>';
+  return html + '</div>';
+}
+
+// ── P3: Sofortverlosung — Fenster + gleiche Gewichtung ──
+function instantSection(d) {
+  var cfg = (d.session && d.session.core_config) || {};
+  return '<div class="ar-sec"><h3>SOFORTVERLOSUNG</h3>'
+    + '<div class="ar-note">Teilnahme per Keyword im Anmeldefenster'
+    + (cfg.windowSec ? ' (Fensterdauer ' + Math.round(cfg.windowSec / 60) + ' min)' : '') + ' + erkannte Anwesenheit im Stream. '
+    + 'Alle Berechtigten gingen mit gleichem Gewicht in die Ziehung; wer im Topf war, steht im '
+    + 'eligible_snapshot der jeweiligen Ziehung (Export). Fensteröffnungen und Ansagen stehen im Protokoll unten.</div></div>';
+}
+
+// ── P1c: Kenntnisnahme-Protokoll (verdichtet) ──
+function consentsSection(consents) {
+  if (!consents || !consents.length) return '';
+  var LBL = { register: 'Anmeldung per Keyword', wager: 'Erster Los-Einsatz',
+              contest_entry: 'Contest-Einsendung', contest_vote: 'Contest-Stimmabgabe' };
+  return '<div class="ar-sec"><h3>KENNTNISNAHME DER BEDINGUNGEN</h3>'
+    + '<div class="ar-scroll"><table class="ar-tbl"><tr><th>Aktion</th><th>Personen</th><th>Erste</th><th>Letzte</th></tr>'
+    + consents.map(function(c){
+        return '<tr><td>' + esc(LBL[c.action] || c.action) + '</td><td>' + num(c.n) + '</td>'
+          + '<td>' + fmt(c.first) + '</td><td>' + fmt(c.last) + '</td></tr>';
+      }).join('') + '</table></div>'
+    + '<div class="ar-note" style="margin-top:4px">Je (Person, Aktion) zählt die erste Handlung; gespeichert wird '
+    + 'dabei die geltende Fassung der Teilnahmebedingungen.</div></div>';
 }
 
 function auditSection(audit) {

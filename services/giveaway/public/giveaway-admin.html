@@ -163,8 +163,22 @@
         <div class="winner-name" id="w-name">-</div>
         <div class="winner-info" id="w-info"></div>
         <div class="btn-group mt-10">
-          <button class="btn btn-cyan btn-sm" onclick="reroll()">REROLL</button>
+          <button class="btn btn-cyan btn-sm" onclick="reroll()">ERSATZ ZIEHEN</button>
           <button class="btn btn-red btn-sm"  onclick="clearWinner()">SCHLIESSEN</button>
+        </div>
+        <!-- P6: Ersatzziehung mit Grund + Ausschluss des bisherigen Gewinners.
+             Erst nach Klick sichtbar; verknüpft die neue Ziehung (reroll_of). -->
+        <div id="reroll-form" style="display:none;margin-top:8px">
+          <input type="text" id="reroll-reason" maxlength="200"
+                 placeholder="Grund (z.B. keine Meldung in der Frist)" style="width:100%">
+          <label style="display:flex;gap:6px;align-items:center;font-size:11px;margin:6px 0">
+            <input type="checkbox" id="reroll-exclude" checked>
+            bisherigen Gewinner ausschließen
+          </label>
+          <div class="btn-group">
+            <button class="btn btn-gold btn-sm" onclick="rerollConfirm()">ERSATZ JETZT ZIEHEN</button>
+            <button class="btn btn-sm" onclick="document.getElementById('reroll-form').style.display='none'">ABBRECHEN</button>
+          </div>
         </div>
       </div>
 
@@ -458,10 +472,19 @@
         <input type="number" id="iw-minwatch" min="0" max="6000" step="5" value="10">
         <div class="hint">Für Einsenden und Bewerten. 0 = aus — hält Vote-Bots draußen.</div>
       </div>
+      <!-- P6: Preise schon im Entwurf — werden beim Start automatisch angelegt. -->
+      <div class="iw-field" id="iw-f-prizes">
+        <label for="iw-prizes">Preise (eine Zeile je Preis: Titel | Sponsor | Einsatz-Ende in Minuten)</label>
+        <textarea id="iw-prizes" rows="3" maxlength="2000"
+                  placeholder="Game-Key | Sponsor XY | 60&#10;T-Shirt"></textarea>
+        <div class="hint">Sponsor und Minuten sind optional. Beim Start aus dem Entwurf werden die Preise angelegt und im Chat angesagt; weitere Preise gehen jederzeit über die Preis-Karte.</div>
+      </div>
 
       <div class="iw-sec">KANÄLE</div>
       <div class="iw-chips" id="iw-channels"></div>
       <div class="iw-field"><div class="hint">Auf welchen Kanälen dieses Giveaway läuft. Ohne Auswahl: alle Team-Kanäle.</div></div>
+      <!-- P6: Teilnehmer-Vorschau — wie viele Zuschauer die Bedingungen JETZT erfüllen würden. -->
+      <div class="iw-field"><div class="hint" id="iw-preflight" style="color:var(--gold,#f0a500)"></div></div>
 
       <div class="iw-err" id="iw-err"></div>
       <div class="iw-foot">

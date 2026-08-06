@@ -109,11 +109,22 @@ module.exports = {
   statusLine,
   winnerText,
 
+  // UI-Vertrag (P5): alles, was gemeinsame Oberflächen über diese Mechanik
+  // wissen müssen — Panel, Overlay, Claim, Archiv und Statusseite lesen NUR
+  // diese Deklaration statt auf Core-IDs zu verzweigen.
   display: {
+    css:        'core-ticketbuy',
+    icon:       '🎟',
+    unit:       'Lose',        // Gewichtseinheit in Anzeigen
+    winnerStat: 'stake',       // Bedeutung von winner_coins: Einsatz auf den Preis
+    drawKind:   'perPrize',    // Ziehung je Preis, gewichtet nach Einsatz
+    emptyPool:  'Keine Einsätze auf diesen Preis — niemand im Topf.',
     columns: [
       { key: 'stake',   label: 'Einsatz', mask: false },
       { key: 'balance', label: 'Guthaben', mask: false },
     ],
-    tiles: ['totalStakes', 'eligibleCount'],
+    // Kachel-IDs aus der Panel-Registry (STAT_TILES in giveaway-admin.js).
+    tiles: ['accountCount', 'stakeSum', 'freeBalance', 'setterCount'],
+    panelCard: 'ticketbuy',   // Rail-Karte card-ticketbuy + Preis-Loader
   },
 };

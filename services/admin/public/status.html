@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="robots" content="noindex, nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mein Giveaway-Status</title>
+<title>Meine Teilnahmen</title>
 <style>
   :root{
     --void:#04060a; --panel:#0a0e16; --sunk:#05080e;
@@ -81,6 +81,16 @@
   .foot a.hi{color:var(--cyan);border-color:rgba(0,212,255,.45)}
   .foot .note{font-size:11.5px;color:var(--mute);line-height:1.6;margin-top:14px}
   .foot .note b{color:var(--ink)}
+  /* P2: Instanz-Blöcke je Mechanik innerhalb der Team-Karte */
+  .gwsec{margin-top:14px;padding:12px 14px;background:var(--sunk);border:1px solid var(--edge);border-radius:9px}
+  .gwsec h3{font-family:var(--disp);font-size:13px;color:#eaf6fc;margin-bottom:6px}
+  .gwsec .row{font-size:12px;color:var(--mute);margin:3px 0;line-height:1.5}
+  .gwsec .row b{color:var(--ink)}
+  .gwsec .ok{color:var(--green)} .gwsec .warn{color:var(--gold)}
+  .gwsec table{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px}
+  .gwsec td,.gwsec th{padding:3px 6px;text-align:left;border-bottom:1px solid rgba(255,255,255,.05);color:var(--mute)}
+  .gwsec th{color:var(--faint);font-weight:400;text-transform:uppercase;font-size:9px;letter-spacing:1px}
+  .gwsec td b{color:var(--ink)}
   @media(max-width:520px){.grid{grid-template-columns:1fr 1fr}.stat.chance{grid-column:span 2}}
 </style>
 </head>
@@ -88,8 +98,8 @@
 <div class="wrap">
   <div class="head">
     <div class="kicker">Team Giveaway</div>
-    <h1>Mein Status</h1>
-    <div class="sub">Deine Zuschauzeit und Gewinnchance für alle Giveaways, an denen du teilnimmst.</div>
+    <h1>Meine Teilnahmen</h1>
+    <div class="sub">Dein Stand für alle Giveaways, an denen du teilnimmst — Kampagne, Sofortverlosung, Los-Giveaway und Screenshot-Contest.</div>
   </div>
   <div id="body"><div class="empty">lädt…</div></div>
 
@@ -99,7 +109,8 @@
     <h2>Deine Rechte</h2>
     <nav>
       <a class="hi" id="lk-mydata" href="/admin/meine-daten.html">Meine Daten — Auskunft &amp; Löschung</a>
-      <a href="/viewer/help">Anleitung: Wie entstehen Lose?</a>
+      <a href="/viewer/claim">Gewinn melden</a>
+      <a href="/viewer/help">Anleitung: So funktionieren die Giveaways</a>
     </nav>
 
     <h2 style="margin-top:16px">Rechtliches</h2>
@@ -173,12 +184,109 @@
       + '</div>'
       + '<div class="prog '+progCls+'"><i style="width:'+pct+'%"></i></div>'
       + (hint?'<div class="hint">'+esc(hint)+'</div>':'')
+      + (t.registered && t.open
+          ? '<div class="hint" style="border-left-color:rgba(255,84,104,.5)">Du willst nicht mehr teilnehmen? '
+            + '<a class="tlink" style="margin-top:0" href="#" onclick="withdraw(\''+esc(t.teamId)+'\',null);return false;">Teilnahme zurückziehen</a>'
+            + ' — deine Anmeldung wird entfernt, Zuschauzeit bleibt gemessen.</div>'
+          : '')
+      + (t.giveaways||[]).map(function(g){ return gwSection(g, t.teamId); }).join('')
+      + creditSection(t)
+      + contestHistorySection(t)
       + '<a class="tlink" href="/viewer/terms?team='+encodeURIComponent(t.teamId)+'" target="_blank" '
       + 'rel="noopener">Teilnahmebedingungen &amp; Impressum von '+esc(t.name)+' ↗</a>'
       + '</div>';
   }
 
+  // ── P2: Instanz-Blöcke je Mechanik ──────────────────────
+  function gwSection(g, teamId){
+    var head = '<h3>'+esc(g.icon||'🎁')+' '+esc(g.label||g.core)
+      + (g.name?' „'+esc(g.name)+'"':'')+(g.paused?' <span class="warn">⏸ pausiert</span>':'')+'</h3>';
+    var rows = '';
+    if(g.instant){
+      var i = g.instant;
+      rows += '<div class="row">Anmeldefenster: <b>'+(i.windowOpen?'OFFEN'+(i.windowEndsIn!=null?' (noch '+i.windowEndsIn+'s)':''):'geschlossen')+'</b>'
+        + (g.keyword&&i.windowOpen&&!i.registered?' — schreib „'+esc(g.keyword)+'" im Chat!':'')+'</div>';
+      rows += '<div class="row">Du: '+(i.registered?'<span class="ok">angemeldet ✓</span>':'nicht angemeldet')
+        + ' · '+(i.present?'<span class="ok">anwesend ✓</span>':'nicht als anwesend erkannt')
+        + (i.eligible?' · <span class="ok">im Topf ✅</span>':'')+'</div>';
+      rows += '<div class="row">Alle im Topf haben <b>dieselbe Gewinnchance</b> — Zuschauzeit zählt hier nicht. Anwesenheit zählt auch im Moment der Ziehung.</div>';
+      if(i.registered){
+        rows += '<div class="row"><a class="tlink" style="margin-top:0" href="#" '
+          + 'onclick="withdraw(\''+esc(teamId)+'\',\''+esc(g.gid)+'\');return false;">Anmeldung zurückziehen</a></div>';
+      }
+    }
+    if(g.ticketBuy){
+      var tb = g.ticketBuy;
+      rows += '<div class="row">Dein Los-Guthaben: <b>'+Number(tb.balance||0).toFixed(2)+' Lose</b>'
+        + ' · <a class="tlink" style="margin-top:0" href="/viewer/wager">Lose setzen ↗</a></div>';
+      if((tb.prizes||[]).length){
+        rows += '<table><tr><th>Preis</th><th>Status</th><th>Dein Einsatz</th><th>Gesamt</th></tr>'
+          + tb.prizes.map(function(p){
+              var st = p.status==='open' ? 'offen' : (p.status==='drawn' ? 'GEZOGEN' : 'storniert (zurückgebucht)');
+              return '<tr><td><b>#'+p.id+' '+esc(p.title)+'</b></td><td>'+st+'</td>'
+                + '<td>'+(Number(p.myStake)||0).toFixed(0)+'</td><td>'+(Number(p.totalStake)||0).toFixed(0)+'</td></tr>';
+            }).join('')+'</table>';
+      }
+      rows += '<div class="row">Ziehung je Preis, gewichtet nach Einsatz. Guthaben bleibt dir team-weit erhalten; Verfall nach 12 Monaten ohne Bewegung.</div>';
+    }
+    if(g.contest){
+      var c = g.contest;
+      rows += '<div class="row">Voting: <b>'+({open:'OFFEN',paused:'pausiert',closed:'geschlossen'}[c.voting]||c.voting)+'</b>'
+        + ' · deine abgegebenen Stimmen: <b>'+(c.myVotes||0)+'</b>'
+        + ' · <a class="tlink" style="margin-top:0" href="/viewer/contest">Zum Contest ↗</a></div>';
+      if(c.myEntry){
+        var st = {pending:'wartet auf Freigabe',approved:'freigegeben',rejected:'abgelehnt'}[c.myEntry.status]||c.myEntry.status;
+        rows += '<div class="row">Deine Einsendung „'+esc(c.myEntry.title||'ohne Titel')+'": <b>'+st+'</b>'
+          + (c.myEntry.status==='approved' ? ' · '+c.myEntry.score+' Punkte aus '+c.myEntry.votes+' Stimmen'
+              + (c.myEntry.rank?' · Rang '+c.myEntry.rank:'') : '')+'</div>';
+      } else {
+        rows += '<div class="row">Du hast noch nichts eingesendet.</div>';
+      }
+      rows += '<div class="row">Es gewinnt die höchste Punktsumme — gelost wird nur bei Gleichstand.</div>';
+    }
+    return '<div class="gwsec">'+head+rows+'</div>';
+  }
+
+  // Guthaben-Journal: verständliche Historie auch ohne laufendes Los-Giveaway.
+  var CREDIT_LABEL = { earn:'Gutschrift aus Zuschauzeit', wager:'Einsatz', refund:'Rücknahme/Erstattung',
+                       admin:'Korrektur durch Veranstalter', expire:'Verfall (Inaktivität)', erase:'Konto-Löschung' };
+  function creditSection(t){
+    if(!t.credit) return '';
+    var rows = (t.credit.statement||[]).map(function(e){
+      var when = e.created_at ? new Date(e.created_at).toLocaleDateString('de-DE') : '';
+      var amt = Number(e.amount)||0;
+      return '<tr><td>'+when+'</td><td>'+esc(CREDIT_LABEL[e.entry_type]||e.entry_type)+'</td>'
+        + '<td style="text-align:right"><b>'+(amt>0?'+':'')+amt.toFixed(2)+'</b></td></tr>';
+    }).join('');
+    return '<div class="gwsec"><h3>🎟 Los-Guthaben: '+Number(t.credit.balance||0).toFixed(2)+' Lose</h3>'
+      + (rows?'<table><tr><th>Datum</th><th>Vorgang</th><th style="text-align:right">Lose</th></tr>'+rows+'</table>':'')
+      + '</div>';
+  }
+
+  function contestHistorySection(t){
+    var past = (t.contestHistory||[]).filter(function(h){ return h.closed_at; });
+    if(!past.length) return '';
+    var rows = past.map(function(h){
+      var st = {pending:'nicht freigegeben',approved:'freigegeben',rejected:'abgelehnt'}[h.status]||h.status;
+      return '<div class="row">„'+esc(h.title||'ohne Titel')+'" ('+new Date(h.created_at).toLocaleDateString('de-DE')+'): '
+        + st+' · '+h.score+' Punkte aus '+h.votes+' Stimmen'
+        + (h.image_token?' · <a class="tlink" style="margin-top:0" href="/giveaway/api/contest/image/'+esc(h.image_token)+'" target="_blank" rel="noopener">Bild ansehen ↗</a>':'')
+        + '</div>';
+    }).join('');
+    return '<div class="gwsec"><h3>📸 Deine früheren Contest-Einsendungen</h3>'+rows+'</div>';
+  }
+
   function logout(){ fetch('/admin/auth/logout',{method:'POST'}).catch(function(){}).then(function(){ loginView(); }); }
+
+  // P6: Teilnahme zurückziehen (Kampagne: gid=null; Sofortverlosung: gid).
+  function withdraw(teamId, gid){
+    if(!confirm('Teilnahme wirklich zurückziehen? Deine Anmeldung wird entfernt — ohne erneutes Keyword bist du nicht mehr im Lostopf.')) return;
+    fetch('/giveaway/api/participation/withdraw',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({team:teamId,giveawayId:gid||undefined})})
+      .then(function(r){return r.json();})
+      .then(function(j){ if(j.error){ alert('Nicht möglich: '+j.error); return; } location.reload(); })
+      .catch(function(e){ alert(e.message); });
+  }
 
   (async function(){
     try{

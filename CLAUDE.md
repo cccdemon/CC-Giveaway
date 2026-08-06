@@ -71,6 +71,21 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
   Beides in der Eröffnungs-Ansage (`prizeLine()`) und als Default im
   Ziehungssatz (`gw_draw_winner` liest sessions/giveaway_prizes, wenn kein
   expliziter prize-Text kommt).
+- **CORE-UI-Vertrag (`display`):** jeder Core deklariert
+  `{css, icon, unit, winnerStat, drawKind, emptyPool, columns, tiles, panelCard}`.
+  Gemeinsame Oberflächen lesen NUR daraus: Panel (`gw_data.coreMeta`,
+  `gw_list_giveaways` → `coreLabel/coreIcon/coreCss/coreUnit/drawKind/corePanelCard`),
+  Ziehungs-Payloads (`winner_drawn`/`gw_overlay` mit `unit/drawKind/votes`,
+  `no_winner.message`), `GET draws`/`claim/mine` (unit/drawKind je Zeile),
+  Archiv (`coreMeta` im Dossier). Statistik-Kacheln: `display.tiles` = IDs aus
+  der Registry `STAT_TILES` (giveaway-admin.js, Berechnung genau einmal dort);
+  Rail-Karten: `display.panelCard` → `PANEL_CARD_LOADERS` + CSS-Matrix über
+  `display.css`. Neuer Core = display ausfüllen; nur eine NEUE Kachel/Karte
+  braucht je einen Registry-Eintrag (+ HTML/CSS der Karte).
+- **Teilnehmer-Vorschau:** `gw_preflight` (read-only, AUDIT_SKIP/MEMBER_CMDS)
+  → Engine `previewEligible(teamId, {core, channels, minWatchSec})`: Kampagne
+  = Follows+≥1 Coin, CV = Präsenz jetzt, TicketBuy = Ledger-Saldo>0, Contest
+  = Follow+minWatch. Anzeige im Start-Modal (`iw-preflight`).
 - **Panel-Konventionen:** Instanz-Start über das Modal (`iw-*`,
   Typ-Karten + Kanal-Chips), Instanz-Steuerung als Rail-Karten
   (`card-instant`/`card-ticketbuy`/`card-contest` — Sichtbarkeits-Matrix per
@@ -134,7 +149,9 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 `GET participants` · `GET user/:u` · `GET sessions` · `GET leaderboard` · `GET draws` (`?session=`,`?full=1`,`?limit=`) · `GET ws/clients`
 `GET audit` (Filter + Verdichtung + `before`-Cursor) · `GET audit/stats` · `GET audit/archive` (tar.gz)
 `GET archive` (Sitzungsliste) · `GET archive/:sid` (Dossier) · `GET archive/:sid/export` (tar.gz, Owner)
-`GET claim/mine` · `POST claim` (nur der eingeloggte Gewinner)
+`GET claim/mine` · `POST claim` (nur der eingeloggte Gewinner; Korrektur nur solange `handling IS NULL`, Fassung = `sessions.terms_version`)
+`POST participation/withdraw` (Kampagne/Sofortverlosung: Opt-in selbst zurückziehen; TicketBuy/Contest haben eigene Rücknahme-Pfade)
+`GET my-status` (CORE-übergreifend: Kampagnen-Stand + aktive Instanzen + Los-Guthaben/Journal + Contest-Historie — Seite „Meine Teilnahmen")
 `GET claims` (`?team=`, nur Owner — Inbox mit Kontaktdaten, Zugriff auditiert) · `POST claims/handling` (contacted/shipped/done) · `POST claims/external` (Owner erfasst Meldung außerhalb der Plattform — `claim_source='external'`, keine Kontaktdaten) · `POST claims/purge` (Kontaktfelder sofort löschen, Nachweis bleibt)
 `POST contest/withdraw` (Einsender zieht eigene Einsendung zurück — Bild weg, Stimmen CASCADE; nur solange Instanz offen)
 `GET wager/state` · `POST wager` (nur der eingeloggte Zuschauer; auditiert `wager_set`/`wager_retract`)
@@ -142,7 +159,7 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 `GET contest/state` · `POST contest/entry` (Base64, PNG/JPG max 7 MB, auditiert) · `POST contest/vote` (Rate-Limit) · `GET contest/image/:token`
 
 ## Admin WS `gw_cmd` (`{event:'gw_cmd',cmd,...}`)
-`gw_open`(+keyword) · `gw_close` · `gw_draw_winner`(+`giveawayId`,+`prizeId` bei TicketBuy) · `gw_set_keyword` · `gw_get_keyword` · `gw_add_ticket`(user,amount) · `gw_sub_ticket` · `gw_ban`/`gw_unban` · `gw_reset`
+`gw_open`(+keyword) · `gw_close` · `gw_draw_winner`(+`giveawayId`,+`prizeId` bei TicketBuy; Ersatzziehung: +`rerollOf`,`reason`,`excludeWinner` → verknüpft via `giveaway_draws.reroll_of/reroll_reason`, alter Claim wird `replaced`) · `gw_set_keyword` · `gw_get_keyword` · `gw_add_ticket`(user,amount) · `gw_sub_ticket` · `gw_ban`/`gw_unban` · `gw_reset`
 `gw_pause`/`gw_resume`/`gw_set_multiplier` (optional `giveawayId` → wirkt auf die Instanz)
 `gw_open_instance`(keyword, channels, core, windowSec, wagerCmd, announce) · `gw_close_instance` · `gw_list_giveaways` · `gw_set_announce`(giveawayId, on — CV-Chat-Ansagen stumm/laut, Gewinner-Ansage bleibt immer)
 `gw_add_prize`(giveawayId, title, wagerEndMinutes) · `gw_list_prizes` · `gw_set_wager_cmd`(giveawayId, command) · `gw_edit_prize`(prizeId, title/sponsor/description/wagerEndMinutes — nur offene) · `gw_cancel_prize`(prizeId — storniert + bucht alle Einsätze zurück)
@@ -150,7 +167,7 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 
 ## Data
 - **Redis:** team-weit `t:<team>:…` (open/paused, keyword, session id, banned, users, Presence/LastTick, Follows, chIndex, cfg:* = **Vorgaben**, Abuse) + **je Giveaway** `t:<team>:g:<sid>:…` (watch/msgs/chat_ts je Kanal, registered, mult, open/paused/keyword/channels/core/win_end/wager_cmd/name/announce der Instanz + `cfg:*`-Kopie der Regeln, Copy-on-Open) + `t:<team>:giveaways` (Set aktiver Instanzen). Legacy-Keys werden beim ersten Zugriff ins Primary migriert (genau eine Quelle je Wert). `resetGiveaway`/`cleanupGiveawayInstance` räumen beide Namespaces.
-- **PostgreSQL:** `sessions`, `users`, `session_participants`, `watchtime_events`, `campaign_participation`, `abuse_flags`, `teams`, `team_members`, `streamers`, `terms_versions` (Teilnahmebedingungen pro Team), `tos_acceptances` (Zustimmung Nutzungsbedingungen, append-only), `app_secrets` (verschlüsselt), `giveaway_draws` (voller Draw-Audit, + `core`/`prize_id`), `draw_claims` (Gewinnermeldung — **einzige Klardaten im System**: Name/E-Mail/Anschrift, 12 Monate), `audit_log` (append-only: jede zustandsändernde Admin-/System-Aktion mit Actor, IP, Ziel, Vorher/Nachher; auch `denied`/`error`), `credit_ledger` (Guthaben-Journal, append-only, nur Gegenbuchungen — nie DELETE; Verfall 12 Monate Inaktivität), `giveaway_prizes` + `prize_wagers` (Preise/Einsätze, append-only; personenbezogen → DSGVO-Pfade), `contest_entries` (Bild als BYTEA; Löschung entfernt das Bild) + `contest_votes` (bei Löschung pseudonymisiert), `sessions.core/core_config/status` (sessions = Giveaway-Instanz). Schema: **`ensureSchema()` beim Start ist die Quelle der Wahrheit.** `postgres/init.sql`
+- **PostgreSQL:** `sessions`, `users`, `session_participants`, `watchtime_events`, `campaign_participation`, `abuse_flags`, `teams`, `team_members`, `streamers`, `terms_versions` (Teilnahmebedingungen pro Team), `tos_acceptances` (Zustimmung Nutzungsbedingungen, append-only), `app_secrets` (verschlüsselt), `giveaway_draws` (voller Draw-Audit, + `core`/`prize_id`), `draw_claims` (Gewinnermeldung — **einzige Klardaten im System**: Name/E-Mail/Anschrift, 12 Monate), `audit_log` (append-only: jede zustandsändernde Admin-/System-Aktion mit Actor, IP, Ziel, Vorher/Nachher; auch `denied`/`error`), `credit_ledger` (Guthaben-Journal, append-only, nur Gegenbuchungen — nie DELETE; Verfall 12 Monate Inaktivität), `giveaway_prizes` + `prize_wagers` (Preise/Einsätze, append-only; personenbezogen → DSGVO-Pfade), `contest_entries` (Bild als BYTEA; Löschung entfernt das Bild) + `contest_votes` (bei Löschung pseudonymisiert), `sessions.core/core_config/status/terms_version` (sessions = Giveaway-Instanz; `terms_version` = beim Start eingefrorene Bedingungen-Fassung, 0 = Vorlage ohne Snapshot — `snapshotTermsVersion()` legt beim ersten Start eines Teams v1 über den admin-Service an), `participation_consents` (append-only Kenntnisnahme je (Session, Nutzer, Aktion): register/wager/contest_entry/contest_vote mit Fassung + Quelle; Engine `recordConsent()`, DSGVO-Pfade pseudonymisieren). Schema: **`ensureSchema()` beim Start ist die Quelle der Wahrheit.** `postgres/init.sql`
 (nur bei frischem Volume) legt lediglich `users`, `sessions`, `session_participants`,
 `watchtime_events`, `campaign_participation`, `debug_log`, `giveaway_draws` an — alles
 Team-/Auth-/Compliance-bezogene (`teams`, `team_members`, `streamers`, `terms_versions`,

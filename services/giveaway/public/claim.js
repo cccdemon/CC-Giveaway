@@ -52,9 +52,15 @@ function card(c, i) {
   var cls     = done ? 'done' : (expired ? 'expired' : '');
   var left    = daysLeft(c.deadline_at);
 
+  // P4: Gewichtstext je Mechanik (Server liefert unit/drawKind je Claim).
+  var statTxt;
+  if (c.drawKind === 'equal')         statTxt = 'Sofortverlosung (gleiche Chance)';
+  else if (c.drawKind === 'score')    statTxt = Number(c.winner_coins || 0).toFixed(0) + ' Punkte im Voting';
+  else if (c.drawKind === 'perPrize') statTxt = Number(c.winner_coins || 0).toFixed(0) + ' ' + (c.unit || 'Lose') + ' gesetzt';
+  else                                statTxt = Number(c.winner_coins || 0).toFixed(2) + ' ' + (c.unit || 'Punkte');
   var head = '<h3>' + esc(c.team_name || c.team_id) + (c.prize ? ' — ' + esc(c.prize) : '') + '</h3>'
     + '<div class="cl-meta">Gezogen am ' + fmtDate(c.drawn_at)
-    + ' · ' + Number(c.winner_coins || 0).toFixed(2) + ' Punkte'
+    + ' · ' + statTxt
     + ' · Meldefrist bis <span class="cl-deadline' + (expired ? ' over' : '') + '">'
     + fmtDate(c.deadline_at) + (done || expired ? '' : ' (noch ' + left + ' Tage)') + '</span></div>';
 
@@ -66,6 +72,11 @@ function card(c, i) {
       + (c.city ? ' · ' + esc([c.zip, c.city, c.country].filter(Boolean).join(' ')) : '')
       + '<br>Automatische Löschung dieser Kontaktdaten: ' + fmtDate(c.purge_at) + '</div>'
     + '</div>';
+  }
+  if (c.status === 'replaced') {
+    return '<div class="cl-card expired">' + head
+      + '<div class="cl-msg err">Für diese Ziehung wurde ein Ersatzgewinner gezogen — '
+      + 'dieser Gewinn kann nicht mehr gemeldet werden.</div></div>';
   }
   if (expired) {
     return '<div class="cl-card expired">' + head

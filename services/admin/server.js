@@ -810,7 +810,7 @@ async function auditGdpr(actor, action, target, result, detail) {
 // Alles, was zu einer Person gespeichert ist - Grundlage fuer Art. 15 DSGVO.
 async function collectSubjectData(u) {
   const q = (sql, p) => pg.query(sql, p).then(r => r.rows).catch(() => []);
-  const [user, events, participation, flags, audit, draws, teams, tos, claims, creditRows, wagerRows, contestEntries, contestVotes] = await Promise.all([
+  const [user, events, participation, flags, audit, draws, teams, tos, claims, creditRows, wagerRows, contestEntries, contestVotes, consents] = await Promise.all([
     q('SELECT username, display, last_seen FROM users WHERE username=$1', [u]),
     q(`SELECT team_id, channel, event_type, count(*)::int AS n, min(ts) AS first, max(ts) AS last,
               sum(delta_sec)::int AS total_sec
@@ -843,17 +843,22 @@ async function collectSubjectData(u) {
        FROM contest_entries WHERE username=$1 ORDER BY created_at DESC`, [u]),
     q(`SELECT team_id, session_id, entry_id, score, created_at
        FROM contest_votes WHERE voter=$1 ORDER BY created_at DESC LIMIT 500`, [u]),
+    // P1c: protokollierte Kenntnisnahmen der Teilnahmebedingungen.
+    q(`SELECT team_id, session_id, core, action, terms_version, source, created_at
+       FROM participation_consents WHERE username=$1 ORDER BY created_at DESC LIMIT 500`, [u]),
   ]);
   return {
     username: u,
     found: !!(user.length || events.length || participation.length || audit.length
               || draws.length || tos.length || claims.length || creditRows.length
-              || wagerRows.length || contestEntries.length || contestVotes.length),
+              || wagerRows.length || contestEntries.length || contestVotes.length
+              || consents.length),
     user: user[0] || null, teams: teams.map(t => t.team_id),
     watchtimeEvents: events, participation, abuseFlags: flags,
     auditEntries: audit, draws, tosAcceptances: tos, winnerClaims: claims,
     creditLedger: creditRows, prizeWagers: wagerRows,
     contestEntries, contestVotes,
+    participationConsents: consents,
   };
 }
 
@@ -920,6 +925,10 @@ async function eraseSubject(u, actor, action) {
       done.contest_entries_geloescht = ce.rowCount;
       const cv = await client.query('UPDATE contest_votes SET voter=$2 WHERE voter=$1', [u, pseudo]);
       done.contest_votes_pseudonymisiert = cv.rowCount;
+      // Kenntnisnahme-Protokoll: Nachweis, dass die Teilnahme mit Zustimmung
+      // lief → pseudonymisieren statt löschen (Art. 17 Abs. 3 lit. e DSGVO).
+      const pc = await client.query('UPDATE participation_consents SET username=$2 WHERE username=$1', [u, pseudo]);
+      done.participation_consents_pseudonymisiert = pc.rowCount;
     } catch (e) { done.credit_ledger = 'Fehler: ' + e.message; }
     const dr = await client.query('UPDATE giveaway_draws SET winner=$2 WHERE winner=$1', [u, pseudo]);
     done.giveaway_draws_pseudonymisiert = dr.rowCount;
@@ -1121,11 +1130,25 @@ app.get('/pub/team/:id', async (req, res) => {
     const hist = await pg.query(
       `SELECT version, note, sections, created_at FROM terms_versions
        WHERE team_id=$1 ORDER BY version DESC LIMIT 20`, [id]);
-    res.json({ id, name: t.rows[0].name, terms: t.rows[0].terms || TERMS_TEMPLATE,
+    // ?version=N liefert genau diese historische Fassung — so bleibt fuer
+    // jede Session nachweisbar, welcher Text galt (sessions.terms_version).
+    const vReq = parseInt(req.query.version, 10);
+    let terms = t.rows[0].terms || TERMS_TEMPLATE;
+    let historical = null;
+    if (Number.isFinite(vReq) && vReq > 0) {
+      const hv = await pg.query(
+        `SELECT version, terms, created_at FROM terms_versions WHERE team_id=$1 AND version=$2`, [id, vReq]);
+      if (!hv.rowCount) return res.status(404).json({ error: 'version_not_found' });
+      terms = hv.rows[0].terms;
+      historical = { version: hv.rows[0].version, createdAt: hv.rows[0].created_at,
+                     isCurrent: hist.rows[0] ? hist.rows[0].version === hv.rows[0].version : false };
+    }
+    res.json({ id, name: t.rows[0].name, terms,
                imprint: t.rows[0].imprint || '', imprintUrl: t.rows[0].imprint_url || '',
-               isDefault: !t.rows[0].terms, channels: mem.rows.map(r => r.channel),
+               isDefault: !t.rows[0].terms && !historical, channels: mem.rows.map(r => r.channel),
                version: hist.rows[0] ? hist.rows[0].version : 0,
                updatedAt: hist.rows[0] ? hist.rows[0].created_at : null,
+               historical,
                history: hist.rows });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

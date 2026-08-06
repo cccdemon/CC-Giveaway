@@ -59,6 +59,10 @@ sind fremde Inhalte. Eine Verpflichtung zur Überwachung übermittelter oder
 gespeicherter fremder Informationen besteht nicht. Wird eine konkrete
 Rechtsverletzung bekannt, werden die betreffenden Inhalte umgehend entfernt.
 
+## Hinweis zu KI-erstellten Inhalten
+
+Teile der Grafiken und Overlays wurden KI-gestützt erstellt.
+
 ## Haftung für Links
 
 Diese Seite enthält Links zu externen Websites, auf deren Inhalte kein Einfluss

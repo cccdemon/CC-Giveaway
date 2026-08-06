@@ -25,6 +25,7 @@ let gwPaused     = false;
 // Spalten je Mechanik: Instanz-Cores liefern in gw_data ihre Spalten
 // (CORE.display.columns); null = Standard-Layout der Kampagne.
 let gwCore        = null;
+let gwCoreMeta    = null;   // P5: Anzeige-Vertrag des gewählten Cores (unit, drawKind, …)
 let gwDisplayCols = null;
 // Streamermodus: Zuschauernamen + Ingest-Tokens werden maskiert, damit das Panel
 // live gezeigt werden kann. Nur Anzeige — COPY kopiert weiterhin den echten Wert.
@@ -37,6 +38,7 @@ let gwWs         = null;
 let gwWsRetry    = 1000;
 let gwWsReconnectTimer = null;
 let lastWinner   = null;
+let lastDraw     = null;   // P6: {drawId, prizeId, giveawayId} der letzten Ziehung — Basis der Ersatzziehung
 let historyDraws = [];
 
 function esc(s) {
@@ -145,21 +147,39 @@ function onGiveawayChange() {
 // Typ-spezifische Buttons nur bei passender Instanz-Auswahl zeigen —
 // und das Layout dem Core anpassen (CSS-Matrix im <style> der Seite):
 // nur die Felder sichtbar, die für DIESES Giveaway gelten.
+// P5: Label/Icon/CSS kommen aus dem Core-Vertrag über gw_list_giveaways
+// (g.coreLabel/coreIcon/coreCss); die Tabellen hier sind nur noch Fallback
+// für Antworten alter Serverstände.
 var CORE_CSS = { CORE_CurrentViewers: 'core-instant', CORE_TicketBuy: 'core-ticketbuy',
                  CORE_ScreenshotContest: 'core-contest', CORE_WatchtimeChatActivity: 'core-watchtime' };
 function selectedCore() {
   var g = giveawayList.find(function(x){ return x.gid === currentGiveaway; });
   return g ? g.core : null;   // null = Kampagne
 }
+function selectedGiveaway() {
+  return giveawayList.find(function(x){ return x.gid === currentGiveaway; }) || null;
+}
+// P5: Rail-Karten-Loader je panelCard aus dem Core-Vertrag — neuer Core
+// deklariert display.panelCard und (falls die Karte Daten lädt) einen
+// Eintrag hier; updateTicketBuyButtons verzweigt nicht mehr auf Core-IDs.
+var PANEL_CARD_LOADERS = {
+  ticketbuy: function(){ tbLoadPrizes(); },
+  contest:   function(){ scLoadEntries(); },
+  instant:   null,   // card-instant lebt allein von gw_data/Fenster-Acks
+};
+var PANEL_CARD_FALLBACK = { CORE_TicketBuy: 'ticketbuy', CORE_ScreenshotContest: 'contest',
+                            CORE_CurrentViewers: 'instant' };
 function updateTicketBuyButtons() {
   var core = selectedCore();
+  var g = selectedGiveaway();
   var app = document.querySelector('.gw-app');
   if (app) {
-    app.className = 'gw-app' + (currentGiveaway ? ' core-inst ' + (CORE_CSS[core] || '') : '');
+    app.className = 'gw-app' + (currentGiveaway
+      ? ' core-inst ' + ((g && g.coreCss) || CORE_CSS[core] || '') : '');
   }
-  // Typ-Karten in der Rail mit Daten füllen
-  if (core === 'CORE_TicketBuy') tbLoadPrizes();
-  if (core === 'CORE_ScreenshotContest') scLoadEntries();
+  // Typ-Karte in der Rail mit Daten füllen (panelCard aus dem Core-Vertrag)
+  var card = g && g.corePanelCard !== undefined ? g.corePanelCard : PANEL_CARD_FALLBACK[core];
+  if (card && PANEL_CARD_LOADERS[card]) PANEL_CARD_LOADERS[card]();
   updateActionButtons();
 }
 
@@ -171,7 +191,7 @@ var CORE_LABEL = { CORE_CurrentViewers: 'Sofortverlosung', CORE_TicketBuy: 'Los-
 function instanceLabel(gid) {
   var g = giveawayList.find(function(x){ return x.gid === gid; });
   if (!g) return gid;
-  return (CORE_LABEL[g.core] || 'Zusatz-Giveaway')
+  return (g.coreLabel || CORE_LABEL[g.core] || 'Zusatz-Giveaway')
     + (g.name ? ' „' + g.name + '"' : '')
     + ' (' + String(gid).replace(/^sess_/, '#') + ')';
 }
@@ -433,7 +453,7 @@ function renderGiveawaySelect() {
     if (g.participants !== undefined && g.participants !== null) meta.push(g.participants + ' TN');
     var start = fmtGwStart(g.startedAt);
     if (start) meta.push('seit ' + start);
-    var label = (CORE_ICON[g.core] || '')
+    var label = (g.coreIcon ? g.coreIcon + ' ' : (CORE_ICON[g.core] || ''))
               + (g.name ? g.name + ' ' : (g.keyword ? '„' + g.keyword + '" ' : ''))
               + g.gid.replace(/^sess_/, '#')
               + (meta.length ? ' (' + meta.join(' · ') + ')' : '')
@@ -478,6 +498,9 @@ function openInstance() {
   chips.innerHTML = (gwChannels || []).map(function(ch){
     return '<label class="iw-chip"><input type="checkbox" value="' + esc(ch) + '">' + esc(ch) + '</label>';
   }).join('') || '<span class="hint">Kanäle laden … (Team-Kanäle erscheinen nach dem ersten Datenabruf)</span>';
+  // Kanalauswahl ändert die Teilnehmer-Vorschau → neu rechnen.
+  Array.prototype.forEach.call(chips.querySelectorAll('input'), function(cb){ cb.onchange = iwPreflight; });
+  var pf = document.getElementById('iw-preflight'); if (pf) pf.textContent = '';
   document.getElementById('iw-overlay').style.display = 'flex';
 }
 
@@ -500,6 +523,8 @@ function iwSelect(type) {
   document.getElementById('iw-f-announce').style.display = f.window   ? '' : 'none';   // nur Sofortverlosung
   document.getElementById('iw-f-wagercmd').style.display = f.wagercmd ? '' : 'none';
   document.getElementById('iw-f-minwatch').style.display = f.minwatch ? '' : 'none';
+  var fp = document.getElementById('iw-f-prizes');
+  if (fp) fp.style.display = type === 'ticketbuy' ? '' : 'none';   // P6: Preise im Entwurf
   if (f.keyword) {
     document.getElementById('iw-keyword-label').textContent = type === 'instant' ? 'Keyword (Pflicht)' : 'Keyword (optional)';
     document.getElementById('iw-keyword-hint').textContent = type === 'instant'
@@ -510,6 +535,34 @@ function iwSelect(type) {
   document.getElementById('iw-fields').style.display = '';
   var first = f.keyword ? 'iw-keyword' : f.wagercmd ? 'iw-wagercmd' : 'iw-minwatch';
   var el = document.getElementById(first); if (el) el.focus();
+  iwPreflight();   // P6: Teilnehmer-Vorschau für den gewählten Typ
+}
+
+// P6: Teilnehmer-Vorschau — Server zählt, wer die Bedingungen der gewählten
+// Mechanik JETZT erfüllen würde (Antwort: gw_ack type=preflight).
+function iwPreflight() {
+  if (!iwType) return;
+  var el = document.getElementById('iw-preflight');
+  if (el) el.textContent = 'Prüfe Teilnehmer-Vorschau …';
+  var t = IW_TYPES[iwType];
+  var picked = Array.prototype.slice.call(document.querySelectorAll('#iw-channels input:checked')).map(function(c){ return c.value; });
+  var msg = { event: 'gw_cmd', cmd: 'gw_preflight',
+              core: t.core || 'CORE_WatchtimeChatActivity' };
+  if (picked.length) msg.channels = picked;
+  if (t.fields.minwatch) msg.minWatchSec = CC.validate.sanitizeInt(document.getElementById('iw-minwatch').value, 0, 6000, 10) * 60;
+  send(msg);
+}
+function renderPreflight(msg) {
+  var el = document.getElementById('iw-preflight');
+  if (!el || document.getElementById('iw-overlay').style.display === 'none') return;
+  var n = msg.count || 0;
+  var txt = { present:  n + ' Zuschauer sind gerade anwesend und könnten sich anmelden.',
+              credit:   n + ' Zuschauer haben Los-Guthaben (> 0) und könnten sofort setzen.',
+              contest:  n + ' Zuschauer erfüllen Follow + Mindest-Zuschauzeit fürs Einsenden schon jetzt.',
+              campaign: n + ' Zuschauer erfüllen Follows (≥' + (msg.followMin != null ? msg.followMin : '?')
+                          + ') + Mindest-Viewtime schon jetzt (Anmeldung per Keyword kommt noch dazu).' };
+  el.innerHTML = '👥 ' + esc(txt[msg.basis] || (n + ' Zuschauer würden die Bedingungen erfüllen.'))
+    + ' <a href="#" onclick="iwPreflight();return false;" style="color:inherit">neu prüfen</a>';
 }
 
 // Formularstand einsammeln + validieren — gemeinsame Basis für „starten"
@@ -547,6 +600,19 @@ function iwCollect() {
   }
   if (t.fields.wagercmd) payload.wagerCmd  = (document.getElementById('iw-wagercmd').value.trim() || '!setzen').toLowerCase();
   if (t.fields.minwatch) payload.minWatchSec = CC.validate.sanitizeInt(document.getElementById('iw-minwatch').value, 0, 6000, 10) * 60;
+  // P6: Preise (nur Los-Giveaway) — "Titel | Sponsor | Einsatz-Ende (min)".
+  if (iwType === 'ticketbuy') {
+    var pEl = document.getElementById('iw-prizes');
+    var lines = pEl ? pEl.value.split('\n') : [];
+    var prizes = [];
+    lines.forEach(function(line){
+      var parts = line.split('|').map(function(x){ return x.trim(); });
+      if (!parts[0]) return;
+      prizes.push({ title: parts[0].slice(0, 100), sponsor: (parts[1] || '').slice(0, 100),
+                    wagerEndMinutes: Math.max(0, parseInt(parts[2], 10) || 0) });
+    });
+    if (prizes.length) payload.prizes = prizes.slice(0, 20);
+  }
 
   var picked = Array.prototype.slice.call(document.querySelectorAll('#iw-channels input:checked')).map(function(c){ return c.value; });
   if (picked.length) payload.channels = picked;
@@ -628,6 +694,9 @@ function draftEdit(id) {
   set('iw-window', c.windowSec ? Math.round(c.windowSec / 60 * 10) / 10 : 1);
   set('iw-wagercmd', c.wagerCmd || '');
   set('iw-minwatch', c.minWatchSec ? Math.round(c.minWatchSec / 60) : 10);
+  set('iw-prizes', Array.isArray(c.prizes) ? c.prizes.map(function(p){
+    return [p.title, p.sponsor || '', p.wagerEndMinutes || ''].join(' | ').replace(/(\s\|\s)+$/, '');
+  }).join('\n') : '');
   var ann = document.getElementById('iw-announce'); if (ann) ann.checked = c.announce !== false;
   Array.prototype.forEach.call(document.querySelectorAll('#iw-channels input'), function(cb){
     cb.checked = Array.isArray(c.channels) && c.channels.indexOf(cb.value) >= 0;
@@ -823,6 +892,7 @@ function handle(msg) {
       gwIsOpen = !!msg.open;
       gwPaused = !!msg.paused;
       gwCore = msg.core || null;
+      gwCoreMeta = msg.coreMeta || null;   // P5: kompletter Anzeige-Vertrag des Cores
       gwDisplayCols = (Array.isArray(msg.display) && msg.display.length) ? msg.display : null;
       if (Array.isArray(msg.channels)) gwChannels = msg.channels;
       (msg.participants || []).forEach(p => {
@@ -860,9 +930,18 @@ function handle(msg) {
 
     case 'gw_ack': {
       log(`ACK: ${msg.type} -> ${msg.user || msg.keyword || msg.winner || msg.channel || ''}`, 'cyan');
+      // P6: Startwarnungen (blockieren nicht, sollen aber auffallen).
+      if (msg.warnings && msg.warnings.length) {
+        var WARN_TXT = {
+          terms_default: 'Hinweis: Es gilt die Standard-Vorlage der Teilnahmebedingungen (mit Platzhaltern) — eigene Bedingungen in der Team-Verwaltung hinterlegen.',
+          terms_placeholders: 'WARNUNG: Deine Teilnahmebedingungen enthalten noch unausgefüllte Platzhalter [ … ] — bitte vor der Ziehung vervollständigen.',
+        };
+        msg.warnings.forEach(function(w){ log(WARN_TXT[w] || ('Startwarnung: ' + w), 'gold'); });
+      }
       // Read-only Antworten (NIE requestData → sonst Endlosschleife)
       if (msg.type === 'giveaways')     { giveawayList = msg.giveaways || []; renderGiveawaySelect(); break; }
       if (msg.type === 'drafts')        { drafts = msg.drafts || []; renderDrafts(); break; }
+      if (msg.type === 'preflight')     { renderPreflight(msg); break; }
       if (msg.type === 'entries')       { renderEntries(msg); break; }
       if (msg.type === 'prizes')        { renderPrizes(msg.prizes || []); break; }
       if (msg.type === 'instant_window') { log('Anmeldefenster offen: ' + msg.windowSec + 's', 'gold'); liveRefresh(); break; }
@@ -937,8 +1016,11 @@ function handle(msg) {
             + ' — Nachweis unter Tools → 🗄 Vergangene Giveaways', 'gold'); loadArchiveCard(); }
       if (msg.type === 'instance_paused')  log('Instanz pausiert: '   + (msg.giveawayId || '?'), 'gold');
       if (msg.type === 'instance_resumed') log('Instanz läuft weiter: ' + (msg.giveawayId || '?'), 'cyan');
-      if (msg.type === 'winner_drawn') { showWinnerAnimation(msg.winner, msg.watchSec, msg.coins, msg.prize); loadHistory(); loadClaims(); }
-      if (msg.type === 'no_winner') log('Keine Teilnehmer mit Coins im Pool!', 'red');
+      if (msg.type === 'winner_drawn') {
+        lastDraw = { drawId: msg.drawId, prizeId: msg.prizeId || null, giveawayId: currentGiveaway };
+        showWinnerAnimation(msg.winner, msg.watchSec, msg.coins, msg.prize, msg); loadHistory(); loadClaims();
+      }
+      if (msg.type === 'no_winner') log(msg.message || 'Niemand im Lostopf — kein Gewinner ermittelbar.', 'red');
       if (msg.type === 'draw_error') log('ZIEHUNG FEHLGESCHLAGEN: ' + (msg.error || '?') + ' – nichts gespeichert, bitte erneut ziehen', 'red');
       if (msg.type === 'cmd_error') log('BEFEHL FEHLGESCHLAGEN (' + (msg.cmd || '?') + '): ' + (msg.error || '?'), 'red');
       loadAudit();          // jede Mutation erzeugt einen Audit-Eintrag
@@ -1139,14 +1221,33 @@ function updateActionButtons() {
 }
 
 function drawWinner() {
-  // Los-Giveaway zieht je Preis über die ★-Buttons in der Preis-Karte.
-  if (selectedCore() === 'CORE_TicketBuy') { log('Los-Giveaway: Ziehung je Preis — ★ in der Preis-Karte rechts', 'gold'); return; }
+  // Ziehung je Preis (drawKind perPrize) läuft über die ★-Buttons der Preis-Karte.
+  var sg = selectedGiveaway();
+  if ((sg && sg.drawKind === 'perPrize') || selectedCore() === 'CORE_TicketBuy') {
+    log('Los-Giveaway: Ziehung je Preis — ★ in der Preis-Karte rechts', 'gold'); return;
+  }
   var el = document.getElementById('prize-input');
   send({ event:'gw_cmd', cmd:'gw_draw_winner', prize: el ? el.value.trim() : '' });
 }
 
-function showWinnerAnimation(winnerName, watchSec, coins, prize) {
-  const names = Object.keys(participants).filter(k => !participants[k].banned && participants[k].coins > 0);
+// P4: CORE-spezifische Gewinneranzeige. `sem` sind die semantischen Felder
+// der Ziehung (core, unit, winnerStat, drawKind, votes) aus dem Server-Ack.
+function winnerStatText(coins, watchSec, sem) {
+  const unit = sem && sem.unit !== undefined ? sem.unit : 'Punkte';
+  const kind = (sem && sem.drawKind) || 'weighted';
+  if (kind === 'equal')   return 'Gleiche Chance für alle · ' + ((sem && sem.eligibleCount) || '?') + ' im Topf';
+  if (kind === 'score')   return parseDec(coins).toFixed(0) + ' Punkte aus ' + ((sem && sem.votes) || 0) + ' Stimmen';
+  if (kind === 'perPrize') return parseDec(coins).toFixed(0) + ' ' + (unit || 'Lose') + ' auf diesen Preis gesetzt'
+                                + ((sem && sem.eligibleCount) ? ' · ' + sem.eligibleCount + ' Setzer' : '');
+  return parseDec(coins).toFixed(2) + ' ' + (unit || 'Punkte') + ' // ' + fmtTime(watchSec || 0);
+}
+function showWinnerAnimation(winnerName, watchSec, coins, prize, sem) {
+  // Flacker-Kandidaten = alle nicht gebannten Teilnehmer der aktuellen
+  // Anzeige. coins>0 gilt nur für gewichtete Mechaniken — bei Sofort-
+  // verlosung/Contest hätte der Filter fast alle ausgeschlossen.
+  const kind = (sem && sem.drawKind) || 'weighted';
+  const names = Object.keys(participants).filter(k => !participants[k].banned
+    && (kind === 'weighted' || kind === 'perPrize' ? participants[k].coins > 0 : true));
   if (!names.length) names.push(winnerName);
   let flashes = 0;
   document.getElementById('winner-card').style.display = 'block';
@@ -1158,14 +1259,35 @@ function showWinnerAnimation(winnerName, watchSec, coins, prize) {
       lastWinner = winnerName;
       document.getElementById('w-name').textContent = winnerName.toUpperCase();
       const prizeTxt = prize ? ` // 🎁 ${prize}` : '';
-      document.getElementById('w-info').textContent = `${parseDec(coins).toFixed(2)} Coins // ${fmtTime(watchSec||0)}${prizeTxt}`;
+      const statTxt = winnerStatText(coins, watchSec, sem);
+      document.getElementById('w-info').textContent = statTxt + prizeTxt;
       renderTable(winnerName);
-      log(`GEWINNER: ${winnerName} (${parseDec(coins).toFixed(2)} Coins)${prize ? ' – Preis: ' + prize : ''}`, 'gold');
+      log(`GEWINNER: ${winnerName} (${statTxt})${prize ? ' – Preis: ' + prize : ''}`, 'gold');
     }
   }, 75);
 }
 
-function reroll()      { drawWinner(); }
+// P6: Ersatzziehung — verknüpft mit der letzten Ziehung (reroll_of), mit
+// Grund und standardmäßigem Ausschluss des bisherigen Gewinners. Ohne
+// bekannte letzte Ziehung bleibt es eine normale Neuziehung.
+function reroll() {
+  if (!lastDraw || !lastDraw.drawId) { drawWinner(); return; }
+  var f = document.getElementById('reroll-form');
+  if (f) f.style.display = '';
+}
+function rerollConfirm() {
+  if (!lastDraw || !lastDraw.drawId) return;
+  var reason  = (document.getElementById('reroll-reason') || {}).value || '';
+  var exclude = !document.getElementById('reroll-exclude') || document.getElementById('reroll-exclude').checked;
+  var cmd = { event: 'gw_cmd', cmd: 'gw_draw_winner', rerollOf: lastDraw.drawId,
+              reason: reason.trim(), excludeWinner: exclude };
+  if (lastDraw.giveawayId) cmd.giveawayId = lastDraw.giveawayId;
+  if (lastDraw.prizeId)    cmd.prizeId    = lastDraw.prizeId;
+  send(cmd);
+  var f = document.getElementById('reroll-form');
+  if (f) f.style.display = 'none';
+  log('Ersatzziehung angefordert (Ursprung #' + lastDraw.drawId + (exclude ? ', bisheriger Gewinner ausgeschlossen' : '') + ')', 'gold');
+}
 function clearWinner() { lastWinner=null; document.getElementById('winner-card').style.display='none'; clearOverlay(); }
 
 // ── Manual Actions ────────────────────────────────────────
@@ -1408,33 +1530,32 @@ function statTile(t) {
 }
 function fmtStatNum(n) { return ((Math.round(n * 100) / 100).toFixed(2).replace(/\.?0+$/, '')) || '0'; }
 
+// P5: Kachel-Registry — jeder Core deklariert in display.tiles nur noch die
+// IDs; die Berechnung steht genau einmal hier. Neuer Core = IDs auswählen
+// (oder eine neue Kachel hier ergänzen), keine Verzweigung in updateStats.
+var STAT_TILES = {
+  registeredCount: function(a){ return { v: a.filter(function(p){return p.registered;}).length, l: 'ANGEMELDET', title: 'Keyword im Anmeldefenster geschrieben' }; },
+  presentCount:    function(a){ return { v: a.filter(function(p){return p.present;}).length, l: 'ANWESEND', cls: 'plain', title: 'Gerade als Zuschauer gemeldet (viewer_tick)' }; },
+  inPotCount:      function(a){ return { v: a.filter(function(p){return p.eligible;}).length, l: 'IM TOPF', cls: 'green', title: 'Angemeldet + anwesend — Stand jetzt in der Ziehung' }; },
+  accountCount:    function(a){ return { v: a.length, l: 'KONTEN', title: 'Zuschauer mit Guthaben oder Einsatz' }; },
+  stakeSum:        function(a){ return { v: fmtStatNum(a.reduce(function(s,p){return s+(parseFloat(p.stake)||0);},0)), l: 'GESETZTE LOSE', cls: 'gold' }; },
+  freeBalance:     function(a){ return { v: fmtStatNum(a.reduce(function(s,p){return s+(parseFloat(p.balance)||0);},0)), l: 'FREIES GUTHABEN', cls: 'plain', title: 'Ledger-Saldo (ohne live erspielten Stand der laufenden Instanz)' }; },
+  setterCount:     function(a){ return { v: a.filter(function(p){return p.eligible;}).length, l: 'SETZER', cls: 'green', title: 'Mindestens 1 Los gesetzt' }; },
+  entryCount:      function(a){ return { v: a.length, l: 'EINSENDUNGEN' }; },
+  approvedCount:   function(a){ return { v: a.filter(function(p){return p.status==='approved';}).length, l: 'FREIGEGEBEN', cls: 'green' }; },
+  voteSum:         function(a){ return { v: a.reduce(function(s,p){return s+(parseInt(p.votes)||0);},0), l: 'STIMMEN', cls: 'plain' }; },
+  scoreSum:        function(a){ return { v: a.reduce(function(s,p){return s+(parseInt(p.score)||0);},0), l: 'PUNKTE', cls: 'gold' }; },
+};
+
 function updateStats() {
   const host = document.getElementById('cb-stats');
   if (!host) return;
   const active = Object.values(participants).filter(p=>!p.banned);
   let tiles;
-  if (gwCore === 'CORE_CurrentViewers') {
-    tiles = [
-      { v: active.filter(p=>p.registered).length, l: 'ANGEMELDET', title: 'Keyword im Anmeldefenster geschrieben' },
-      { v: active.filter(p=>p.present).length,    l: 'ANWESEND', cls: 'plain', title: 'Gerade als Zuschauer gemeldet (viewer_tick)' },
-      { v: active.filter(p=>p.eligible).length,   l: 'IM TOPF', cls: 'green',
-        title: 'Angemeldet + anwesend — Stand jetzt in der Ziehung' },
-    ];
-  } else if (gwCore === 'CORE_TicketBuy') {
-    tiles = [
-      { v: active.length, l: 'KONTEN', title: 'Zuschauer mit Guthaben oder Einsatz' },
-      { v: fmtStatNum(active.reduce((s,p)=>s+(parseFloat(p.stake)||0),0)),   l: 'GESETZTE LOSE', cls: 'gold' },
-      { v: fmtStatNum(active.reduce((s,p)=>s+(parseFloat(p.balance)||0),0)), l: 'FREIES GUTHABEN', cls: 'plain',
-        title: 'Ledger-Saldo (ohne live erspielten Stand der laufenden Instanz)' },
-      { v: active.filter(p=>p.eligible).length, l: 'SETZER', cls: 'green', title: 'Mindestens 1 Los gesetzt' },
-    ];
-  } else if (gwCore === 'CORE_ScreenshotContest') {
-    tiles = [
-      { v: active.length, l: 'EINSENDUNGEN' },
-      { v: active.filter(p=>p.status==='approved').length, l: 'FREIGEGEBEN', cls: 'green' },
-      { v: active.reduce((s,p)=>s+(parseInt(p.votes)||0),0), l: 'STIMMEN', cls: 'plain' },
-      { v: active.reduce((s,p)=>s+(parseInt(p.score)||0),0), l: 'PUNKTE', cls: 'gold' },
-    ];
+  const tileIds = gwCoreMeta && Array.isArray(gwCoreMeta.tiles) ? gwCoreMeta.tiles : null;
+  if (tileIds && tileIds.length) {
+    tiles = tileIds.map(function(id){ return STAT_TILES[id] ? STAT_TILES[id](active) : null; })
+                   .filter(Boolean);
   } else {
     // Kampagne (Watchtime): unverändertes Layout.
     const elig    = active.filter(p => p.eligible).length;
@@ -1731,11 +1852,20 @@ function renderHistory() {
         '<span style="color:var(--dim);font-size:10px;white-space:nowrap;">' + when + '</span>' +
       '</div>' +
       '<div style="font-size:12px;">' + prize + '</div>' +
-      '<div style="color:var(--dim);font-size:10px;">' +
-        parseDec(d.winner_coins).toFixed(2) + ' Coins · ' + (d.eligible_count || 0) + ' Teilnehmer' +
-      '</div>' +
+      '<div style="color:var(--dim);font-size:10px;">' + histStatLine(d) + '</div>' +
     '</div>';
   }).join('');
+}
+
+// P4: Statistikzeile je Ziehung, CORE-korrekt beschriftet (Server liefert
+// unit/drawKind je Zeile aus dem Core-Vertrag; alte Zeilen ohne core →
+// Standard "Punkte, gewichtet").
+function histStatLine(d) {
+  const n = (d.eligible_count || 0);
+  if (d.drawKind === 'equal')    return n + ' im Topf · gleiche Chance';
+  if (d.drawKind === 'score')    return parseDec(d.winner_coins).toFixed(0) + ' Punkte (Voting) · ' + n + ' im Stechen';
+  if (d.drawKind === 'perPrize') return parseDec(d.winner_coins).toFixed(0) + ' ' + (d.unit || 'Lose') + ' gesetzt · ' + n + ' Setzer';
+  return parseDec(d.winner_coins).toFixed(2) + ' ' + (d.unit || 'Punkte') + ' · ' + n + ' Teilnehmer';
 }
 
 function fmtDrawDate(iso) {

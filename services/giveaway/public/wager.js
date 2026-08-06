@@ -22,7 +22,22 @@ var ERRORS = {
   nothing_to_refund: 'Auf diesen Preis hast du nichts gesetzt.',
   bad_request: 'Ungültige Eingabe.',
   rate_limited: 'Langsam — ein Einsatz pro Sekunde.',
+  terms_required: 'Bitte zuerst die Teilnahmebedingungen zur Kenntnis nehmen (Haken setzen).',
 };
+
+// Kenntnisnahme der Bedingungen: Pflicht vor dem ERSTEN Einsatz je Los-Giveaway
+// (Server erzwingt das mit HTTP 428). Der Haken gilt je Team-Block.
+function consentHtml(teamId) {
+  return '<label class="wg-consent" style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin:10px 0">'
+    + '<input type="checkbox" id="consent-' + esc(teamId) + '" style="margin-top:2px">'
+    + '<span>Ich habe die <a href="/viewer/terms?team=' + encodeURIComponent(teamId)
+    + '" target="_blank" rel="noopener">Teilnahmebedingungen</a> (inkl. Impressum des Veranstalters) und die '
+    + '<a href="/admin/datenschutz.html" target="_blank" rel="noopener">Datenschutzerklärung</a> zur Kenntnis genommen.</span></label>';
+}
+function consentChecked(teamId) {
+  var el = document.getElementById('consent-' + teamId);
+  return !el || el.checked;   // Block fehlt (schon zugestimmt) → ok
+}
 
 function load() {
   fetch('/giveaway/api/wager/state').then(function(r) {
@@ -52,6 +67,7 @@ function renderTeam(t) {
     + '<div class="wg-balance">Dein Guthaben: <b>' + Number(t.available).toFixed(2) + '</b> Lose</div>'
     + (t.wagerCmd ? '<div class="wg-cmd">Geht auch im Chat: „' + esc(t.wagerCmd)
         + ' &lt;preis-nr&gt; &lt;anzahl&gt;" · Rücknahme mit Anzahl 0.</div>' : '')
+    + (t.consented ? '' : consentHtml(t.teamId))
     + prizes + '</div>';
 }
 
@@ -77,9 +93,14 @@ function renderPrize(teamId, p) {
 
 function post(teamId, prizeId, amount) {
   var el = document.getElementById('msg-' + prizeId);
+  if (amount > 0 && !consentChecked(teamId)) {
+    if (el) { el.className = 'wg-msg err'; el.textContent = ERRORS.terms_required; }
+    return;
+  }
   fetch('/giveaway/api/wager', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ team: teamId, prizeId: prizeId, amount: amount }),
+    body: JSON.stringify({ team: teamId, prizeId: prizeId, amount: amount,
+                           acceptTerms: consentChecked(teamId) }),
   }).then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
     .then(function(x) {
       if (!x.ok) { if (el) { el.className = 'wg-msg err'; el.textContent = ERRORS[x.j.error] || x.j.error; } return; }

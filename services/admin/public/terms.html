@@ -97,18 +97,34 @@
     return '<h2 style="margin-top:32px">Impressum des Veranstalters</h2>' + inner;
   }
 
-  var team = new URLSearchParams(location.search).get('team') || '';
+  var params = new URLSearchParams(location.search);
+  var team = params.get('team') || '';
+  var version = params.get('version') || '';
   var doc = document.getElementById('doc'), meta = document.getElementById('meta');
   if (!team) { doc.innerHTML = '<span class="err">Kein Team angegeben (?team=…).</span>'; }
-  else fetch('/admin/pub/team/' + encodeURIComponent(team)).then(function(r){return r.json();}).then(function(d){
+  else fetch('/admin/pub/team/' + encodeURIComponent(team)
+             + (version ? '?version=' + encodeURIComponent(version) : ''))
+    .then(function(r){return r.json();}).then(function(d){
+    if (d.error === 'version_not_found') { doc.innerHTML = '<span class="err">Diese Fassung existiert nicht.</span>'; return; }
     if (d.error) { doc.innerHTML = '<span class="err">Team nicht gefunden.</span>'; return; }
     document.title = 'Teilnahmebedingungen · ' + d.name;
     var chips = (d.channels||[]).map(function(c){return '<span>'+esc(c)+'</span>';}).join('');
     var stand = d.updatedAt
       ? 'Stand: ' + new Date(d.updatedAt).toLocaleString('de-DE') + ' · Fassung ' + d.version
       : 'Stand: unveraendert seit Einrichtung';
+    // Historische Fassung: klar kennzeichnen, mit Weg zur aktuellen.
+    var histBanner = '';
+    if (d.historical && !d.historical.isCurrent) {
+      histBanner = '<div style="margin-top:8px;padding:8px 12px;border:1px solid rgba(255,196,0,.4);border-radius:6px;'
+        + 'background:rgba(255,196,0,.07);color:#ffd75e;font-size:13px">Historische Fassung '
+        + esc(String(d.historical.version)) + ' vom ' + esc(new Date(d.historical.createdAt).toLocaleString('de-DE'))
+        + ' — sie galt für das damalige Giveaway. <a style="color:#ffd75e" href="?team=' + encodeURIComponent(team)
+        + '">Zur aktuellen Fassung</a></div>';
+      stand = 'Fassung ' + d.historical.version + ' (historisch)';
+    }
     meta.innerHTML = '<b style="color:#e6f4fb;font-size:15px">' + esc(d.name) + '</b><div class="chips" style="margin-top:6px">' + chips + '</div>'
       + '<div style="margin-top:8px;font-size:12px;color:#8fb6cc">' + esc(stand) + '</div>'
+      + histBanner
       + (d.isDefault ? '<div style="margin-top:4px;font-size:12px;opacity:.5">Standard-Vorlage</div>' : '');
     doc.innerHTML = mdToHtml(d.terms) + historyHtml(d.history)
       + '<hr style="margin:28px 0;border:0;border-top:1px solid rgba(0,212,255,0.18)">'

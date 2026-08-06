@@ -21,7 +21,23 @@ var ERRORS = {
   bad_image: 'Die Datei ist kein gültiges PNG-/JPG-Bild.',
   bad_resolution: 'Auflösung muss zwischen Full HD (1920×1080) und 4K (max. 4096×2160) liegen.',
   banned: 'Du bist von diesem Giveaway ausgeschlossen.',
+  terms_required: 'Bitte zuerst die Teilnahmebedingungen zur Kenntnis nehmen (Haken setzen).',
 };
+
+// Kenntnisnahme der Bedingungen: Pflicht vor der ERSTEN Einsendung je Contest
+// (Server erzwingt das mit HTTP 428).
+function consentHtml(teamId) {
+  return '<label class="sc-consent" style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin:8px 0">'
+    + '<input type="checkbox" id="consent-' + esc(teamId) + '" style="margin-top:2px">'
+    + '<span>Ich habe die <a href="/viewer/terms?team=' + encodeURIComponent(teamId)
+    + '" target="_blank" rel="noopener">Teilnahmebedingungen</a> (inkl. Impressum des Veranstalters) und die '
+    + '<a href="/admin/datenschutz.html" target="_blank" rel="noopener">Datenschutzerklärung</a> zur Kenntnis genommen '
+    + 'und bestätige, dass ich die Rechte am eingesendeten Bild habe.</span></label>';
+}
+function consentChecked(teamId) {
+  var el = document.getElementById('consent-' + teamId);
+  return !el || el.checked;   // Block fehlt (schon zugestimmt) → ok
+}
 
 function load() {
   fetch('/giveaway/api/contest/state').then(function(r) {
@@ -64,6 +80,7 @@ function renderContest(c) {
       + (c.myEntry ? '<div class="sc-meta">Aktuell: „' + esc(c.myEntry.title || '—') + '" [' + esc(c.myEntry.status) + ', '
           + c.myEntry.votes + ' Stimmen]</div>' : '')
       + voteHint
+      + (c.consented ? '' : consentHtml(c.teamId))
       + '<div class="sc-row"><input type="text" id="title-' + esc(c.teamId) + '" placeholder="Titel (optional)" maxlength="100">'
       + '<input type="file" id="file-' + esc(c.teamId) + '" accept="image/png,image/jpeg" title="PNG oder JPG, 1080p bis 4K, max. 7 MB">'
       + '<button class="btn btn-gold btn-sm" onclick="submitEntry(\'' + esc(c.teamId) + '\',' + (c.myEntry ? c.myEntry.votes : 0) + ')">EINSENDEN</button>'
@@ -107,6 +124,10 @@ function submitEntry(teamId, existingVotes, forceConfirm) {
   var msgEl  = document.getElementById('smsg-' + teamId);
   var file = fileEl && fileEl.files && fileEl.files[0];
   if (!file) { if (msgEl) { msgEl.className = 'sc-msg err'; msgEl.textContent = 'Bitte ein Bild wählen.'; } return; }
+  if (!consentChecked(teamId)) {
+    if (msgEl) { msgEl.className = 'sc-msg err'; msgEl.textContent = ERRORS.terms_required; }
+    return;
+  }
   // Warnung VOR dem Ersetzen: bereits abgegebene Stimmen verfallen.
   if (existingVotes > 0 && !forceConfirm && !confirm('Achtung: Deine bisherige Einsendung hat ' + existingVotes
       + ' Stimmen.\n\nBeim Ersetzen VERFALLEN diese Stimmen unwiderruflich.\n\nTrotzdem ersetzen?')) return;
@@ -117,6 +138,7 @@ function submitEntry(teamId, existingVotes, forceConfirm) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ team: teamId, title: (document.getElementById('title-' + teamId) || {}).value || '',
                              mime: file.type, imageBase64: b64,
+                             acceptTerms: consentChecked(teamId),
                              confirmReplace: existingVotes > 0 || !!forceConfirm }),
     }).then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
       .then(function(x) {

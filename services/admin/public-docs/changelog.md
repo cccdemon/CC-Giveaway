@@ -5,6 +5,71 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ---
 
+## 6. August 2026 (zweites Update)
+
+### Alle vier Mechaniken jetzt überall sauber abgebildet
+
+Statusseite, Archiv, Gewinneranzeige und Rechtstexte kannten bisher vor
+allem die Kampagne. Jetzt gilt durchgängig: jede Mechanik wird mit ihren
+eigenen Begriffen und Regeln dargestellt.
+
+* **„Meine Teilnahmen"** (vorher „Mein Status"): zeigt je Team zusätzlich
+  laufende Sofortverlosungen (Anmeldung, Anwesenheit, Fenster), dein
+  **Los-Guthaben mit verständlicher Buchungshistorie** und Einsätzen je
+  Preis sowie deinen **Contest-Status** (Einsendung, Freigabe, Punkte,
+  Rang, eigene Stimmen — inklusive früherer Contests mit Bild-Link).
+  Kampagnen- und Sofortverlosungs-Teilnahme kannst du dort selbst
+  **zurückziehen**.
+* **Archiv:** je Mechanik ein eigenes Dossier — Los-Giveaways mit Preisen,
+  Einsätzen und Guthaben-Buchungen, Contests mit Einsendungen, Moderation
+  und Endrangliste, Sofortverlosungen mit gleicher Gewichtung. Der Export
+  enthält die passenden Dateien (preise.csv, einsaetze.csv, guthaben.csv,
+  einsendungen.csv, zustimmungen.csv).
+* **Gewinneranzeige, Overlay und Gewinn melden** beschriften den Gewinn
+  jetzt korrekt: Punkte bei der Kampagne, gesetzte Lose beim Los-Giveaway,
+  Voting-Punkte beim Contest, „gleiche Chance" bei der Sofortverlosung.
+* **Sofortverlosung bestätigt die Anmeldung im Chat** (sofern Ansagen an
+  sind).
+
+### Rechtstexte und nachweisbare Zustimmung
+
+* Die **Teilnahmebedingungen-Vorlage** und die öffentliche Hilfe wurden an
+  das tatsächliche Verhalten aller vier Mechaniken angeglichen (keine
+  pauschalen Aussagen mehr wie „keine Lose" oder „immer gewichtete
+  Ziehung"; die Zustimmung erfolgt je nach Mechanik per Keyword, erstem
+  Einsatz oder Einsendung).
+* **Jede Sitzung friert die geltende Fassung der Teilnahmebedingungen
+  ein.** Das Archiv verlinkt die historische Fassung; die öffentliche
+  Terms-Seite kann jede Fassung anzeigen (`?version=`).
+* **Kenntnisnahme wird protokolliert:** erste Anmeldung, erster Einsatz,
+  Einsendung und Stimmabgabe werden je Giveaway mit Zeitpunkt und
+  geltender Fassung festgehalten. Auf den Setz- und Contest-Seiten gibt es
+  dafür eine sichtbare Checkbox mit Links auf Bedingungen, Datenschutz und
+  Impressum. Das Protokoll erscheint in der DSGVO-Selbstauskunft und wird
+  bei Löschung pseudonymisiert.
+* Die Datenschutzerklärung ergänzt den **Drittlandhinweis zur optionalen
+  KI-Chatbewertung** und das Kenntnisnahme-Protokoll.
+
+### Teilnehmer-Vorschau vor dem Start
+
+Das Start-Modal zeigt beim Auswählen der Mechanik, **wie viele Zuschauer die
+Bedingungen jetzt schon erfüllen würden** — bei der Kampagne Follows +
+Mindest-Viewtime, bei der Sofortverlosung die aktuelle Anwesenheit, beim
+Los-Giveaway Konten mit Guthaben, beim Contest Follow + Mindest-Zuschauzeit.
+Die Vorschau rechnet bei geänderter Kanalauswahl neu.
+
+### Ersatzgewinner mit Nachweis statt einfacher Neuziehung
+
+„Ersatz ziehen" verknüpft die neue Ziehung mit der ursprünglichen, hält
+den **Grund** fest und schließt den bisherigen Gewinner aus (abwählbar).
+Der alte Gewinnanspruch wird als „ersetzt" markiert; eine bereits vom
+Veranstalter bearbeitete Gewinnermeldung kann der Gewinner nicht mehr
+ändern. Außerdem: Los-Giveaway-**Preise lassen sich schon im Entwurf
+anlegen**, und der Start warnt, wenn die eigenen Teilnahmebedingungen noch
+unausgefüllte Platzhalter enthalten.
+
+---
+
 ## 6. August 2026
 
 ### Archiv: Kampagnen-Klammer über zusammengehörige Sitzungen

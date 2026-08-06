@@ -82,6 +82,13 @@ Je nach Mechanik des Giveaways kommen hinzu:
   Bilder sind nur für angemeldete Nutzer sichtbar und erst nach Freigabe
   durch den Veranstalter.
 
+Zusätzlich wird je Giveaway ein **Kenntnisnahme-Protokoll** geführt: Zeitpunkt
+deiner ersten Teilnahmeaktion (Anmeldung, erster Einsatz, Einsendung oder
+Stimmabgabe) und die dabei geltende Fassung der Teilnahmebedingungen. Es dient
+dem Nachweis, dass die Teilnahme auf Grundlage der damals gültigen Bedingungen
+erfolgte (Art. 6 Abs. 1 lit. b und f DSGVO); bei einer Löschung nach Art. 17
+wird es pseudonymisiert.
+
 ### 3.4 Optionale Bewertung von Chatnachrichten durch KI
 Veranstalter können aktivieren, dass die Sinnhaftigkeit einer Chatnachricht
 statt über eine Wortzahl durch ein KI-Modell bewertet wird. Ist das aktiviert,
@@ -92,8 +99,16 @@ Text wird bei uns nicht gespeichert.
 Ob und mit welchem Anbieter das geschieht, legt der Veranstalter fest und muss es
 in seinen Teilnahmebedingungen angeben.
 **Rechtsgrundlage:** Art. 6 Abs. 1 lit. f DSGVO.
-**[Bei Anbietern außerhalb der EU: Hinweis auf den Drittlandtransfer und die
-Garantien nach Art. 44 ff. DSGVO ergänzen.]**
+
+**Drittlandtransfer:** Die wählbaren Anbieter (Anthropic, OpenAI, Google) verarbeiten
+die Nachricht in der Regel in den **USA**. Die Übermittlung stützt sich auf einen
+Angemessenheitsbeschluss nach Art. 45 DSGVO (EU-US Data Privacy Framework, soweit der
+Anbieter dort zertifiziert ist) bzw. auf Standardvertragsklauseln nach Art. 46 Abs. 2
+lit. c DSGVO. Übermittelt wird ausschließlich der Text der einzelnen Chatnachricht —
+ohne Twitch-Benutzername und ohne weitere Kontodaten; eine dauerhafte Speicherung beim
+Anbieter ist nicht Zweck der Verarbeitung. Wer das nicht möchte, nimmt an Giveaways
+von Teams mit aktivierter KI-Bewertung nicht teil oder chattet dort nicht — reine
+Zuschauzeit wird davon nicht berührt.
 
 ### 3.5 Gewinnabwicklung
 Wirst du gezogen, kannst du deinen Gewinn über die Seite **„Gewinn melden"**
