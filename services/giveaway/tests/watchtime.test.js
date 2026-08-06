@@ -149,6 +149,26 @@ function makePg(channels) {
       const bal = ledger.filter(r => r.team_id === p[0] && r.username === p[1]).reduce((s, r) => s + r.amount, 0);
       return { rows: [{ bal }] };
     }
+    // Panel-Teilnehmerlisten je Mechanik + Dropdown-Statistiken
+    if (/SUM\(amount\) AS balance FROM credit_ledger/.test(sql)) {
+      const by = new Map();
+      for (const r of ledger) if (r.team_id === p[0]) by.set(r.username, (by.get(r.username) || 0) + r.amount);
+      return { rows: [...by.entries()].map(([username, balance]) => ({ username, balance })) };
+    }
+    if (/SUM\(w\.amount\) AS stake/.test(sql)) {
+      const by = new Map();
+      for (const w of wagers) {
+        const pr = prizes.find(x => x.id === w.prize_id);
+        if (pr && pr.team_id === p[0] && pr.session_id === p[1]) by.set(w.username, (by.get(w.username) || 0) + w.amount);
+      }
+      return { rows: [...by.entries()].map(([username, stake]) => ({ username, stake })) };
+    }
+    if (/COUNT\(\*\)::int AS cnt FROM contest_entries/.test(sql)) {
+      return { rows: [{ cnt: entries.filter(e => e.session_id === p[0] && e.team_id === p[1]).length }] };
+    }
+    if (/SELECT id, opened_at FROM sessions/.test(sql)) {
+      return { rows: (p[1] || []).map(id => ({ id, opened_at: '2026-08-06T10:00:00Z' })) };
+    }
     return { rows: [{ n: 0 }], rowCount: 1 };
   }
   return {
@@ -1079,4 +1099,61 @@ test('phase3c: Chat-Ansagen der Sofortverlosung sind schaltbar (announce-Flag)',
   await e.redis.set(K.gAnnounce(TEAM, 'sess_3'), 'false');
   await e.cleanupGiveawayInstance(TEAM, 'sess_3');
   assert.equal(await e.redis.get(K.gAnnounce(TEAM, 'sess_3')), null);
+});
+
+// ── Panel: Teilnehmerlisten je Mechanik + Dropdown-Statistiken ──
+test('panel: getTicketBuyParticipants — Guthaben team-weit, Einsatz je Instanz', async () => {
+  const e = engine();
+  await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy' });
+  await e.credit.book(TEAM, 'bob', 'earn', 5);
+  await e.credit.book(TEAM, 'alice', 'earn', 3);
+  const p1 = await e.addPrize(TEAM, 'sess_2', { title: 'Headset' });
+  await e.placeWager(TEAM, null, 'bob', p1, 2);
+  const parts = await e.getTicketBuyParticipants(TEAM, 'sess_2');
+  const bob = parts.find(x => x.username === 'bob');
+  const alice = parts.find(x => x.username === 'alice');
+  assert.equal(bob.balance, 3);                 // 5 verdient - 2 gesetzt
+  assert.equal(bob.stake, 2);
+  assert.equal(bob.eligible, true);
+  assert.equal(alice.balance, 3);
+  assert.equal(alice.stake, 0);
+  assert.equal(alice.eligible, false);          // Guthaben ohne Einsatz = nicht im Pool
+  assert.equal(parts[0].username, 'bob');       // Sortierung: Einsatz zuerst
+  // Dropdown-Statistik zaehlt nur Setzer
+  const g = (await e.listGiveaways(TEAM, { stats: true })).find(x => x.gid === 'sess_2');
+  assert.equal(g.participants, 1);
+  assert.ok(g.startedAt);
+});
+
+test('panel: getContestParticipants — Status/Punkte je Einsender', async () => {
+  const e = await contestSetup(0);
+  await e.submitContestEntry(TEAM, 'sess_9', 'bob', { title: 'Mein Shot', mime: 'image/png', image: IMG });
+  await e.submitContestEntry(TEAM, 'sess_9', 'carol', { mime: 'image/png', image: IMG });
+  await e.reviewContestEntry(TEAM, 1, true);
+  await e.setContestVoting(TEAM, 'sess_9', 'open');
+  await e.castContestVote(TEAM, 'sess_9', 'dave', 1, 7);
+  const parts = await e.getContestParticipants(TEAM, 'sess_9');
+  const bob = parts.find(x => x.username === 'bob');
+  const carol = parts.find(x => x.username === 'carol');
+  assert.equal(bob.status, 'approved');
+  assert.equal(bob.eligible, true);
+  assert.equal(bob.score, 7);
+  assert.equal(bob.votes, 1);
+  assert.equal(carol.status, 'pending');
+  assert.equal(carol.eligible, false);
+  // Dropdown-Statistik zaehlt alle Einsender
+  const g = (await e.listGiveaways(TEAM, { stats: true })).find(x => x.gid === 'sess_9');
+  assert.equal(g.participants, 2);
+});
+
+test('panel: listGiveaways stats — Angemeldete bei der Sofortverlosung', async () => {
+  const e = engine();
+  await e.openGiveawayInstance(TEAM, 'sess_2', { keyword: 'blitz', core: 'CORE_CurrentViewers', windowSec: 60 });
+  await e.handleViewerTick(TEAM, 'justcallmedeimos', 'bob', true);
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'blitz', true);
+  const g = (await e.listGiveaways(TEAM, { stats: true })).find(x => x.gid === 'sess_2');
+  assert.equal(g.participants, 1);
+  // Ohne stats keine Zusatzfelder (interne Aufrufer zahlen nichts mit)
+  const g2 = (await e.listGiveaways(TEAM)).find(x => x.gid === 'sess_2');
+  assert.equal(g2.participants, undefined);
 });

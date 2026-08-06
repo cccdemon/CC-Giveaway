@@ -594,12 +594,23 @@ wss.on('connection', (ws, req) => {
 async function sendTeamData(meta, gid = null) {
   const send = (o) => meta.ws.readyState === WebSocket.OPEN && meta.ws.send(JSON.stringify(o));
   const teamId = meta.teamId;
-  const participants = await wte.getAllParticipants(teamId, gid || undefined);
+  // Teilnehmerliste je Mechanik (Roadmap „Spalten je Mechanik"): Instanz-Cores
+  // liefern ihre eigenen Felder + Spaltendeklaration (CORE.display.columns);
+  // Kampagne/Watchtime bleibt beim bisherigen Layout (display=null).
+  const coreId = gid ? await wte.getCoreId(teamId, gid) : null;
+  let participants, display = null;
+  if (coreId === 'CORE_CurrentViewers')          participants = await wte.getInstantParticipants(teamId, gid);
+  else if (coreId === 'CORE_TicketBuy')          participants = await wte.getTicketBuyParticipants(teamId, gid);
+  else if (coreId === 'CORE_ScreenshotContest')  participants = await wte.getContestParticipants(teamId, gid);
+  else                                           participants = await wte.getAllParticipants(teamId, gid || undefined);
+  if (coreId && coreId !== CORE.id) {
+    try { display = (CoreRegistry.getCore(coreId).display || {}).columns || null; } catch { /* Standard-Spalten */ }
+  }
   const open = await wte.isOpen(teamId, gid || undefined);
   const paused = await wte.isPaused(teamId, gid || undefined);
   const session = gid || await wte.getSessionId(teamId);
   const channels = await wte.getChannels(teamId);
-  send({ event: 'gw_data', teamId, giveawayId: gid, open, paused, session, participants, channels });
+  send({ event: 'gw_data', teamId, giveawayId: gid, core: coreId, display, open, paused, session, participants, channels });
 }
 
 async function handleClientMessage(meta, msg) {
@@ -788,7 +799,7 @@ async function runAdminCmd(send, msg, meta, ctx) {
     }
     // ── Phase 2d: Parallel-Instanzen (z.B. Sofortverlosung neben Kampagne) ──
     case 'gw_list_giveaways': {
-      send({ event: 'gw_ack', type: 'giveaways', giveaways: await wte.listGiveaways(teamId),
+      send({ event: 'gw_ack', type: 'giveaways', giveaways: await wte.listGiveaways(teamId, { stats: true }),
              maxParallel: MAX_PARALLEL_GIVEAWAYS });
       break;
     }
@@ -1805,6 +1816,64 @@ app.post('/api/wager', express.json(), async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Preis-Bild (CORE_TicketBuy): Upload nur Team-Mitglieder, sichtbar für
+// eingeloggte Zuschauer auf der Setz-Seite. MIME-/Größen-Grenzen wie beim
+// Contest. Leeres imageBase64 = Bild entfernen. Nur offene Preise —
+// nach der Ziehung ist der Ziehungssatz der Nachweis.
+app.post('/api/prize/image', express.json({ limit: '4mb' }), async (req, res) => {
+  try {
+    const user = reqUser(req);
+    if (!user) return res.status(401).json({ error: 'unauthenticated' });
+    const teamId = sanitizeTeamId(req.body && req.body.team);
+    const prizeId = parseInt(req.body && req.body.prizeId, 10);
+    if (!teamId || !Number.isFinite(prizeId) || prizeId <= 0) return res.status(400).json({ error: 'bad_request' });
+    if (!await isMember(user, teamId)) return res.status(403).json({ error: 'forbidden' });
+    const pr = await pg.query(`SELECT id, status FROM giveaway_prizes WHERE id=$1 AND team_id=$2`, [prizeId, teamId]);
+    if (!pr.rowCount) return res.status(404).json({ error: 'no_prize' });
+    if (pr.rows[0].status !== 'open') return res.status(409).json({ error: 'not_open' });
+    const b64 = String((req.body && req.body.imageBase64) || '');
+    if (!b64) {
+      // status='open' auch im UPDATE: zwischen Check und Write kann der
+      // Preis gezogen/storniert werden — dann ist er unantastbar.
+      const u = await pg.query(
+        `UPDATE giveaway_prizes SET image=NULL, image_mime=NULL WHERE id=$1 AND status='open'`, [prizeId]);
+      if (!u.rowCount) return res.status(409).json({ error: 'not_open' });
+      await audit({ teamId, actor: user, ip: req.ip, action: 'prize_image_removed',
+                    target: String(prizeId), detail: { prizeId } });
+      return res.json({ ok: true, removed: true });
+    }
+    const ContestCore = CoreRegistry.getCore('CORE_ScreenshotContest');
+    const mime = String((req.body && req.body.mime) || '');
+    if (!ContestCore.IMAGE_MIMES.includes(mime)) return res.status(400).json({ error: 'bad_mime' });
+    let image;
+    try { image = Buffer.from(b64, 'base64'); } catch { image = null; }
+    if (!image || !image.length) return res.status(400).json({ error: 'no_image' });
+    if (image.length > ContestCore.IMAGE_MAX_BYTES) return res.status(413).json({ error: 'image_too_large' });
+    const u = await pg.query(
+      `UPDATE giveaway_prizes SET image=$1, image_mime=$2 WHERE id=$3 AND status='open'`, [image, mime, prizeId]);
+    if (!u.rowCount) return res.status(409).json({ error: 'not_open' });
+    await audit({ teamId, actor: user, ip: req.ip, action: 'prize_image_set',
+                  target: String(prizeId), detail: { prizeId, bytes: image.length, mime } });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Bewusst nur Login-Gate (kein Team-Check): Preis-Bilder sind Werbe-Inhalt
+// der Setz-Seite — Zuschauer sind keine Team-Mitglieder. Entspricht dem
+// Contest-Verhalten für freigegebene Bilder.
+app.get('/api/prize/image/:id', async (req, res) => {
+  try {
+    const user = reqUser(req);
+    if (!user) return res.status(401).end();
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).end();
+    const r = await pg.query(`SELECT image_mime, image FROM giveaway_prizes WHERE id=$1`, [id]);
+    if (!r.rowCount || !r.rows[0].image) return res.status(404).end();
+    res.set('Content-Type', r.rows[0].image_mime || 'application/octet-stream')
+       .set('Cache-Control', 'private, max-age=300').send(r.rows[0].image);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Phase 6: Screenshot-Contest (nur eingeloggte Zuschauer) ──
 // Anti-Votebot: Twitch-Session + UNIQUE(entry, voter) + Viewtime-Schwelle
 // + Rate-Limit. Identität ausschließlich aus X-Auth-User.
@@ -2264,6 +2333,10 @@ async function ensureSchema() {
   await pg.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS prize TEXT`);
   await pg.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS sponsor TEXT`);
   await pg.query(`ALTER TABLE giveaway_prizes ADD COLUMN IF NOT EXISTS sponsor TEXT`);
+  // Preis-Bild fürs Formular/Setz-Seite (Roadmap-Feinschliff) — BYTEA wie
+  // beim Contest, Grenzen (MIME/Größe) identisch. Kein Personenbezug.
+  await pg.query(`ALTER TABLE giveaway_prizes ADD COLUMN IF NOT EXISTS image BYTEA`);
+  await pg.query(`ALTER TABLE giveaway_prizes ADD COLUMN IF NOT EXISTS image_mime TEXT`);
   await pg.query(`ALTER TABLE giveaway_draws ADD COLUMN IF NOT EXISTS core TEXT`);
   await pg.query(`ALTER TABLE giveaway_draws ADD COLUMN IF NOT EXISTS prize_id BIGINT`);
   // Phase 4a (CORE_TicketBuy, §5.2/§10.1): team-weites Guthaben-Journal,

@@ -15,13 +15,6 @@ Woran gearbeitet wird und was als Nächstes ansteht.
 > [Änderungsprotokoll](/admin/changelog.html). Kein System lässt eine Zahlung
 > als Voraussetzung oder als Vorteil zu — das bleibt ausgeschlossen.
 
-### Feinschliff der neuen Giveaway-Systeme
-
-Die Mechaniken laufen; sichtbar werden sie noch runder: das Dashboard soll die
-Spalten je Mechanik passend anzeigen (statt der Coin-Spalten der Kampagne),
-Preise sollen ein Bild und eine Beschreibung im Formular bekommen, und die
-Giveaway-Auswahl soll Startzeit und Teilnehmerzahl zeigen.
-
 ### Vollständiger Mehrkanal-Betrieb
 
 Zuschauzeit zählt bereits kanalübergreifend zusammen. Einzelne Bereiche der

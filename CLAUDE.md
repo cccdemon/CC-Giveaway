@@ -138,6 +138,7 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 `GET claims` (`?team=`, nur Owner — Inbox mit Kontaktdaten, Zugriff auditiert) · `POST claims/handling` (contacted/shipped/done) · `POST claims/purge` (Kontaktfelder sofort löschen, Nachweis bleibt)
 `POST contest/withdraw` (Einsender zieht eigene Einsendung zurück — Bild weg, Stimmen CASCADE; nur solange Instanz offen)
 `GET wager/state` · `POST wager` (nur der eingeloggte Zuschauer; auditiert `wager_set`/`wager_retract`)
+`POST prize/image` (Team-Mitglied, nur offene Preise, max 2 MB, leer = entfernen; auditiert) · `GET prize/image/:id` (eingeloggt)
 `GET contest/state` · `POST contest/entry` (Base64, max 2 MB, auditiert) · `POST contest/vote` (Rate-Limit) · `GET contest/image/:id`
 
 ## Admin WS `gw_cmd` (`{event:'gw_cmd',cmd,...}`)

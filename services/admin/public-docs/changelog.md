@@ -7,6 +7,24 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 6. August 2026
 
+### Dashboard zeigt jedes Giveaway in seinen eigenen Spalten
+
+Die Teilnehmer-Tabelle zeigte bisher immer die Coin- und Viewtime-Spalten
+der Kampagne — auch bei Sofortverlosung, Los-Giveaway und Contest, wo diese
+Zahlen nichts aussagen. Jetzt passt sich die Tabelle der Mechanik an:
+**Sofortverlosung** zeigt Anwesenheit und wer im Topf ist, das
+**Los-Giveaway** zeigt Guthaben und gesetzte Lose je Teilnehmer, der
+**Contest** zeigt Einsendung, Status, Punkte und Stimmen. Die
+Giveaway-Auswahl oben zeigt zu jeder laufenden Instanz jetzt außerdem
+**Teilnehmerzahl und Startzeit**.
+
+### Preise mit Bild und Beschreibung
+
+Beim Los-Giveaway können Preise jetzt eine **Beschreibung** und ein **Bild**
+bekommen (max. 2 MB) — beides direkt im Preis-Formular, auch nachträglich,
+solange der Preis nicht gezogen ist. Zuschauer sehen Bild und Beschreibung
+auf der Setz-Seite beim jeweiligen Preis.
+
 ### Regeln gelten jetzt pro Giveaway — nicht mehr fürs ganze Team
 
 Die Einstellungen „folge X Kanälen", „1 Coin = X Stunden" und der Chat-Bonus

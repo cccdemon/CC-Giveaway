@@ -22,6 +22,10 @@ let participants = {};
 let gwChannels   = [];
 let gwIsOpen     = false;
 let gwPaused     = false;
+// Spalten je Mechanik: Instanz-Cores liefern in gw_data ihre Spalten
+// (CORE.display.columns); null = Standard-Layout der Kampagne.
+let gwCore        = null;
+let gwDisplayCols = null;
 // Streamermodus: Zuschauernamen + Ingest-Tokens werden maskiert, damit das Panel
 // live gezeigt werden kann. Nur Anzeige — COPY kopiert weiterhin den echten Wert.
 let privacyOn    = localStorage.getItem('cc_privacy') === '1';
@@ -197,14 +201,66 @@ function tbAddPrize() {
   if (!title) { log('Preis braucht einen Titel', 'red'); return; }
   var mins = CC.validate.sanitizeInt(document.getElementById('tb-prize-end').value, 0, 20160, 0);
   var sponsor = (document.getElementById('tb-prize-sponsor') || {}).value || '';
+  var desc = (document.getElementById('tb-prize-desc') || {}).value || '';
   if (tbEditPrizeId) {
     send({ event: 'gw_cmd', cmd: 'gw_edit_prize', giveawayId: currentGiveaway, prizeId: tbEditPrizeId,
-           title: title, sponsor: sponsor, wagerEndMinutes: mins });
+           title: title, sponsor: sponsor, description: desc, wagerEndMinutes: mins });
   } else {
     send({ event: 'gw_cmd', cmd: 'gw_add_prize', giveawayId: currentGiveaway, title: title, wagerEndMinutes: mins,
-           sponsor: sponsor });
+           sponsor: sponsor, description: desc });
   }
-  tbCancelEdit();
+  tbCancelEdit({ keepImage: true });   // Bild wartet auf das Ack (prizeId)
+}
+
+// ── Preis-Bild: Datei wartet im Formular, Upload erst nach dem Ack
+// (erst dann gibt es die prizeId). Entfernen = leerer Upload.
+var tbPendingImage = null;
+var tbRemoveImage  = false;
+
+function tbImageChanged() {
+  var f = (document.getElementById('tb-prize-image') || {}).files;
+  tbPendingImage = (f && f.length) ? f[0] : null;
+  if (tbPendingImage) tbRemoveImage = false;
+}
+
+function tbMarkRemoveImage() {
+  tbRemoveImage = true; tbPendingImage = null;
+  var fi = document.getElementById('tb-prize-image'); if (fi) fi.value = '';
+  var rm = document.getElementById('tb-prize-image-remove'); if (rm) rm.style.display = 'none';
+  log('Bild wird beim Speichern entfernt', 'gold');
+}
+
+function tbHandleImageAfterSave(prizeId) {
+  if (!prizeId || !currentTeam) return;
+  if (tbRemoveImage) {
+    tbRemoveImage = false;
+    fetch('/giveaway/api/prize/image', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ team: currentTeam, prizeId: prizeId, imageBase64: '' }) })
+      .then(function(r) {
+        if (r.ok) { log('Preis-Bild entfernt', 'gold'); tbLoadPrizes(); }
+        else log('Bild entfernen fehlgeschlagen', 'red');
+      })
+      .catch(function(e) { log('Bild entfernen fehlgeschlagen: ' + e.message, 'red'); });
+    return;
+  }
+  if (!tbPendingImage) return;
+  var file = tbPendingImage;
+  tbPendingImage = null;
+  var fi = document.getElementById('tb-prize-image'); if (fi) fi.value = '';
+  if (file.size > 2 * 1024 * 1024) { log('Bild zu groß (max 2 MB)', 'red'); return; }
+  var rd = new FileReader();
+  rd.onload = function() {
+    var b64 = String(rd.result).split(',')[1] || '';
+    fetch('/giveaway/api/prize/image', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ team: currentTeam, prizeId: prizeId, mime: file.type, imageBase64: b64 }) })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(x) {
+        if (x.ok) { log('Preis-Bild gespeichert', 'gold'); tbLoadPrizes(); }
+        else log('Bild-Upload fehlgeschlagen: ' + (x.j.error || '?'), 'red');
+      })
+      .catch(function(e) { log('Bild-Upload fehlgeschlagen: ' + e.message, 'red'); });
+  };
+  rd.readAsDataURL(file);
 }
 
 function tbEditPrize(prizeId) {
@@ -213,6 +269,8 @@ function tbEditPrize(prizeId) {
   tbEditPrizeId = prizeId;
   document.getElementById('tb-prize-title').value = p.title || '';
   var sp = document.getElementById('tb-prize-sponsor'); if (sp) sp.value = p.sponsor || '';
+  var de = document.getElementById('tb-prize-desc'); if (de) de.value = p.description || '';
+  var rm = document.getElementById('tb-prize-image-remove'); if (rm) rm.style.display = p.has_image ? '' : 'none';
   // Einsatz-Ende: Restminuten vorbelegen (0 = offen lassen / entfernen).
   var endEl = document.getElementById('tb-prize-end');
   if (endEl) endEl.value = p.wager_end
@@ -223,10 +281,16 @@ function tbEditPrize(prizeId) {
   document.getElementById('tb-prize-title').focus();
 }
 
-function tbCancelEdit() {
+function tbCancelEdit(opts) {
   tbEditPrizeId = null;
   document.getElementById('tb-prize-title').value = '';
   var sp = document.getElementById('tb-prize-sponsor'); if (sp) sp.value = '';
+  var de = document.getElementById('tb-prize-desc'); if (de) de.value = '';
+  var rm = document.getElementById('tb-prize-image-remove'); if (rm) rm.style.display = 'none';
+  if (!(opts && opts.keepImage)) {
+    tbPendingImage = null; tbRemoveImage = false;
+    var fi = document.getElementById('tb-prize-image'); if (fi) fi.value = '';
+  }
   var endEl = document.getElementById('tb-prize-end'); if (endEl) endEl.value = 0;
   document.getElementById('tb-prize-form-title').textContent = 'NEUER PREIS';
   document.getElementById('tb-prize-save').textContent = 'ANLEGEN';
@@ -248,7 +312,9 @@ function renderPrizes(prizes) {
   if (!prizes || !prizes.length) { host.innerHTML = '<div class="wsc-empty">Noch keine Preise.</div>'; return; }
   host.innerHTML = prizes.map(function(p) {
     return '<div class="tb-prize"><span class="t" title="' + esc(p.sponsor ? 'bereitgestellt von ' + p.sponsor : '') + '">#'
-      + p.id + ' ' + esc(p.title) + (p.sponsor ? ' <span style="opacity:.55">· ' + esc(p.sponsor) + '</span>' : '') + '</span>'
+      + p.id + ' ' + esc(p.title)
+      + (p.has_image ? ' <span title="Bild vorhanden" style="cursor:pointer" onclick="window.open(\'/giveaway/api/prize/image/' + p.id + '\')">🖼</span>' : '')
+      + (p.sponsor ? ' <span style="opacity:.55">· ' + esc(p.sponsor) + '</span>' : '') + '</span>'
       + '<span class="s">' + Number(p.total_stake).toFixed(0) + ' 🎟</span>'
       + (p.status === 'open'
           ? '<button class="btn btn-cyan btn-sm btn-mini" onclick="tbEditPrize(' + p.id + ')" title="Titel/Sponsor/Einsatz-Ende korrigieren">✎</button>'
@@ -301,6 +367,15 @@ function renderEntries(msg) {
 }
 
 
+// Startzeit kompakt: heute nur Uhrzeit, sonst Tag.Monat + Uhrzeit.
+function fmtGwStart(ts) {
+  var d = new Date(ts);
+  if (!ts || isNaN(d.getTime())) return '';
+  var hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  return d.toDateString() === new Date().toDateString() ? hm
+       : d.getDate() + '.' + (d.getMonth() + 1) + '. ' + hm;
+}
+
 function renderGiveawaySelect() {
   var sel = document.getElementById('gw-select');
   if (!sel) return;
@@ -308,9 +383,14 @@ function renderGiveawaySelect() {
   var CORE_ICON = { CORE_CurrentViewers: '⚡ ', CORE_TicketBuy: '🎟 ', CORE_ScreenshotContest: '📸 ' };
   giveawayList.forEach(function(g) {
     if (g.primary) return;   // Kampagne ist die leere Auswahl
+    var meta = [];
+    if (g.participants !== undefined && g.participants !== null) meta.push(g.participants + ' TN');
+    var start = fmtGwStart(g.startedAt);
+    if (start) meta.push('seit ' + start);
     var label = (CORE_ICON[g.core] || '')
               + (g.name ? g.name + ' ' : (g.keyword ? '„' + g.keyword + '" ' : ''))
               + g.gid.replace(/^sess_/, '#')
+              + (meta.length ? ' (' + meta.join(' · ') + ')' : '')
               + (g.paused ? ' ⏸' : '');
     opts.push('<option value="' + esc(g.gid) + '">' + esc(label) + '</option>');
   });
@@ -514,10 +594,14 @@ function handle(msg) {
       participants = {};
       gwIsOpen = !!msg.open;
       gwPaused = !!msg.paused;
+      gwCore = msg.core || null;
+      gwDisplayCols = (Array.isArray(msg.display) && msg.display.length) ? msg.display : null;
       if (Array.isArray(msg.channels)) gwChannels = msg.channels;
       (msg.participants || []).forEach(p => {
         const key = (p.username || '').toLowerCase();
-        participants[key] = {
+        // Core-Felder (present/stake/balance/score/…) mitnehmen, die
+        // Standard-Felder normalisiert obendrauf.
+        participants[key] = Object.assign({}, p, {
           display:  p.username || key,
           watchSec: parseInt(p.watchSec) || 0,
           msgs:     parseInt(p.msgs) || 0,
@@ -528,7 +612,7 @@ function handle(msg) {
           eligible:   !!p.eligible,
           registered: !!p.registered,
           follows:    parseInt(p.channelsFollowed) || 0
-        };
+        });
         if (Number.isFinite(parseInt(p.drawMinSec))) gwDrawMinSec = parseInt(p.drawMinSec);
         if (Number.isFinite(parseInt(p.followMin)))  gwFollowMin  = parseInt(p.followMin);
       });
@@ -610,8 +694,8 @@ function handle(msg) {
       if (msg.type === 'instance_opened') log('Zusatz-Giveaway gestartet: ' + (msg.giveawayId || '?')
             + (msg.keyword ? ' (Keyword „' + msg.keyword + '")' : '')
             + (msg.wagerCmd ? ' (Setzen: „' + msg.wagerCmd + '")' : ''), 'gold');
-      if (msg.type === 'prize_added')   { log('Preis #' + msg.prizeId + ' angelegt: „' + (msg.title || '') + '"', 'gold'); tbLoadPrizes(); }
-      if (msg.type === 'prize_edited')  { log('Preis #' + msg.prizeId + ' korrigiert', 'gold'); tbLoadPrizes(); }
+      if (msg.type === 'prize_added')   { log('Preis #' + msg.prizeId + ' angelegt: „' + (msg.title || '') + '"', 'gold'); tbHandleImageAfterSave(msg.prizeId); tbLoadPrizes(); }
+      if (msg.type === 'prize_edited')  { log('Preis #' + msg.prizeId + ' korrigiert', 'gold'); tbHandleImageAfterSave(msg.prizeId); tbLoadPrizes(); }
       if (msg.type === 'prize_cancelled') { log('Preis #' + msg.prizeId + ' storniert — ' + (msg.refundedUsers || 0) + ' Einsätze zurückgebucht', 'gold'); tbLoadPrizes(); }
       if (msg.type === 'page_announced') log('Zuschauer-Link im Chat angesagt', 'gold');
       if (msg.type === 'wager_cmd_set') log('Setz-Befehl geändert: „' + (msg.command || '') + '"', 'gold');
@@ -910,6 +994,17 @@ function loadKeyword() { send({ event:'gw_cmd', cmd:'gw_get_keyword' }); }
 function renderHead() {
   const row = document.getElementById('thead-row');
   if (!row) return;
+  // Instanz mit eigener Spaltendeklaration (Sofortverlosung/Los/Contest):
+  // Spalten kommen vom Core statt der Coin-/Viewtime-Spalten der Kampagne.
+  if (gwDisplayCols) {
+    row.innerHTML =
+      `<th class="num" onclick="sortBy('rank')">#</th>`
+      + `<th onclick="sortBy('name')">NAME</th>`
+      + gwDisplayCols.map(c =>
+          `<th class="num" onclick="sortBy('${esc(c.key)}')">${esc(String(c.label || c.key).toUpperCase())}</th>`).join('')
+      + `<th class="num">AKTIONEN</th>`;
+    return;
+  }
   const chCols = gwChannels.map(ch =>
     `<th class="num" title="Viewtime auf ${esc(ch)}">${esc(ch)}</th>`).join('');
   row.innerHTML =
@@ -973,6 +1068,16 @@ function statusBadge(p) {
   return ` <span class="pend-badge" title="${esc(t)}">&#9675; VORGEMERKT</span>`;
 }
 
+// Zellwert einer Core-Spalte: Booleans als Häkchen, Zahlen kompakt,
+// Contest-Status auf Deutsch.
+var COL_STATUS_LABEL = { pending: 'WARTET', approved: 'FREIGEGEBEN', rejected: 'ABGELEHNT' };
+function fmtColVal(v) {
+  if (v === true) return '&#10003;';
+  if (v === false || v === undefined || v === null || v === '') return '—';
+  if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(2);
+  return esc(COL_STATUS_LABEL[v] || String(v));
+}
+
 function renderTable(hlKey=null) {
   const search = document.getElementById('search').value.toLowerCase();
   const entries = Object.entries(participants)
@@ -985,6 +1090,20 @@ function renderTable(hlKey=null) {
     });
 
   document.getElementById('list-count').textContent = entries.length;
+  if (gwDisplayCols) {
+    // Core-Spalten: keine Coin-Badges, Aktionen nur BAN (+1/-1 sind
+    // Kampagnen-Coins und haben hier keine Wirkung).
+    document.getElementById('tbl').innerHTML = entries.map(([key,p],i) => `
+      <tr class="${p.banned?'banned':''} ${p.eligible?'eligible':''} ${key===hlKey?'winner-row':''}">
+        <td class="rank">${i+1}</td>
+        <td class="name">${esc(maskName(key, p.display||key))}${p.banned?' <span style="color:var(--red);font-size:10px;">[BAN]</span>':''}</td>
+        ${gwDisplayCols.map(c => `<td class="tickets">${fmtColVal(p[c.key])}</td>`).join('')}
+        <td style="display:flex;gap:4px;justify-content:flex-end;">
+          <button class="mini-btn ban" onclick="toggleBan('${esc(key)}')">${p.banned?'UN':'BAN'}</button>
+        </td>
+      </tr>`).join('');
+    return;
+  }
   document.getElementById('tbl').innerHTML = entries.map(([key,p],i) => `
     <tr class="${p.banned?'banned':''} ${p.eligible?'eligible':(isPending(p)?'pending':'')} ${key===hlKey?'winner-row':''}">
       <td class="rank">${i+1}</td>

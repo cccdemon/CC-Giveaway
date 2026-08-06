@@ -205,6 +205,15 @@
           <input type="text" id="tb-prize-sponsor" placeholder="Sponsor (optional)" maxlength="100">
         </div>
         <div class="input-row mt-6">
+          <input type="text" id="tb-prize-desc" placeholder="Beschreibung (optional — steht auf der Setz-Seite)" maxlength="500">
+        </div>
+        <div class="input-row mt-6">
+          <input type="file" id="tb-prize-image" accept="image/png,image/jpeg,image/webp" onchange="tbImageChanged()"
+                 title="Preis-Bild (optional, max 2 MB — steht auf der Setz-Seite)">
+          <button class="btn btn-red btn-sm" id="tb-prize-image-remove" style="display:none" onclick="tbMarkRemoveImage()"
+                  title="Vorhandenes Bild beim Speichern entfernen">BILD ✖</button>
+        </div>
+        <div class="input-row mt-6">
           <input type="number" id="tb-prize-end" min="0" max="20160" step="15" value="0" class="in-narrow" title="Einsatz-Ende in Minuten (0 = offen bis zur Ziehung)">
           <span class="mr-lbl">min Einsatz-Ende (0 = offen)</span>
           <button class="btn btn-gold btn-sm" id="tb-prize-save" onclick="tbAddPrize()">ANLEGEN</button>

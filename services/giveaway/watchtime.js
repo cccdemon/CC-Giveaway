@@ -834,8 +834,54 @@ class WatchtimeEngine {
     return result;
   }
 
+  // ── Panel-Teilnehmerlisten je Mechanik (CORE.display) ───
+  // TicketBuy: wer Guthaben hält oder gesetzt hat. balance ist team-weit
+  // (§10.1, wandert mit), stake gilt je Instanz; eligible = ≥1 Los gesetzt.
+  async getTicketBuyParticipants(teamId, gid) {
+    const t = sanitizeTeamId(teamId);
+    const round4 = (x) => Math.round((parseFloat(x) || 0) * 10000) / 10000;
+    const map = new Map();
+    const bal = await this.pg.query(
+      `SELECT username, SUM(amount) AS balance FROM credit_ledger WHERE team_id=$1 GROUP BY username`, [t]);
+    for (const r of bal.rows) map.set(r.username, { username: r.username, balance: round4(r.balance), stake: 0 });
+    const st = await this.pg.query(
+      `SELECT w.username, SUM(w.amount) AS stake
+       FROM prize_wagers w JOIN giveaway_prizes p ON p.id = w.prize_id
+       WHERE p.team_id=$1 AND p.session_id=$2 GROUP BY w.username`, [t, gid]);
+    for (const r of st.rows) {
+      const row = map.get(r.username) || { username: r.username, balance: 0, stake: 0 };
+      row.stake = round4(r.stake);
+      map.set(r.username, row);
+    }
+    const out = [];
+    for (const row of map.values()) {
+      if (row.balance <= 0 && row.stake <= 0) continue;
+      out.push({ ...row,
+        banned: await this.redis.get(K.gwBanned(t, row.username)) === '1',
+        registered: row.stake > 0, eligible: row.stake > 0 });
+    }
+    return out.sort((a, b) => b.stake - a.stake || b.balance - a.balance);
+  }
+
+  // Contest: Einsender mit Status/Punkten — dieselben Zahlen wie die
+  // Einsendungs-Karte, nur als Teilnehmerliste fürs Dashboard.
+  async getContestParticipants(teamId, gid) {
+    const t = sanitizeTeamId(teamId);
+    const out = [];
+    for (const s of await this.getContestStandings(t, gid, { all: true })) {
+      out.push({ username: s.username, entryId: s.entryId,
+        title: s.title || ('#' + s.entryId),
+        status: s.status, score: s.score, votes: s.votes,
+        banned: await this.redis.get(K.gwBanned(t, s.username)) === '1',
+        registered: true, eligible: s.status === 'approved' });
+    }
+    return out;
+  }
+
   // Alle offenen Giveaways (inkl. pausierter) mit Metadaten — fürs Panel.
-  async listGiveaways(teamId) {
+  // stats:true ergänzt Startzeit + Teilnehmerzahl (nur fürs Auswahl-Dropdown;
+  // die vielen internen Aufrufer zahlen die PG-Queries nicht mit).
+  async listGiveaways(teamId, { stats = false } = {}) {
     const t = sanitizeTeamId(teamId);
     const out = [];
     const legacySid = await this.redis.get(K.gwSessionId(t));
@@ -859,7 +905,43 @@ class WatchtimeEngine {
                  announce: await this.redis.get(K.gAnnounce(t, g)) !== 'false',
                  name: await this.redis.get(K.gName(t, g)) || '' });
     }
+    if (stats) {
+      const gids = out.map(g => g.gid).filter(Boolean);
+      const starts = {};
+      if (gids.length) {
+        try {
+          const r = await this.pg.query(
+            `SELECT id, opened_at FROM sessions WHERE team_id=$1 AND id = ANY($2)`, [t, gids]);
+          for (const row of r.rows) if (row.id) starts[row.id] = row.opened_at;
+        } catch { /* Anzeige-Metadaten — nie blockierend */ }
+      }
+      for (const g of out) {
+        g.startedAt = starts[g.gid] || null;
+        g.participants = await this._participantCount(t, g);
+      }
+    }
     return out;
+  }
+
+  // Teilnehmerzahl fürs Dropdown, je Mechanik: Setzer (TicketBuy),
+  // Einsender (Contest), sonst Angemeldete (Keyword-Opt-in).
+  async _participantCount(t, g) {
+    try {
+      if (g.core === 'CORE_TicketBuy') {
+        return (await this.getTicketBuyParticipants(t, g.gid)).filter(p => p.eligible).length;
+      }
+      if (g.core === 'CORE_ScreenshotContest') {
+        const r = await this.pg.query(
+          `SELECT COUNT(*)::int AS cnt FROM contest_entries WHERE session_id=$1 AND team_id=$2`, [g.gid, t]);
+        return parseInt(r.rows[0] && r.rows[0].cnt, 10) || 0;
+      }
+      let n = 0;
+      for (const u of await this.redis.smembers(K.gwUsers(t))) {
+        const reg = g.gid ? await this.redis.get(K.gReg(t, g.gid, u)) === '1' : false;
+        if (reg || (g.primary && await this.redis.get(K.gwRegistered(t, u)) === '1')) n++;
+      }
+      return n;
+    } catch { return null; }
   }
 
   // Sofortverlosung: (weiteres) Anmeldefenster öffnen. Teilnehmer aus
@@ -897,6 +979,7 @@ class WatchtimeEngine {
     const t = sanitizeTeamId(teamId);
     const r = await this.pg.query(
       `SELECT p.id, p.session_id, p.title, p.description, p.wager_end, p.status, p.sponsor,
+              (p.image IS NOT NULL) AS has_image,
               COALESCE((SELECT SUM(w.amount) FROM prize_wagers w WHERE w.prize_id = p.id), 0) AS total_stake
        FROM giveaway_prizes p WHERE p.team_id=$1` + (openOnly ? ` AND p.status='open'` : '') +
       ` ORDER BY p.id`, [t]);
