@@ -138,8 +138,8 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 `GET claims` (`?team=`, nur Owner — Inbox mit Kontaktdaten, Zugriff auditiert) · `POST claims/handling` (contacted/shipped/done) · `POST claims/purge` (Kontaktfelder sofort löschen, Nachweis bleibt)
 `POST contest/withdraw` (Einsender zieht eigene Einsendung zurück — Bild weg, Stimmen CASCADE; nur solange Instanz offen)
 `GET wager/state` · `POST wager` (nur der eingeloggte Zuschauer; auditiert `wager_set`/`wager_retract`)
-`POST prize/image` (Team-Mitglied, nur offene Preise, max 2 MB, leer = entfernen; auditiert) · `GET prize/image/:id` (eingeloggt)
-`GET contest/state` · `POST contest/entry` (Base64, max 2 MB, auditiert) · `POST contest/vote` (Rate-Limit) · `GET contest/image/:id`
+`POST prize/image` (Team-Mitglied, nur offene Preise, PNG/JPG max 7 MB, leer = entfernen; auditiert) · `GET prize/image/:token` (eingeloggt)
+`GET contest/state` · `POST contest/entry` (Base64, PNG/JPG max 7 MB, auditiert) · `POST contest/vote` (Rate-Limit) · `GET contest/image/:token`
 
 ## Admin WS `gw_cmd` (`{event:'gw_cmd',cmd,...}`)
 `gw_open`(+keyword) · `gw_close` · `gw_draw_winner`(+`giveawayId`,+`prizeId` bei TicketBuy) · `gw_set_keyword` · `gw_get_keyword` · `gw_add_ticket`(user,amount) · `gw_sub_ticket` · `gw_ban`/`gw_unban` · `gw_reset`

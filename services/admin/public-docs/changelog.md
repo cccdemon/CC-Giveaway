@@ -15,7 +15,10 @@ und Ablehnen gehen damit auf einen Blick. Neu ist der **Löschen-Knopf** für
 den Team-Owner: anders als das Ablehnen (Bild bleibt gesperrt gespeichert)
 entfernt er eine Einsendung **endgültig** — für Inhalte, die gar nicht
 gespeichert bleiben dürfen. Abgegebene Stimmen verfallen dabei; der Vorgang
-wird protokolliert.
+wird protokolliert. Der neue Knopf **„📸 Bilder prüfen"** in der Kopfleiste
+führt direkt zur Moderation, sobald ein Contest läuft. Außerdem angepasst:
+Bilder dürfen jetzt **bis 7 MB** groß sein, erlaubt sind **PNG und JPG**
+(WebP entfällt) in einer Auflösung von **Full HD (1920×1080) bis 4K**.
 
 ### Chat-Ansagen verlinken jetzt die Mitmach-Seiten
 

@@ -113,6 +113,8 @@
     <input type="text" id="sponsor-input" class="vis-campaign-only" placeholder="Sponsor / bereitgestellt von (optional)" maxlength="100">
     <button class="btn btn-gold vis-campaign-only" id="btn-verify" onclick="verifyFollows()">FOLLOWS PRÜFEN</button>
     <button class="btn btn-solid" id="btn-draw" onclick="drawWinner()">★ GEWINNER ZIEHEN</button>
+    <button class="btn btn-cyan" id="btn-contest-review" style="display:none" onclick="gotoContestReview()"
+            title="Einsendungen des laufenden Screenshot-Contests prüfen: Freigeben / Ablehnen / Löschen">📸 BILDER PRÜFEN</button>
     <span class="as-spacer"></span>
     <button class="btn btn-green vis-campaign-only" id="btn-open" onclick="gwOpen()">ÖFFNEN</button>
     <button class="btn btn-gold" id="btn-pause"  onclick="gwPause()">PAUSE</button>
@@ -210,8 +212,8 @@
           <input type="text" id="tb-prize-desc" placeholder="Beschreibung (optional — steht auf der Setz-Seite)" maxlength="500">
         </div>
         <div class="input-row mt-6">
-          <input type="file" id="tb-prize-image" accept="image/png,image/jpeg,image/webp" onchange="tbImageChanged()"
-                 title="Preis-Bild (optional, max 2 MB — steht auf der Setz-Seite)">
+          <input type="file" id="tb-prize-image" accept="image/png,image/jpeg" onchange="tbImageChanged()"
+                 title="Preis-Bild (optional, PNG/JPG, max 7 MB — steht auf der Setz-Seite)">
           <button class="btn btn-red btn-sm" id="tb-prize-image-remove" style="display:none" onclick="tbMarkRemoveImage()"
                   title="Vorhandenes Bild beim Speichern entfernen">BILD ✖</button>
         </div>

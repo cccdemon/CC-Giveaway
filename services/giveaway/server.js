@@ -1933,11 +1933,37 @@ function sniffImage(buf) {
 }
 const IMG_TOKEN_RE = /^[a-f0-9]{16,64}$/;
 
+// Bildmaße ohne Bibliothek: PNG aus dem IHDR-Chunk, JPEG aus dem ersten
+// SOF-Segment. Nur für die Contest-Auflösungsregel (1080p–4K) — schlägt das
+// Parsen fehl, wird abgelehnt (kein gültiges Bild).
+function imageDims(buf, mime) {
+  try {
+    if (mime === 'image/png' && buf.length >= 24) {
+      return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+    }
+    if (mime === 'image/jpeg') {
+      const SOF = [0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF];
+      let i = 2;
+      while (i + 9 < buf.length) {
+        if (buf[i] !== 0xFF) { i++; continue; }
+        const m = buf[i + 1];
+        if (m === 0xFF) { i++; continue; }
+        if (m === 0xD8 || m === 0x01 || (m >= 0xD0 && m <= 0xD7)) { i += 2; continue; }
+        if (SOF.includes(m)) return { h: buf.readUInt16BE(i + 5), w: buf.readUInt16BE(i + 7) };
+        i += 2 + buf.readUInt16BE(i + 2);
+      }
+    }
+  } catch { /* unlesbar → null */ }
+  return null;
+}
+// Betreiber-Vorgabe: 1080p bis 4K (DCI-Breite toleriert).
+const RES_MIN_W = 1920, RES_MIN_H = 1080, RES_MAX_W = 4096, RES_MAX_H = 2160;
+
 // ── Preis-Bild (CORE_TicketBuy): Upload nur Team-Mitglieder, sichtbar für
 // eingeloggte Zuschauer auf der Setz-Seite. MIME-/Größen-Grenzen wie beim
 // Contest. Leeres imageBase64 = Bild entfernen. Nur offene Preise —
 // nach der Ziehung ist der Ziehungssatz der Nachweis.
-app.post('/api/prize/image', express.json({ limit: '4mb' }), async (req, res) => {
+app.post('/api/prize/image', express.json({ limit: '12mb' }), async (req, res) => {
   try {
     const user = reqUser(req);
     if (!user) return res.status(401).json({ error: 'unauthenticated' });
@@ -2089,7 +2115,8 @@ app.get('/api/contest/state', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/contest/entry', express.json({ limit: '4mb' }), async (req, res) => {
+// 12mb JSON-Limit: 7 MB Binärbild ≈ 9,4 MB Base64 + JSON-Rahmen.
+app.post('/api/contest/entry', express.json({ limit: '12mb' }), async (req, res) => {
   try {
     const user = reqUser(req);
     if (!user) return res.status(401).json({ error: 'unauthenticated' });
@@ -2104,6 +2131,11 @@ app.post('/api/contest/entry', express.json({ limit: '4mb' }), async (req, res) 
     if (!image || !image.length) return res.status(400).json({ error: 'no_image' });
     if (image.length > ContestCore.IMAGE_MAX_BYTES) return res.status(413).json({ error: 'image_too_large' });
     if (sniffImage(image) !== mime) return res.status(400).json({ error: 'bad_image' });
+    const dims = imageDims(image, mime);
+    if (!dims || dims.w < RES_MIN_W || dims.h < RES_MIN_H || dims.w > RES_MAX_W || dims.h > RES_MAX_H) {
+      return res.status(400).json({ error: 'bad_resolution',
+                                    width: dims ? dims.w : null, height: dims ? dims.h : null });
+    }
     if (!await rateLimit(`centry:${user}`, 15)) return res.status(429).json({ error: 'rate_limited' });
     const r = await wte.submitContestEntry(teamId, inst.gid, user, {
       title: req.body.title, mime, image, confirmReplace: !!req.body.confirmReplace });

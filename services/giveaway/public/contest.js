@@ -16,9 +16,10 @@ var ERRORS = {
   no_entry: 'Diese Einsendung gibt es nicht (mehr).',
   contest_closed: 'Der Contest ist geschlossen.',
   rate_limited: 'Langsam — eine Wertung pro Sekunde.',
-  image_too_large: 'Bild zu groß (max. 2 MB).',
-  bad_mime: 'Nur PNG, JPEG oder WebP.',
-  bad_image: 'Die Datei ist kein gültiges PNG/JPEG/WebP-Bild.',
+  image_too_large: 'Bild zu groß (max. 7 MB).',
+  bad_mime: 'Nur PNG oder JPG.',
+  bad_image: 'Die Datei ist kein gültiges PNG-/JPG-Bild.',
+  bad_resolution: 'Auflösung muss zwischen Full HD (1920×1080) und 4K (max. 4096×2160) liegen.',
   banned: 'Du bist von diesem Giveaway ausgeschlossen.',
 };
 
@@ -60,7 +61,7 @@ function renderContest(c) {
           + c.myEntry.votes + ' Stimmen]</div>' : '')
       + voteHint
       + '<div class="sc-row"><input type="text" id="title-' + esc(c.teamId) + '" placeholder="Titel (optional)" maxlength="100">'
-      + '<input type="file" id="file-' + esc(c.teamId) + '" accept="image/png,image/jpeg,image/webp">'
+      + '<input type="file" id="file-' + esc(c.teamId) + '" accept="image/png,image/jpeg" title="PNG oder JPG, 1080p bis 4K, max. 7 MB">'
       + '<button class="btn btn-gold btn-sm" onclick="submitEntry(\'' + esc(c.teamId) + '\',' + (c.myEntry ? c.myEntry.votes : 0) + ')">EINSENDEN</button>'
       + (c.myEntry ? '<button class="btn btn-red btn-sm" onclick="withdrawEntry(\'' + esc(c.teamId) + '\',' + c.myEntry.votes + ')">ZURÜCKZIEHEN</button>' : '')
       + '</div>'

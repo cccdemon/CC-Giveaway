@@ -19,8 +19,8 @@
 const VOTE_MIN = 1;
 const VOTE_MAX = 10;
 const MIN_WATCH_DEF = 600;        // 10 min Kampagnen-Viewtime für Einsenden/Voten
-const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
-const IMAGE_MIMES = Object.freeze(['image/png', 'image/jpeg', 'image/webp']);
+const IMAGE_MAX_BYTES = 7 * 1024 * 1024;   // Betreiber-Vorgabe: max. 7 MB
+const IMAGE_MIMES = Object.freeze(['image/png', 'image/jpeg']);   // nur JPG/PNG
 
 function clampScore(v) {
   const n = parseInt(v, 10);

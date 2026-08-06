@@ -247,7 +247,7 @@ function tbHandleImageAfterSave(prizeId) {
   var file = tbPendingImage;
   tbPendingImage = null;
   var fi = document.getElementById('tb-prize-image'); if (fi) fi.value = '';
-  if (file.size > 2 * 1024 * 1024) { log('Bild zu groß (max 2 MB)', 'red'); return; }
+  if (file.size > 7 * 1024 * 1024) { log('Bild zu groß (max 7 MB)', 'red'); return; }
   var rd = new FileReader();
   rd.onload = function() {
     var b64 = String(rd.result).split(',')[1] || '';
@@ -337,6 +337,19 @@ function scVoting(action) {
 
 function scLoadEntries() { send({ event: 'gw_cmd', cmd: 'gw_list_entries', giveawayId: currentGiveaway }); }
 
+// Direkteinstieg in die Bildadministration: Contest-Instanz auswählen,
+// Einsendungen laden, zur Contest-Karte scrollen.
+function gotoContestReview() {
+  var g = giveawayList.find(function(x){ return !x.primary && x.core === 'CORE_ScreenshotContest'; });
+  if (!g) { log('Kein laufender Screenshot-Contest', 'red'); return; }
+  var sel = document.getElementById('gw-select');
+  if (sel && sel.value !== g.gid) { sel.value = g.gid; onGiveawayChange(); }
+  else if (currentGiveaway !== g.gid) { currentGiveaway = g.gid; requestData(); }
+  scLoadEntries();
+  var card = document.getElementById('card-contest');
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function scReview(entryId, decision) {
   send({ event: 'gw_cmd', cmd: 'gw_review_entry', entryId: entryId, decision: decision });
 }
@@ -415,6 +428,11 @@ function renderGiveawaySelect() {
     opts.push('<option value="' + esc(g.gid) + '">' + esc(label) + '</option>');
   });
   sel.innerHTML = opts.join('');
+  // Bild-Review-Button nur zeigen, wenn ein Screenshot-Contest läuft —
+  // Direkteinstieg in die Moderation, ohne erst das Dropdown zu suchen.
+  var rvBtn = document.getElementById('btn-contest-review');
+  if (rvBtn) rvBtn.style.display =
+    giveawayList.some(function(g){ return !g.primary && g.core === 'CORE_ScreenshotContest'; }) ? '' : 'none';
   // Auswahl halten; verschwundene Instanz (geschlossen) → zurück zur Kampagne.
   if (currentGiveaway && !giveawayList.some(function(g){ return g.gid === currentGiveaway && !g.primary; })) {
     currentGiveaway = null;

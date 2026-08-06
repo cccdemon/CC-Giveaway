@@ -329,7 +329,7 @@ sie; die höchste **Punktsumme** gewinnt (Entscheidung §10.5).
   (Nachweis), Draw-Audit/Claim/Ansage kommen gratis aus der Engine.
 - Kein Watchtime-Accrual über die Instanz (`accrual:'none'`); die
   Viewtime-Schwellen lesen den Team-/Kampagnenstand.
-- Bilder liegen als `BYTEA` in Postgres (max. 2 MB, `png/jpeg/webp`) — kein
+- Bilder liegen als `BYTEA` in Postgres (max. 7 MB, `png/jpeg`) — kein
   neues Volume, der Backup-Container sichert sie mit. Auslieferung nur hinter
   Login; sichtbar sind `approved` (alle), `pending/rejected` nur Einsender und
   Veranstalter.
