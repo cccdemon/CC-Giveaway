@@ -7,6 +7,17 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 6. August 2026
 
+### Archiv: Kampagnen-Klammer über zusammengehörige Sitzungen
+
+Vor der Systemumstellung legte jeder Stream-Start eine neue Sitzung an,
+während der Punktestand der Kampagne durchlief — im Archiv sah eine
+wochenlange Kampagne deshalb wie viele kleine Giveaways aus. Das Archiv
+fasst zusammengehörige Sitzungen jetzt als **Kampagne** zusammen (goldene
+Karte): Gesamtzeitraum laut Daten, Teilnehmer über alle Sitzungen,
+Endstand, Ziehungen und Gewinner. Ein Klick filtert die zugehörigen
+Einzel-Sitzungen. Eine Kampagne endet mit der Sitzung, in der gezogen und
+geschlossen wurde (oder mit einem Zurücksetzen).
+
 ### Dashboard: Gewinn-Abwicklung und vergangene Giveaways direkt sichtbar
 
 Zwei neue Karten in der rechten Spalte des Dashboards: **Gewinn-Abwicklung**

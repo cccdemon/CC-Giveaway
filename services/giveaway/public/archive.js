@@ -59,33 +59,78 @@ function onTeamChange() {
   loadList();
 }
 
+var campaigns = [];
+var campFilter = null;   // Session-IDs der gewählten Kampagnen-Klammer
+
 async function loadList() {
   try {
     var d = await (await fetch('/giveaway/api/archive?team=' + encodeURIComponent(currentTeam))).json();
     if (d.error) throw new Error(d.error);
-    sessions = d.sessions || [];
-    var el = document.getElementById('ar-list');
-    if (!sessions.length) { el.innerHTML = '<div class="wsc-empty">Noch kein Giveaway gelaufen.</div>'; return; }
-    el.innerHTML = sessions.map(function(s){
-      var closed = !!s.closed_at;
-      var chans = Array.isArray(s.channels) ? s.channels : [];
-      return '<div class="ar-item" data-id="' + esc(s.id) + '">'
-        + '<h4>' + fmt(s.opened_at, false) + (s.keyword ? ' · „' + esc(s.keyword) + '"' : '')
-        + '<span class="badge ' + (closed ? 'closed' : 'open') + '">' + (closed ? 'ABGESCHLOSSEN' : 'LÄUFT') + '</span></h4>'
-        + '<div class="sub">' + (chans.length ? esc(chans.join(', ')) : '–') + '<br>'
-        + num(s.total_participants) + ' Teilnehmer · ' + num(s.total_coins).toFixed(2) + ' Punkte · '
-        + num(s.draws) + ' Ziehung' + (num(s.draws) === 1 ? '' : 'en')
-        + (num(s.test_draws) ? ' (+' + s.test_draws + ' Test)' : '')
-        + (s.winners ? '<br>Gewinner: ' + mask(s.winners) : '')
-        + '</div></div>';
-    }).join('');
-    Array.prototype.forEach.call(el.querySelectorAll('.ar-item'), function(it){
-      it.onclick = function(){ openSession(it.getAttribute('data-id')); };
-    });
+    sessions  = d.sessions || [];
+    campaigns = d.campaigns || [];
+    campFilter = null;
+    renderList();
   } catch(e) {
     document.getElementById('ar-list').innerHTML = '<div class="wsc-empty">' + esc(e.message) + '</div>';
   }
 }
+
+function renderSessionItem(s) {
+  var closed = !!s.closed_at;
+  var chans = Array.isArray(s.channels) ? s.channels : [];
+  return '<div class="ar-item" data-id="' + esc(s.id) + '">'
+    + '<h4>' + fmt(s.opened_at, false) + (s.keyword ? ' · „' + esc(s.keyword) + '"' : '')
+    + '<span class="badge ' + (closed ? 'closed' : 'open') + '">' + (closed ? 'ABGESCHLOSSEN' : 'LÄUFT') + '</span></h4>'
+    + '<div class="sub">' + (chans.length ? esc(chans.join(', ')) : '–') + '<br>'
+    + num(s.total_participants) + ' Teilnehmer · ' + num(s.total_coins).toFixed(2) + ' Punkte · '
+    + num(s.draws) + ' Ziehung' + (num(s.draws) === 1 ? '' : 'en')
+    + (num(s.test_draws) ? ' (+' + s.test_draws + ' Test)' : '')
+    + (s.winners ? '<br>Gewinner: ' + mask(s.winners) : '')
+    + '</div></div>';
+}
+
+// Kampagnen-Klammern (nur Gruppen aus mehreren Sitzungen): eine Kampagne
+// mit durchlaufendem Bestand verteilte sich vor der Systemumstellung auf
+// viele Auto-Open-Sitzungen — hier stehen Gesamtzeitraum und Summen für
+// den Nachweis; Klick filtert die zugehörigen Sitzungen.
+function renderList() {
+  var el = document.getElementById('ar-list');
+  var groups = campaigns.filter(function(c){ return (c.sessions || []).length > 1; });
+  var head = '';
+  if (groups.length) {
+    head = '<div class="ar-note" style="margin-bottom:4px">KAMPAGNEN (durchlaufender Bestand über mehrere Sitzungen)</div>'
+      + groups.map(function(c, i){
+          var active = campFilter && campFilter.join(',') === c.sessions.join(',');
+          return '<div class="ar-item' + (active ? ' active' : '') + '" data-camp="' + i + '" '
+            + 'style="border-left:3px solid var(--gold,#f0a500)">'
+            + '<h4>' + fmt(c.dataFrom || c.from, false) + ' – ' + fmt(c.dataTo || c.to, false)
+            + '<span class="badge closed">' + c.sessions.length + ' SITZUNGEN</span></h4>'
+            + '<div class="sub">' + num(c.participants) + ' Teilnehmer gesamt · Endstand '
+            + num(c.endCoins).toFixed(2) + ' Punkte · ' + num(c.draws) + ' Ziehung' + (num(c.draws) === 1 ? '' : 'en')
+            + (c.winners && c.winners.length ? '<br>Gewinner: ' + mask(c.winners.join(', ')) : '')
+            + '</div></div>';
+        }).join('')
+      + (campFilter
+          ? '<div class="ar-note" style="cursor:pointer;margin:4px 0 8px" onclick="clearCampFilter()">✕ Filter aufheben — alle Sitzungen zeigen</div>'
+          : '')
+      + '<div class="ar-note" style="margin:6px 0 4px">EINZELNE SITZUNGEN</div>';
+  }
+  var rows = campFilter ? sessions.filter(function(s){ return campFilter.indexOf(s.id) >= 0; }) : sessions;
+  el.innerHTML = head + (rows.length ? rows.map(renderSessionItem).join('')
+                                     : '<div class="wsc-empty">Noch kein Giveaway gelaufen.</div>');
+  Array.prototype.forEach.call(el.querySelectorAll('.ar-item[data-id]'), function(it){
+    it.onclick = function(){ openSession(it.getAttribute('data-id')); };
+  });
+  Array.prototype.forEach.call(el.querySelectorAll('.ar-item[data-camp]'), function(it){
+    it.onclick = function(){
+      var c = groups[parseInt(it.getAttribute('data-camp'), 10)];
+      campFilter = (campFilter && campFilter.join(',') === c.sessions.join(',')) ? null : c.sessions.slice();
+      renderList();
+    };
+  });
+}
+
+function clearCampFilter() { campFilter = null; renderList(); }
 
 async function openSession(sid) {
   Array.prototype.forEach.call(document.querySelectorAll('.ar-item'), function(it){

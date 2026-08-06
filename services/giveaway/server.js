@@ -2419,7 +2419,7 @@ app.get('/api/archive', async (req, res) => {
     const teamId = sanitizeTeamId(req.query.team);
     if (!await isMember(reqUser(req), teamId)) return res.status(403).json({ error: 'forbidden' });
     const r = await pg.query(`
-      SELECT s.id, s.keyword, s.channels, s.opened_at, s.closed_at,
+      SELECT s.id, s.keyword, s.channels, s.opened_at, s.closed_at, s.core,
              s.total_participants, s.total_coins,
              (SELECT COUNT(*)::int FROM giveaway_draws d WHERE d.session_id = s.id AND NOT d.is_test) AS draws,
              (SELECT COUNT(*)::int FROM giveaway_draws d WHERE d.session_id = s.id AND d.is_test)     AS test_draws,
@@ -2428,7 +2428,45 @@ app.get('/api/archive', async (req, res) => {
              (SELECT COUNT(*)::int FROM draw_claims c WHERE c.session_id = s.id AND c.status='claimed') AS claimed
       FROM sessions s WHERE s.team_id = $1
       ORDER BY s.opened_at DESC LIMIT 200`, [teamId]);
-    res.json({ team: teamId, sessions: r.rows });
+    // ── Kampagnen-Klammer: Auto-Open legte (vor dem Core-Umbau) je
+    // Stream-Start eine NEUE Sitzung an, während der Coin-Bestand team-weit
+    // durchlief. Für den Nachweis gehören diese Sitzungen zusammen.
+    // Eine Gruppe endet mit der Sitzung, die geschlossen wurde UND eine
+    // echte Ziehung hat (der Bestand ist damit verlost) — oder wenn
+    // zwischendurch ein gw_reset lag. Instanz-Mechaniken bleiben einzeln.
+    let campaigns = [];
+    try {
+      const resets = await pg.query(
+        `SELECT ts FROM audit_log WHERE team_id=$1 AND action='gw_reset' AND result='ok' ORDER BY ts`, [teamId]);
+      const resetTs = resets.rows.map(x => new Date(x.ts).getTime());
+      const camp = r.rows.filter(s => !s.core || s.core === 'CORE_WatchtimeChatActivity')
+        .slice().sort((a, b) => new Date(a.opened_at) - new Date(b.opened_at));
+      let cur = null;
+      for (const s of camp) {
+        const t = new Date(s.opened_at).getTime();
+        if (cur && resetTs.some(x => x > cur.lastOpen && x < t)) { campaigns.push(cur); cur = null; }
+        if (!cur) cur = { sessions: [], from: s.opened_at, to: null, draws: 0, winners: [], lastOpen: 0 };
+        cur.sessions.push(s.id);
+        cur.lastOpen = t;
+        cur.to = s.closed_at || s.opened_at;
+        cur.draws += Number(s.draws) || 0;
+        if (s.winners) cur.winners.push(s.winners);
+        cur.endCoins = s.total_coins;
+        if (s.closed_at && Number(s.draws) > 0) { campaigns.push(cur); cur = null; }
+      }
+      if (cur) campaigns.push(cur);
+      for (const c of campaigns) {
+        delete c.lastOpen;
+        const [act, tn] = await Promise.all([
+          pg.query(`SELECT MIN(ts) AS f, MAX(ts) AS l FROM watchtime_events WHERE session_id = ANY($1)`, [c.sessions]),
+          pg.query(`SELECT COUNT(DISTINCT username)::int AS n FROM campaign_participation WHERE session_id = ANY($1)`, [c.sessions]),
+        ]);
+        if (act.rows[0] && act.rows[0].f) { c.dataFrom = act.rows[0].f; c.dataTo = act.rows[0].l; }
+        c.participants = tn.rows[0] ? tn.rows[0].n : 0;
+      }
+      campaigns.reverse();
+    } catch (e) { logErr('GW', 'campaign grouping:', e.message); campaigns = []; }
+    res.json({ team: teamId, sessions: r.rows, campaigns });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
