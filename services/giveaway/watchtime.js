@@ -1248,6 +1248,18 @@ class WatchtimeEngine {
     return r.rowCount ? { ok: true, ...r.rows[0] } : { error: 'no_entry' };
   }
 
+  // Owner-Löschung (Moderation): Zeile weg = Bild weg, Stimmen fallen per
+  // CASCADE. Anders als der Selbst-Rückzug JEDERZEIT möglich — rechtswidrige
+  // Inhalte dürfen nicht bis zum Contest-Ende gespeichert bleiben. Für bloß
+  // unpassende Bilder reicht reject (Anzeige gesperrt, Nachweis bleibt).
+  async deleteContestEntry(teamId, entryId) {
+    const t = sanitizeTeamId(teamId);
+    const r = await this.pg.query(
+      `DELETE FROM contest_entries WHERE id=$1 AND team_id=$2 RETURNING username, title`,
+      [entryId, t]);
+    return r.rowCount ? { ok: true, ...r.rows[0] } : { error: 'no_entry' };
+  }
+
   // Voting-Steuerung: closed (Default) | open | paused. Nur 'open' nimmt Stimmen an.
   async setContestVoting(teamId, gid, state) {
     const t = sanitizeTeamId(teamId);

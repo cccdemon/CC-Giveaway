@@ -341,27 +341,47 @@ function scReview(entryId, decision) {
   send({ event: 'gw_cmd', cmd: 'gw_review_entry', entryId: entryId, decision: decision });
 }
 
+// Endgültig löschen (Owner): für Schrott/rechtswidrige Inhalte — Reject
+// sperrt nur die Anzeige, das Bild bliebe gespeichert.
+var scEntries = [];
+function scDeleteEntry(entryId) {
+  var en = scEntries.find(function(x){ return x.entryId === entryId; }) || {};
+  // Streamermodus: auch im confirm() nur das Pseudonym zeigen.
+  var shown = en.username ? maskName((en.username || '').toLowerCase(), en.username) : '';
+  if (!confirm('Einsendung #' + entryId + (shown ? ' von „' + shown + '"' : '')
+      + ' ENDGÜLTIG löschen?\n\nDas Bild wird gelöscht, abgegebene Stimmen verfallen. '
+      + 'Für unpassende, aber harmlose Bilder reicht Ablehnen (✗).')) return;
+  send({ event: 'gw_cmd', cmd: 'gw_delete_entry', entryId: entryId });
+}
+
 var SC_VOTING_LABEL = { open: 'OFFEN', paused: 'PAUSIERT', closed: 'GESCHLOSSEN' };
+var SC_STATUS_TEXT = { pending: 'WARTET AUF FREIGABE', approved: 'FREIGEGEBEN', rejected: 'ABGELEHNT' };
 function renderEntries(msg) {
   var badge = document.getElementById('sc-voting-state');
   if (badge) badge.textContent = SC_VOTING_LABEL[msg.voting] || msg.voting || '?';
   var host = document.getElementById('sc-entries');
   if (!host) return;
   var entries = msg.entries || [];
+  scEntries = entries;
   if (!entries.length) { host.innerHTML = '<div class="wsc-empty">Noch keine Einsendungen.</div>'; return; }
   host.innerHTML = entries.map(function(en) {
     var name = maskName(en.username, en.username);
+    var img = '/giveaway/api/contest/image/' + esc(en.imageToken || '');
     return '<div class="sc-entry">'
-      + '<span class="t st-' + esc(en.status) + '" style="cursor:pointer" title="Bild ansehen" '
-      + 'onclick="window.open(\'/giveaway/api/contest/image/' + esc(en.imageToken || '') + '\')">#' + en.entryId + ' '
-      + esc(en.title || '—') + ' · ' + esc(name) + '</span>'
-      + '<span class="s">' + en.score + ' Pkt/' + en.votes + '</span>'
+      + '<img class="sc-thumb" src="' + img + '" alt="" loading="lazy" title="Bild in voller Größe ansehen" '
+      + 'onclick="window.open(this.src)">'
+      + '<div class="sc-info">'
+      + '<span class="t st-' + esc(en.status) + '">#' + en.entryId + ' ' + esc(en.title || '—') + '</span>'
+      + '<span class="sc-by">von <b>' + esc(name) + '</b> · ' + (SC_STATUS_TEXT[en.status] || esc(en.status))
+      + ' · ' + en.score + ' Pkt / ' + en.votes + ' Stimmen</span>'
+      + '</div>'
       + (en.status === 'pending'
           ? '<button class="btn btn-green btn-sm" onclick="scReview(' + en.entryId + ',\'approve\')" title="Freigeben">✓</button>'
-            + '<button class="btn btn-red btn-sm" onclick="scReview(' + en.entryId + ',\'reject\')" title="Ablehnen">✗</button>'
+            + '<button class="btn btn-red btn-sm" onclick="scReview(' + en.entryId + ',\'reject\')" title="Ablehnen (Bild bleibt gesperrt gespeichert)">✗</button>'
           : en.status === 'approved'
           ? '<button class="btn btn-red btn-sm" onclick="scReview(' + en.entryId + ',\'reject\')" title="Freigabe zurückziehen (Bild wieder sperren)">✗</button>'
           : '<button class="btn btn-green btn-sm" onclick="scReview(' + en.entryId + ',\'approve\')" title="Doch freigeben">✓</button>')
+      + '<button class="btn btn-red btn-sm btn-mini" onclick="scDeleteEntry(' + en.entryId + ')" title="ENDGÜLTIG löschen (Bild weg, Stimmen verfallen)">🗑</button>'
       + '</div>';
   }).join('');
 }
@@ -700,7 +720,8 @@ function handle(msg) {
       if (msg.type === 'page_announced') log('Zuschauer-Link im Chat angesagt', 'gold');
       if (msg.type === 'wager_cmd_set') log('Setz-Befehl geändert: „' + (msg.command || '') + '"', 'gold');
       if (msg.type === 'contest_voting') log('Contest-Voting: ' + (msg.voting || '?'), 'gold');
-      if (msg.type === 'entry_reviewed') log('Einsendung #' + msg.entryId + ' → ' + (msg.decision === 'approve' ? 'FREIGEGEBEN' : 'abgelehnt'), 'gold');
+      if (msg.type === 'entry_reviewed') { log('Einsendung #' + msg.entryId + ' → ' + (msg.decision === 'approve' ? 'FREIGEGEBEN' : 'abgelehnt'), 'gold'); scLoadEntries(); }
+      if (msg.type === 'entry_deleted')  { log('Einsendung #' + msg.entryId + ' von „' + maskName((msg.username || '').toLowerCase(), msg.username || '?') + '" endgültig gelöscht', 'gold'); scLoadEntries(); }
       if (msg.type === 'instance_closed') log('Instanz geschlossen: ' + (msg.giveawayId || '?'), 'gold');
       if (msg.type === 'instance_paused')  log('Instanz pausiert: '   + (msg.giveawayId || '?'), 'gold');
       if (msg.type === 'instance_resumed') log('Instanz läuft weiter: ' + (msg.giveawayId || '?'), 'cyan');

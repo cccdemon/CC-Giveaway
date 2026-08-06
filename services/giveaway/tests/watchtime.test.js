@@ -94,6 +94,14 @@ function makePg(channels) {
       return { rows: [...by.entries()].filter(([, s]) => s > 0).map(([username, stake]) => ({ username, stake })) };
     }
     // ── Contest (Phase 6) ──
+    if (/DELETE FROM contest_entries WHERE id=\$1 AND team_id=\$2/.test(sql)) {
+      const idx = entries.findIndex(e => e.id === p[0] && e.team_id === p[1]);
+      if (idx < 0) return { rowCount: 0, rows: [] };
+      const row = entries[idx];
+      entries.splice(idx, 1);
+      for (let i = cvotes.length - 1; i >= 0; i--) if (cvotes[i].entry_id === row.id) cvotes.splice(i, 1);   // CASCADE
+      return { rowCount: 1, rows: [{ username: row.username, title: row.title }] };
+    }
     if (/DELETE FROM contest_entries WHERE session_id=\$1 AND team_id=\$2 AND username=\$3/.test(sql)) {
       const idx = entries.findIndex(e => e.session_id === p[0] && e.team_id === p[1] && e.username === p[2]);
       if (idx < 0) return { rowCount: 0, rows: [] };
@@ -1129,6 +1137,24 @@ test('wager: Einsatz ueber Guthaben wird abgelehnt', async () => {
   assert.equal((await e.placeWager(TEAM, null, 'bob', p1, 3)).error, 'no_credit');
   assert.equal((await e.placeWager(TEAM, null, 'bob', p1, 2)).amount, 2);
   assert.equal((await e.placeWager(TEAM, null, 'bob', p1, 1)).error, 'no_credit');
+});
+
+test('contest: Owner-Loeschung entfernt Einsendung samt Stimmen (jederzeit)', async () => {
+  const e = await contestSetup(0);
+  await e.submitContestEntry(TEAM, 'sess_9', 'bob', { title: 'Schrott', mime: 'image/png', image: IMG });
+  await e.reviewContestEntry(TEAM, 1, true);
+  await e.setContestVoting(TEAM, 'sess_9', 'open');
+  await e.castContestVote(TEAM, 'sess_9', 'carol', 1, 9);
+  const r = await e.deleteContestEntry(TEAM, 1);
+  assert.equal(r.ok, true);
+  assert.equal(r.username, 'bob');
+  assert.equal((await e.getContestStandings(TEAM, 'sess_9', { all: true })).length, 0);
+  assert.equal(e.pg.cvotes.length, 0);                       // CASCADE
+  // Auch nach Schliessen der Instanz loeschbar (anders als der Selbst-Rueckzug)
+  await e.submitContestEntry(TEAM, 'sess_9', 'bob', { mime: 'image/png', image: IMG });
+  await e.redis.set(K.gOpen(TEAM, 'sess_9'), 'false');
+  assert.equal((await e.deleteContestEntry(TEAM, 2)).ok, true);
+  assert.equal((await e.deleteContestEntry(TEAM, 2)).error, 'no_entry');
 });
 
 // ── Panel: Teilnehmerlisten je Mechanik + Dropdown-Statistiken ──

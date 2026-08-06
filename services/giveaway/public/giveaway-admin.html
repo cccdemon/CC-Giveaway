@@ -31,10 +31,16 @@
   .sc-entry .st-pending { color:var(--gold,#f0a500); }
   .sc-entry .st-approved { color:#22e07a; }
   .sc-entry .st-rejected { color:rgba(200,220,232,.4); text-decoration:line-through; }
+  /* Review mit Bild-Vorschau: Thumbnail + Einsender + Status auf einen Blick */
+  .sc-thumb { width:56px; height:36px; object-fit:cover; border-radius:4px; cursor:zoom-in;
+              background:#060a11; flex:none; border:1px solid rgba(255,255,255,.08); }
+  .sc-info { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+  .sc-info .t { flex:none; }
+  .sc-by { font-size:10px; color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #cv-open-btn[disabled] { opacity:.35; cursor:not-allowed; filter:grayscale(1); }
   /* Zustandsmaschine: ungültige Hauptaktionen sind sichtbar, aber gesperrt */
   .actionstrip .btn[disabled] { opacity:.35; cursor:not-allowed; filter:grayscale(1); }
-  .tb-prize .btn-mini { padding:2px 6px; font-size:11px; line-height:1; }
+  .tb-prize .btn-mini, .sc-entry .btn-mini { padding:2px 6px; font-size:11px; line-height:1; }
 
   /* ── Instanz-Assistent (ersetzt die prompt()-Kette) ────── */
   .iw-overlay { position:fixed; inset:0; z-index:900; display:flex; align-items:center;

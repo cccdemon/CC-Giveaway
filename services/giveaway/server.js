@@ -1195,6 +1195,26 @@ async function runAdminCmd(send, msg, meta, ctx) {
       send({ event: 'gw_ack', type: 'entry_reviewed', entryId, decision: msg.decision, username: r.username });
       break;
     }
+    // Owner-Löschung einer Einsendung (Moderation): Bild weg, Stimmen weg.
+    // Für unpassende, aber harmlose Bilder reicht reject — Löschen ist für
+    // Inhalte, die nicht gespeichert bleiben dürfen.
+    case 'gw_delete_entry': {
+      const entryId = parseInt(msg.entryId, 10);
+      if (!Number.isFinite(entryId) || entryId <= 0) {
+        Object.assign(outcome, { error: 'bad_request' });
+        send({ event: 'gw_ack', type: 'error', error: 'entryId fehlt.' });
+        break;
+      }
+      const r = await wte.deleteContestEntry(teamId, entryId);
+      if (r.error) {
+        Object.assign(outcome, { error: r.error, entryId });
+        send({ event: 'gw_ack', type: 'error', error: 'Einsendung nicht gefunden.' });
+        break;
+      }
+      Object.assign(outcome, { entryId, entrant: r.username, title: r.title });
+      send({ event: 'gw_ack', type: 'entry_deleted', entryId, username: r.username });
+      break;
+    }
     case 'gw_list_entries': {
       const gid = validGid(msg.giveawayId);
       if (!gid) { send({ event: 'gw_ack', type: 'error', error: 'giveawayId fehlt.' }); break; }

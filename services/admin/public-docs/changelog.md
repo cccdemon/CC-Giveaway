@@ -7,6 +7,16 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 6. August 2026
 
+### Contest-Moderation: Bild-Vorschau und endgültiges Löschen
+
+Die Einsendungs-Liste im Dashboard zeigt jetzt zu jeder Einsendung ein
+**Vorschaubild**, den **Einsender** und den Status im Klartext — Freigeben
+und Ablehnen gehen damit auf einen Blick. Neu ist der **Löschen-Knopf** für
+den Team-Owner: anders als das Ablehnen (Bild bleibt gesperrt gespeichert)
+entfernt er eine Einsendung **endgültig** — für Inhalte, die gar nicht
+gespeichert bleiben dürfen. Abgegebene Stimmen verfallen dabei; der Vorgang
+wird protokolliert.
+
 ### Chat-Ansagen verlinken jetzt die Mitmach-Seiten
 
 Beim Start eines Screenshot-Contests oder Los-Giveaways stand in der
