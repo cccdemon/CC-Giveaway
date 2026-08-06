@@ -7,6 +7,19 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 6. August 2026
 
+### Sicherheits-Härtung nach externer Prüfung
+
+Eine erneute externe Sicherheitsprüfung hat keine Datenlecks gefunden, aber
+Verbesserungspotenzial — das meiste davon ist jetzt umgesetzt: **Lose setzen
+und zurücknehmen ist gegen parallele Anfragen abgesichert** (kein doppeltes
+Setzen oder doppelte Erstattung mehr möglich, auch nicht durch Zufall oder
+Trickserei), Bild-Adressen von Contest-Einsendungen und Preisen sind nicht
+mehr erratbar, hochgeladene Bilder werden auf ihre echte Dateisignatur
+geprüft, Login- und Beitrittsversuche sind gedrosselt, und auffällige
+Sprünge bei den gemeldeten Zuschauerzahlen eines Kanals werden automatisch
+markiert und protokolliert. Dazu kommen strengere Sicherheits-Header und
+Größen-/Frequenz-Limits an den technischen Schnittstellen.
+
 ### Teams lassen sich jetzt vollständig selbst verwalten
 
 Unter **Meine Teams** gibt es einen neuen Verwaltungsbereich: Mitglieder

@@ -83,6 +83,10 @@ function makePg(channels) {
       const stake = wagers.filter(w => w.prize_id === p[0] && w.username === p[1]).reduce((s, w) => s + w.amount, 0);
       return { rows: [{ stake }] };
     }
+    if (/AS total FROM prize_wagers WHERE prize_id=\$1/.test(sql)) {
+      const total = wagers.filter(w => w.prize_id === p[0]).reduce((s, w) => s + w.amount, 0);
+      return { rows: [{ total }] };
+    }
     if (/GROUP BY username HAVING/.test(sql)) {
       const by = new Map();
       for (const w of wagers) if (w.prize_id === p[0] && w.team_id === p[1])
@@ -100,9 +104,9 @@ function makePg(channels) {
     }
     if (/INSERT INTO contest_entries/.test(sql)) {
       const ex = entries.find(e => e.session_id === p[1] && e.username === p[2]);
-      if (ex) Object.assign(ex, { title: p[3], mime: p[4], image: p[5], status: 'pending' });
+      if (ex) Object.assign(ex, { title: p[3], mime: p[4], image: p[5], image_token: p[6], status: 'pending' });
       else entries.push({ id: entrySeq++, team_id: p[0], session_id: p[1], username: p[2],
-                          title: p[3], mime: p[4], image: p[5], status: 'pending' });
+                          title: p[3], mime: p[4], image: p[5], image_token: p[6], status: 'pending' });
       return { rowCount: 1, rows: [] };
     }
     if (/SELECT id FROM contest_entries WHERE session_id=\$1 AND username=\$2/.test(sql)) {
@@ -138,6 +142,7 @@ function makePg(channels) {
         .map(e => {
           const vs = cvotes.filter(v => v.entry_id === e.id);
           return { entry_id: e.id, username: e.username, title: e.title, status: e.status,
+                   image_token: e.image_token || null,
                    score: vs.reduce((s, v) => s + v.score, 0), votes: vs.length };
         }).sort((a, b) => b.score - a.score || b.votes - a.votes || a.entry_id - b.entry_id) };
     }
@@ -175,15 +180,18 @@ function makePg(channels) {
     prizes, wagers, ledger, entries, cvotes,
     query,
     async connect() {
+      // TX-Client: BEGIN/COMMIT/Locks sind No-Ops, Draw-Spezialfälle bleiben,
+      // alles andere delegiert auf dieselben In-Memory-Tabellen — placeWager/
+      // cancelPrize laufen jetzt komplett über den Client (Atomarität).
       return { async query(sql, p = []) {
+        if (/^(BEGIN|COMMIT|ROLLBACK)/.test(sql) || /pg_advisory_xact_lock/.test(sql)) return { rows: [], rowCount: 0 };
         if (/UPDATE giveaway_prizes SET status='drawn'/.test(sql)) {
           const pr = prizes.find(x => x.id === p[0]); if (pr) pr.status = 'drawn';
           return { rowCount: pr ? 1 : 0, rows: [] };
         }
-        if (/RETURNING id/.test(sql)) return { rows: [{ id: 1 }] };
-        if (/COUNT/.test(sql)) return { rows: [{ n: 0 }] };
-        if (/SELECT winner/.test(sql)) return { rows: [{}] };
-        return { rows: [], rowCount: 1 };
+        if (/INSERT INTO giveaway_draws/.test(sql)) return { rows: [{ id: 1 }] };
+        if (/SELECT winner FROM sessions/.test(sql)) return { rows: [{}] };
+        return query(sql, p);
       }, release() {} };
     },
   };
@@ -1099,6 +1107,28 @@ test('phase3c: Chat-Ansagen der Sofortverlosung sind schaltbar (announce-Flag)',
   await e.redis.set(K.gAnnounce(TEAM, 'sess_3'), 'false');
   await e.cleanupGiveawayInstance(TEAM, 'sess_3');
   assert.equal(await e.redis.get(K.gAnnounce(TEAM, 'sess_3')), null);
+});
+
+test('wager: doppelte Ruecknahme erstattet nur einmal, Guthaben bleibt korrekt', async () => {
+  const e = engine();
+  await e.credit.book(TEAM, 'bob', 'earn', 5);
+  const p1 = await e.addPrize(TEAM, null, { title: 'Headset' });
+  const w = await e.placeWager(TEAM, null, 'bob', p1, 3);
+  assert.equal(w.stake, 3);
+  const r1 = await e.placeWager(TEAM, null, 'bob', p1, 0);
+  assert.equal(r1.refunded, 3);
+  const r2 = await e.placeWager(TEAM, null, 'bob', p1, 0);
+  assert.equal(r2.error, 'nothing_to_refund');          // keine zweite Erstattung
+  assert.equal(await e.credit.balance(TEAM, 'bob'), 5); // exakt Ausgangsstand
+});
+
+test('wager: Einsatz ueber Guthaben wird abgelehnt', async () => {
+  const e = engine();
+  await e.credit.book(TEAM, 'bob', 'earn', 2);
+  const p1 = await e.addPrize(TEAM, null, { title: 'Maus' });
+  assert.equal((await e.placeWager(TEAM, null, 'bob', p1, 3)).error, 'no_credit');
+  assert.equal((await e.placeWager(TEAM, null, 'bob', p1, 2)).amount, 2);
+  assert.equal((await e.placeWager(TEAM, null, 'bob', p1, 1)).error, 'no_credit');
 });
 
 // ── Panel: Teilnehmerlisten je Mechanik + Dropdown-Statistiken ──

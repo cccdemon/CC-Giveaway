@@ -516,9 +516,17 @@ async function handleStreamOffline(teamId, channel) {
 
 // ── WS Server ─────────────────────────────────────────────
 const app    = express();
+// Hinter Caddy: ein Proxy-Hop — req.ip (Audit-Einträge!) ist die echte
+// Client-IP statt der Caddy-Container-IP.
+app.set('trust proxy', 1);
 const server = http.createServer(app);
-const wss    = new WebSocket.Server({ server });
+// Admin-/Overlay-WS-Nachrichten sind klein (JSON-Cmds) — 256 KiB Deckel
+// gegen Speicher-DoS; Bilder laufen ohnehin über REST.
+const wss    = new WebSocket.Server({ server, maxPayload: 256 * 1024 });
 const clients = new Map(); // clientId → { ws, authUser, teamId, role, ip, connectedAt, msgCount }
+// Drossel je Verbindung: Panel pollt ~7 Cmds/10s — 300/10s ist reichlich.
+const WS_MSG_WINDOW_MS = 10000;
+const WS_MSG_MAX = 300;
 
 function broadcastTeam(teamId, obj) {
   const str = JSON.stringify(obj);
@@ -597,6 +605,13 @@ wss.on('connection', (ws, req) => {
   log('WS', `Connected: ${clientId} user=${authUser || '?'} (${clients.size} total)`);
 
   ws.on('message', async (data) => {
+    const now = Date.now();
+    if (!meta.msgWindow || now - meta.msgWindow > WS_MSG_WINDOW_MS) { meta.msgWindow = now; meta.msgN = 0; }
+    if (++meta.msgN > WS_MSG_MAX) {
+      log('WS', `Rate limit ${clientId} (${meta.authUser || 'overlay'}) — closing`);
+      try { ws.close(); } catch(e) { /* egal */ }
+      return;
+    }
     let msg;
     try { msg = JSON.parse(data.toString()); } catch { return; }
     meta.msgCount++;
@@ -1469,6 +1484,44 @@ async function runAdminCmd(send, msg, meta, ctx) {
   }
 }
 
+// ── Ingest-Anomalie (ChatGPT-Review #4) ──────────────────
+// Ein kompromittierter Streamerbot-Token kann beliebige Zuschauernamen
+// melden. Verhindern lässt sich das nicht (der Kanal-PC ist die Quelle),
+// aber auffällige Sprünge der gemeldeten Zuschauerzahl werden markiert:
+// Minuten-Sets je Kanal; springt eine Minute auf ≥3× der Vorminute (und
+// ≥20 Nutzer), gibt es einen abuse_flag + Audit-Eintrag — Entscheidung
+// bleibt beim Owner (Token rotieren, Kanal-Coins verwerfen).
+const ANOM_MIN_USERS = 20;
+const ANOM_FACTOR    = 3;
+async function trackIngestAnomaly(teamId, channel, user) {
+  try {
+    if (!teamId || !channel || !user) return;
+    const min = Math.floor(Date.now() / 60000);
+    const key = (m) => `t:${teamId}:anom:${channel}:${m}`;
+    await redis.sadd(key(min), user);
+    await redis.expire(key(min), 240);
+    // Auswertung einmal je Minute (erste Tick der neuen Minute prüft die letzte)
+    if (await redis.set(`t:${teamId}:anom:chk:${channel}:${min}`, '1', 'EX', 240, 'NX') !== 'OK') return;
+    const n1 = await redis.scard(key(min - 1));
+    const n2 = await redis.scard(key(min - 2));
+    if (n1 >= ANOM_MIN_USERS && n1 >= ANOM_FACTOR * Math.max(1, n2)) {
+      if (await redis.set(`t:${teamId}:anom:flagged:${channel}`, '1', 'EX', 600, 'NX') === 'OK') {
+        await wte.flagUser(teamId, channel, 'ingest_anomaly', { channel, minuteUsers: n1, prevUsers: n2 });
+        await audit({ teamId, actor: 'system', action: 'ingest_anomaly', target: channel,
+                      detail: { minuteUsers: n1, prevUsers: n2 } });
+        logErr('Ingest', `[${teamId}] anomaly on ${channel}: ${n2} -> ${n1} users/min`);
+      }
+    }
+  } catch (e) { logErr('Ingest', 'anomaly check:', e.message); }
+}
+
+// Einfache Redis-Drossel für teure REST-Pfade (ChatGPT-Review #12) —
+// dieselbe NX+EX-Mechanik wie beim Contest-Voting. true = durchlassen.
+async function rateLimit(key, seconds) {
+  try { return (await redis.set(`rl:${key}`, '1', 'EX', seconds, 'NX')) === 'OK'; }
+  catch { return true; }   // Redis-Störung darf legitime Nutzung nicht blocken
+}
+
 // ── Redis Pub/Sub: consume ch:giveaway ───────────────────
 function subscribeToGiveaway() {
   redisSub.subscribe('ch:giveaway', (err) => { if (err) return logErr('Sub', err.message); log('Sub', 'Subscribed ch:giveaway'); });
@@ -1480,6 +1533,7 @@ function subscribeToGiveaway() {
     switch (msg.event) {
       case 'viewer_tick':
         await wte.handleViewerTick(teamId, msg.channel, msg.user, msg.follows);
+        await trackIngestAnomaly(teamId, sanitizeChannel(msg.channel), sanitizeUsername(msg.user));
         break;
       case 'chat_msg': {
         const result = await wte.handleChatMessage(teamId, msg.channel, msg.user, msg.message, msg.follows);
@@ -1565,6 +1619,7 @@ app.get('/api/export', async (req, res) => {
   try {
     const teamId = sanitizeTeamId(req.query.team);
     if (!await ownsTeam(reqUser(req), teamId)) return res.status(403).json({ error: 'forbidden' });
+    if (!await rateLimit(`export:${teamId}`, 10)) return res.status(429).json({ error: 'rate_limited' });
     const data = await wte.exportTeam(teamId);
     data.exportedAt = new Date().toISOString();
     data.exportedBy = reqUser(req);
@@ -1585,6 +1640,7 @@ app.post('/api/import', async (req, res) => {
   const actor  = reqUser(req);
   try {
     if (!await ownsTeam(actor, teamId)) return res.status(403).json({ error: 'forbidden' });
+    if (!await rateLimit(`import:${teamId}`, 30)) return res.status(429).json({ error: 'rate_limited' });
     const mode = req.query.mode === 'merge' ? 'merge' : 'replace';
     // Replace löscht den Live-Stand — nur mit ausdrücklicher Bestätigung.
     if (mode === 'replace' && req.query.confirm !== 'replace') {
@@ -1724,6 +1780,7 @@ app.get('/api/audit/archive', async (req, res) => {
   const actor  = reqUser(req);
   try {
     if (!await ownsTeam(actor, teamId)) return res.status(403).json({ error: 'forbidden' });
+    if (!await rateLimit(`auditarch:${teamId}`, 10)) return res.status(429).json({ error: 'rate_limited' });
     const { where, params } = auditFilters(req.query);
     params.push(AUDIT_ARCHIVE_MAX);
     const r = await pg.query(
@@ -1833,6 +1890,7 @@ app.post('/api/wager', express.json(), async (req, res) => {
         || amtRaw === undefined || amtRaw === null || !Number.isFinite(amount) || amount < 0) {
       return res.status(400).json({ error: 'bad_request' });
     }
+    if (!await rateLimit(`wager:${user}`, 1)) return res.status(429).json({ error: 'rate_limited' });
     const r = await wte.placeWager(teamId, null, user, prizeId, amount);
     if (r.error) return res.status(409).json({ error: r.error });
     // Zustandsändernd ausserhalb der Admin-WS → eigener Audit-Eintrag.
@@ -1842,6 +1900,16 @@ app.post('/api/wager', express.json(), async (req, res) => {
     res.json(r);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
+
+// Echte Dateisignatur statt Browser-MIME (ChatGPT-Review #11): der Client
+// kann den Content-Type beliebig behaupten — die Magic Bytes nicht.
+function sniffImage(buf) {
+  if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'image/png';
+  if (buf.length >= 3 && buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'image/jpeg';
+  if (buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+  return null;
+}
+const IMG_TOKEN_RE = /^[a-f0-9]{16,64}$/;
 
 // ── Preis-Bild (CORE_TicketBuy): Upload nur Team-Mitglieder, sichtbar für
 // eingeloggte Zuschauer auf der Setz-Seite. MIME-/Größen-Grenzen wie beim
@@ -1863,7 +1931,7 @@ app.post('/api/prize/image', express.json({ limit: '4mb' }), async (req, res) =>
       // status='open' auch im UPDATE: zwischen Check und Write kann der
       // Preis gezogen/storniert werden — dann ist er unantastbar.
       const u = await pg.query(
-        `UPDATE giveaway_prizes SET image=NULL, image_mime=NULL WHERE id=$1 AND status='open'`, [prizeId]);
+        `UPDATE giveaway_prizes SET image=NULL, image_mime=NULL, image_token=NULL WHERE id=$1 AND status='open'`, [prizeId]);
       if (!u.rowCount) return res.status(409).json({ error: 'not_open' });
       await audit({ teamId, actor: user, ip: req.ip, action: 'prize_image_removed',
                     target: String(prizeId), detail: { prizeId } });
@@ -1876,8 +1944,10 @@ app.post('/api/prize/image', express.json({ limit: '4mb' }), async (req, res) =>
     try { image = Buffer.from(b64, 'base64'); } catch { image = null; }
     if (!image || !image.length) return res.status(400).json({ error: 'no_image' });
     if (image.length > ContestCore.IMAGE_MAX_BYTES) return res.status(413).json({ error: 'image_too_large' });
+    if (sniffImage(image) !== mime) return res.status(400).json({ error: 'bad_image' });
     const u = await pg.query(
-      `UPDATE giveaway_prizes SET image=$1, image_mime=$2 WHERE id=$3 AND status='open'`, [image, mime, prizeId]);
+      `UPDATE giveaway_prizes SET image=$1, image_mime=$2, image_token=$3 WHERE id=$4 AND status='open'`,
+      [image, mime, crypto.randomBytes(16).toString('hex'), prizeId]);
     if (!u.rowCount) return res.status(409).json({ error: 'not_open' });
     await audit({ teamId, actor: user, ip: req.ip, action: 'prize_image_set',
                   target: String(prizeId), detail: { prizeId, bytes: image.length, mime } });
@@ -1886,15 +1956,15 @@ app.post('/api/prize/image', express.json({ limit: '4mb' }), async (req, res) =>
 });
 
 // Bewusst nur Login-Gate (kein Team-Check): Preis-Bilder sind Werbe-Inhalt
-// der Setz-Seite — Zuschauer sind keine Team-Mitglieder. Entspricht dem
-// Contest-Verhalten für freigegebene Bilder.
-app.get('/api/prize/image/:id', async (req, res) => {
+// der Setz-Seite — Zuschauer sind keine Team-Mitglieder. Die URL trägt einen
+// unerratbaren Token (kein Durchprobieren fortlaufender IDs).
+app.get('/api/prize/image/:token', async (req, res) => {
   try {
     const user = reqUser(req);
     if (!user) return res.status(401).end();
-    const id = parseInt(req.params.id, 10);
-    if (!Number.isFinite(id)) return res.status(400).end();
-    const r = await pg.query(`SELECT image_mime, image FROM giveaway_prizes WHERE id=$1`, [id]);
+    const token = String(req.params.token || '');
+    if (!IMG_TOKEN_RE.test(token)) return res.status(400).end();
+    const r = await pg.query(`SELECT image_mime, image FROM giveaway_prizes WHERE image_token=$1`, [token]);
     if (!r.rowCount || !r.rows[0].image) return res.status(404).end();
     res.set('Content-Type', r.rows[0].image_mime || 'application/octet-stream')
        .set('Cache-Control', 'private, max-age=300').send(r.rows[0].image);
@@ -2011,6 +2081,8 @@ app.post('/api/contest/entry', express.json({ limit: '4mb' }), async (req, res) 
     try { image = Buffer.from(String(req.body.imageBase64 || ''), 'base64'); } catch { image = null; }
     if (!image || !image.length) return res.status(400).json({ error: 'no_image' });
     if (image.length > ContestCore.IMAGE_MAX_BYTES) return res.status(413).json({ error: 'image_too_large' });
+    if (sniffImage(image) !== mime) return res.status(400).json({ error: 'bad_image' });
+    if (!await rateLimit(`centry:${user}`, 15)) return res.status(429).json({ error: 'rate_limited' });
     const r = await wte.submitContestEntry(teamId, inst.gid, user, {
       title: req.body.title, mime, image, confirmReplace: !!req.body.confirmReplace });
     if (r.error) return res.status(r.error === 'votes_would_be_lost' ? 409 : 403).json(r);
@@ -2057,13 +2129,15 @@ app.post('/api/contest/withdraw', express.json(), async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/contest/image/:id', async (req, res) => {
+// URL trägt einen unerratbaren Token statt der fortlaufenden ID (kein
+// Durchprobieren); die Statusprüfung bleibt als zweite Schicht bestehen.
+app.get('/api/contest/image/:token', async (req, res) => {
   try {
     const user = reqUser(req);
     if (!user) return res.status(401).json({ error: 'unauthenticated' });
-    const id = parseInt(req.params.id, 10);
-    if (!Number.isFinite(id)) return res.status(400).end();
-    const r = await pg.query(`SELECT team_id, username, mime, image, status FROM contest_entries WHERE id=$1`, [id]);
+    const token = String(req.params.token || '');
+    if (!IMG_TOKEN_RE.test(token)) return res.status(400).end();
+    const r = await pg.query(`SELECT team_id, username, mime, image, status FROM contest_entries WHERE image_token=$1`, [token]);
     if (!r.rowCount) return res.status(404).end();
     const e = r.rows[0];
     // approved sehen alle Eingeloggten; pending/rejected nur Einsender + Team-Mitglieder.
@@ -2163,6 +2237,7 @@ app.post('/api/claim', express.json(), async (req, res) => {
   const id   = parseInt(req.body && req.body.id);
   try {
     if (!user) return res.status(401).json({ error: 'unauthenticated' });
+    if (!await rateLimit(`claim:${user}`, 5)) return res.status(429).json({ error: 'rate_limited' });
     const cur = await pg.query('SELECT id, team_id, status, deadline_at FROM draw_claims WHERE id=$1 AND winner=$2', [id, user]);
     if (!cur.rowCount) return res.status(404).json({ error: 'Keine Gewinnmeldung fuer dich unter dieser Nummer' });
     const c = cur.rows[0];
@@ -2263,6 +2338,7 @@ app.get('/api/archive/:sessionId/export', async (req, res) => {
   const actor  = reqUser(req);
   const sid    = sanitizeStr(req.params.sessionId, 60);
   try {
+    if (!await rateLimit(`archexp:${teamId}`, 10)) return res.status(429).json({ error: 'rate_limited' });
     if (!await ownsTeam(actor, teamId)) return res.status(403).json({ error: 'forbidden' });
     const d = await archiveDossier(teamId, sid, true);
     if (!d.session) return res.status(404).json({ error: 'Sitzung nicht gefunden' });
@@ -2420,6 +2496,22 @@ async function ensureSchema() {
   // beim Contest, Grenzen (MIME/Größe) identisch. Kein Personenbezug.
   await pg.query(`ALTER TABLE giveaway_prizes ADD COLUMN IF NOT EXISTS image BYTEA`);
   await pg.query(`ALTER TABLE giveaway_prizes ADD COLUMN IF NOT EXISTS image_mime TEXT`);
+  // Unerratbare Bild-URLs (ChatGPT-Review #8): Token statt fortlaufender ID.
+  // Backfill für Bestandszeilen — sonst wären alte Bilder unerreichbar.
+  await pg.query(`ALTER TABLE giveaway_prizes ADD COLUMN IF NOT EXISTS image_token TEXT`);
+  await pg.query(`ALTER TABLE contest_entries ADD COLUMN IF NOT EXISTS image_token TEXT`);
+  for (const tbl of ['giveaway_prizes', 'contest_entries']) {
+    const need = await pg.query(
+      tbl === 'giveaway_prizes'
+        ? `SELECT id FROM giveaway_prizes WHERE image IS NOT NULL AND image_token IS NULL`
+        : `SELECT id FROM contest_entries WHERE image_token IS NULL`);
+    for (const row of need.rows) {
+      await pg.query(`UPDATE ${tbl} SET image_token=$1 WHERE id=$2`,
+        [crypto.randomBytes(16).toString('hex'), row.id]);
+    }
+  }
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_prizes_imgtok ON giveaway_prizes(image_token)`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_entries_imgtok ON contest_entries(image_token)`);
   await pg.query(`ALTER TABLE giveaway_draws ADD COLUMN IF NOT EXISTS core TEXT`);
   await pg.query(`ALTER TABLE giveaway_draws ADD COLUMN IF NOT EXISTS prize_id BIGINT`);
   // Phase 4a (CORE_TicketBuy, §5.2/§10.1): team-weites Guthaben-Journal,

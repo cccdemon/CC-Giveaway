@@ -57,7 +57,7 @@ function renderPrize(teamId, p) {
   var own = Number(p.myStake) || 0;
   return '<div class="wg-prize' + (drawn ? ' drawn' : '') + '" id="prize-' + p.id + '">'
     + '<h3>#' + p.id + ' ' + esc(p.title) + '</h3>'
-    + (p.has_image ? '<img class="wg-img" src="/giveaway/api/prize/image/' + p.id
+    + (p.has_image && p.image_token ? '<img class="wg-img" src="/giveaway/api/prize/image/' + esc(p.image_token)
         + '" alt="" loading="lazy" onclick="window.open(this.src)">' : '')
     + (p.description ? '<div class="wg-meta">' + esc(p.description) + '</div>' : '')
     + '<div class="wg-meta">' + esc(fmtEnd(p.wager_end)) + ' · Einsätze gesamt: '

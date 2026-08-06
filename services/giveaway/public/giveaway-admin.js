@@ -313,7 +313,7 @@ function renderPrizes(prizes) {
   host.innerHTML = prizes.map(function(p) {
     return '<div class="tb-prize"><span class="t" title="' + esc(p.sponsor ? 'bereitgestellt von ' + p.sponsor : '') + '">#'
       + p.id + ' ' + esc(p.title)
-      + (p.has_image ? ' <span title="Bild vorhanden" style="cursor:pointer" onclick="window.open(\'/giveaway/api/prize/image/' + p.id + '\')">🖼</span>' : '')
+      + (p.has_image && p.image_token ? ' <span title="Bild vorhanden" style="cursor:pointer" onclick="window.open(\'/giveaway/api/prize/image/' + esc(p.image_token) + '\')">🖼</span>' : '')
       + (p.sponsor ? ' <span style="opacity:.55">· ' + esc(p.sponsor) + '</span>' : '') + '</span>'
       + '<span class="s">' + Number(p.total_stake).toFixed(0) + ' 🎟</span>'
       + (p.status === 'open'
@@ -353,7 +353,7 @@ function renderEntries(msg) {
     var name = maskName(en.username, en.username);
     return '<div class="sc-entry">'
       + '<span class="t st-' + esc(en.status) + '" style="cursor:pointer" title="Bild ansehen" '
-      + 'onclick="window.open(\'/giveaway/api/contest/image/' + en.entryId + '\')">#' + en.entryId + ' '
+      + 'onclick="window.open(\'/giveaway/api/contest/image/' + esc(en.imageToken || '') + '\')">#' + en.entryId + ' '
       + esc(en.title || '—') + ' · ' + esc(name) + '</span>'
       + '<span class="s">' + en.score + ' Pkt/' + en.votes + '</span>'
       + (en.status === 'pending'

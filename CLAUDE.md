@@ -195,6 +195,22 @@ Token-Widerruf läuft über `POST giveaway:/internal/team/cleanup` — Shared-Se
 `gw_open`/`gw_open_instance`/Auto-Open prüfen `teamActive()` (deaktivierte Teams öffnen nichts).
 
 ## Sicherheit
+- **Rollen-Entscheidung (Betreiber, 6.8.26):** `MEMBER_CMDS` bleiben wie sie sind —
+  jedes Team-Mitglied (= Kanalstreamer) darf ziehen und steuern. Kein Rollenmodell,
+  bewusst gegen die ChatGPT-Review-Empfehlung #2/#3.
+- Härtung (ChatGPT-Review Aug 2026): `placeWager`/`cancelPrize` atomar
+  (`pg_advisory_xact_lock` je Konto + `FOR UPDATE` je Preis; Draw-TX prüft die
+  Einsatzsumme gegen den Pool). Bild-URLs über `image_token` (unerratbar, rotiert
+  beim Ersetzen; Routen nehmen NUR Tokens). Magic-Bytes-Prüfung (`sniffImage`) für
+  alle Bild-Uploads. WS: `maxPayload` + Nachrichten-Drossel (bridge 128 KiB/500 je
+  10 s + Unauth-Verbindungs-Cap; giveaway 256 KiB/300 je 10 s). admin: Login-Bremse
+  (5 Fehlversuche → 15 min, Dummy-bcrypt gegen Timing-Oracle), Join-Bremse 20/h je
+  IP, OAuth-`next` nur interne Pfade. giveaway: `rateLimit()` (Redis NX+EX) auf
+  claim/wager/contest-entry/export/import/archiv. Ingest-Anomalie: ≥3×-Sprung der
+  Zuschauer je Kanal/Minute → `abuse_flags` (`ingest_anomaly`) + Audit. Caddy: kein
+  `Access-Control-Allow-Origin *` mehr; CSP (script/style 'self'+inline, Avatare
+  von static-cdn.jtvnw.net), nosniff, Referrer-/Permissions-Policy.
+
 Auth zentral über Caddy `forward_auth` → `admin:3005/auth/verify` (Session-Cookie).
 Login per Twitch-OAuth, Selbstregistrierung beim ersten Login (Upsert in `streamers`).
 Öffentlich erreichbare Pfade stehen in der `@needsauth not path`-Liste in

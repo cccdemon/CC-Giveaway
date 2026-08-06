@@ -9,12 +9,19 @@
 
 {$DOMAIN} {
 
+    # Kein CORS-Freibrief mehr (ChatGPT-Review #10): die Anwendung ist
+    # same-origin; Access-Control-Allow-Origin * war unnötig breit.
+    # CSP: Inline-Skripte/-Styles sind im Bestand nötig ('unsafe-inline'),
+    # externe Skript-Quellen bleiben trotzdem blockiert. Twitch-Avatare
+    # kommen von static-cdn.jtvnw.net.
     header {
-        Access-Control-Allow-Origin *
-        Access-Control-Allow-Methods "GET, POST, OPTIONS"
         X-Frame-Options SAMEORIGIN
         Strict-Transport-Security "max-age=31536000"
         Cache-Control "no-cache, must-revalidate"
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://static-cdn.jtvnw.net; connect-src 'self' wss:; frame-ancestors 'self'; base-uri 'self'; object-src 'none'; form-action 'self'"
         -Server
     }
 

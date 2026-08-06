@@ -11,7 +11,7 @@
 // Gewicht der Ziehung = Summe Coins.
 // ════════════════════════════════════════════════════════
 
-const { randomInt, createHash } = require('crypto');
+const { randomInt, createHash, randomBytes } = require('crypto');
 
 // Mechanik-Regeln (Coin-Formel, Eligibility, Pool, Chat-Urteil) liegen seit
 // Phase 1 des Core-Umbaus im Core (docs/ARCHITEKTUR-CORES.md). Die Engine
@@ -979,7 +979,7 @@ class WatchtimeEngine {
     const t = sanitizeTeamId(teamId);
     const r = await this.pg.query(
       `SELECT p.id, p.session_id, p.title, p.description, p.wager_end, p.status, p.sponsor,
-              (p.image IS NOT NULL) AS has_image,
+              (p.image IS NOT NULL) AS has_image, p.image_token,
               COALESCE((SELECT SUM(w.amount) FROM prize_wagers w WHERE w.prize_id = p.id), 0) AS total_stake
        FROM giveaway_prizes p WHERE p.team_id=$1` + (openOnly ? ` AND p.status='open'` : '') +
       ` ORDER BY p.id`, [t]);
@@ -1026,24 +1026,38 @@ class WatchtimeEngine {
   // Preis stornieren: alle offenen Einsätze zurückbuchen (Gegenzeile in
   // prize_wagers + refund im Ledger — dieselben Primitiven wie die
   // freiwillige Rücknahme), dann status='cancelled'. Kein DELETE.
+  // Atomar wie placeWager: FOR UPDATE auf dem Preis serialisiert gegen
+  // gleichzeitiges Setzen/Zurücknehmen — sonst könnte eine parallele
+  // Rücknahme denselben Einsatz doppelt erstatten.
   async cancelPrize(teamId, prizeId) {
     const t = sanitizeTeamId(teamId);
-    const pr = await this.pg.query(
-      `SELECT id, title, status FROM giveaway_prizes WHERE id=$1 AND team_id=$2`, [prizeId, t]);
-    if (!pr.rowCount) return { error: 'no_prize' };
-    if (pr.rows[0].status !== 'open') return { error: 'not_open' };
-    const stakes = await this.getPrizeStakes(t, prizeId);
-    let total = 0;
-    for (const s of stakes) {
-      await this.pg.query(`INSERT INTO prize_wagers (prize_id, team_id, username, amount) VALUES ($1,$2,$3,$4)`,
-        [prizeId, t, s.username, -s.stake]);
-      await this.credit.book(t, s.username, 'refund', s.stake, { refPrize: prizeId });
-      total += s.stake;
-    }
-    await this.pg.query(`UPDATE giveaway_prizes SET status='cancelled' WHERE id=$1`, [prizeId]);
-    console.log(`[WTE] [${t}] prize ${prizeId} cancelled: ${stakes.length} Einsätze (+${total.toFixed(2)}) zurückgebucht`);
-    return { title: pr.rows[0].title, refundedUsers: stakes.length,
-             refundedTotal: Math.round(total * 10000) / 10000 };
+    const client = await this.pg.connect();
+    try {
+      await client.query('BEGIN');
+      const pr = await client.query(
+        `SELECT id, title, status FROM giveaway_prizes WHERE id=$1 AND team_id=$2 FOR UPDATE`, [prizeId, t]);
+      if (!pr.rowCount) { await client.query('ROLLBACK'); return { error: 'no_prize' }; }
+      if (pr.rows[0].status !== 'open') { await client.query('ROLLBACK'); return { error: 'not_open' }; }
+      const st = await client.query(
+        `SELECT username, SUM(amount) AS stake FROM prize_wagers
+         WHERE prize_id=$1 AND team_id=$2 GROUP BY username HAVING SUM(amount) > 0`, [prizeId, t]);
+      const stakes = st.rows.map(x => ({ username: x.username, stake: Math.round(parseFloat(x.stake) * 10000) / 10000 }));
+      let total = 0;
+      for (const s of stakes) {
+        await client.query(`INSERT INTO prize_wagers (prize_id, team_id, username, amount) VALUES ($1,$2,$3,$4)`,
+          [prizeId, t, s.username, -s.stake]);
+        await this.credit.book(t, s.username, 'refund', s.stake, { refPrize: prizeId, client });
+        total += s.stake;
+      }
+      await client.query(`UPDATE giveaway_prizes SET status='cancelled' WHERE id=$1`, [prizeId]);
+      await client.query('COMMIT');
+      console.log(`[WTE] [${t}] prize ${prizeId} cancelled: ${stakes.length} Einsätze (+${total.toFixed(2)}) zurückgebucht`);
+      return { title: pr.rows[0].title, refundedUsers: stakes.length,
+               refundedTotal: Math.round(total * 10000) / 10000 };
+    } catch (e) {
+      try { await client.query('ROLLBACK'); } catch { /* schon zu */ }
+      throw e;
+    } finally { client.release(); }
   }
 
   async prizeStake(prizeId, username) {
@@ -1057,48 +1071,75 @@ class WatchtimeEngine {
   // TicketBuy-Instanzen. Der Live-Anteil wird beim Close als earn gebucht
   // (settleTicketBuyInstance) — bis dahin darf der Ledger-Saldo durch
   // Einsätze entsprechend ins Minus gehen, die Summe bleibt ≥ 0.
-  async availableCredit(teamId, username) {
-    const t = sanitizeTeamId(teamId), u = sanitizeUsername(username);
-    let avail = await this.credit.balance(t, u);
+  async _liveTicketBuyCredit(t, u) {
+    let live = 0;
     for (const g of await this._activeGiveaways(t)) {
       if (getCore(g.core).id !== 'CORE_TicketBuy' || !g.gid) continue;
       const base = await this.getCoinBaseSec(t, g.gid);
       const channels = g.channels || await this.getChannels(t);
       let sec = 0;
       for (const ch of channels) sec += parseFloat(await this.redis.get(K.gWatch(t, g.gid, ch, u)) || '0');
-      avail += coinsFromSec(sec, base);
+      live += coinsFromSec(sec, base);
     }
+    return live;
+  }
+
+  async availableCredit(teamId, username) {
+    const t = sanitizeTeamId(teamId), u = sanitizeUsername(username);
+    const avail = await this.credit.balance(t, u) + await this._liveTicketBuyCredit(t, u);
     return Math.round(avail * 10000) / 10000;
   }
 
   // Einsatz setzen (amount ≥ 1) oder komplett zurücknehmen (amount === 0).
   // Bucht Ledger UND prize_wagers — beides append-only, eine Stelle.
+  // ATOMAR (ChatGPT-Review #1): Kontostand-Prüfung und Buchung laufen in
+  // EINER Transaktion. pg_advisory_xact_lock je (Team, Nutzer) serialisiert
+  // parallele Requests desselben Kontos (sonst lesen beide denselben Stand
+  // → Doppel-Einsatz bzw. Doppel-Erstattung). FOR UPDATE auf dem Preis
+  // blockiert gegen gleichzeitige Ziehung (afterDraw) und Storno. Der
+  // Redis-Live-Anteil kann nicht gesperrt werden — er wächst nur (Viewtime),
+  // ein Doppel-Spend ist über den serialisierten Ledger ausgeschlossen.
   async placeWager(teamId, gid, username, prizeId, amount) {
     const t = sanitizeTeamId(teamId), u = sanitizeUsername(username);
-    const pr = await this.pg.query(
-      `SELECT id, title, status, wager_end FROM giveaway_prizes WHERE id=$1 AND team_id=$2`, [prizeId, t]);
-    if (!pr.rowCount || pr.rows[0].status !== 'open') return { error: 'no_prize' };
-    const prize = pr.rows[0];
-    if (prize.wager_end && new Date(prize.wager_end).getTime() < Date.now()) return { error: 'wager_closed' };
+    const client = await this.pg.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [t + '|' + u]);
+      const pr = await client.query(
+        `SELECT id, title, status, wager_end FROM giveaway_prizes WHERE id=$1 AND team_id=$2 FOR UPDATE`, [prizeId, t]);
+      if (!pr.rowCount || pr.rows[0].status !== 'open') { await client.query('ROLLBACK'); return { error: 'no_prize' }; }
+      const prize = pr.rows[0];
+      if (prize.wager_end && new Date(prize.wager_end).getTime() < Date.now()) {
+        await client.query('ROLLBACK'); return { error: 'wager_closed' };
+      }
 
-    if (amount === 0) {   // Rücknahme: kompletter Einsatz zurück (bis Einsatz-Ende)
-      const stake = await this.prizeStake(prizeId, u);
-      if (stake <= 0) return { error: 'nothing_to_refund' };
-      await this.pg.query(`INSERT INTO prize_wagers (prize_id, team_id, username, amount) VALUES ($1,$2,$3,$4)`,
-        [prizeId, t, u, -stake]);
-      await this.credit.book(t, u, 'refund', stake, { refPrize: prizeId });
-      return { refunded: stake, prizeTitle: prize.title, balance: await this.availableCredit(t, u) };
-    }
+      if (amount === 0) {   // Rücknahme: kompletter Einsatz zurück (bis Einsatz-Ende)
+        const st = await client.query(
+          `SELECT COALESCE(SUM(amount),0) AS stake FROM prize_wagers WHERE prize_id=$1 AND username=$2`, [prizeId, u]);
+        const stake = Math.round((parseFloat(st.rows[0].stake) || 0) * 10000) / 10000;
+        if (stake <= 0) { await client.query('ROLLBACK'); return { error: 'nothing_to_refund' }; }
+        await client.query(`INSERT INTO prize_wagers (prize_id, team_id, username, amount) VALUES ($1,$2,$3,$4)`,
+          [prizeId, t, u, -stake]);
+        await this.credit.book(t, u, 'refund', stake, { refPrize: prizeId, client });
+        await client.query('COMMIT');
+        return { refunded: stake, prizeTitle: prize.title, balance: await this.availableCredit(t, u) };
+      }
 
-    const amt = Math.floor(amount);
-    if (!Number.isFinite(amt) || amt <= 0) return { error: 'no_prize' };
-    if (await this.availableCredit(t, u) < amt) return { error: 'no_credit' };
-    await this.pg.query(`INSERT INTO prize_wagers (prize_id, team_id, username, amount) VALUES ($1,$2,$3,$4)`,
-      [prizeId, t, u, amt]);
-    await this.credit.book(t, u, 'wager', amt, { refPrize: prizeId });
-    await this._touchUser(t, u);
-    return { amount: amt, stake: await this.prizeStake(prizeId, u), prizeTitle: prize.title,
-             balance: await this.availableCredit(t, u) };
+      const amt = Math.floor(amount);
+      if (!Number.isFinite(amt) || amt <= 0) { await client.query('ROLLBACK'); return { error: 'no_prize' }; }
+      const avail = await this.credit.balance(t, u, client) + await this._liveTicketBuyCredit(t, u);
+      if (avail < amt) { await client.query('ROLLBACK'); return { error: 'no_credit' }; }
+      await client.query(`INSERT INTO prize_wagers (prize_id, team_id, username, amount) VALUES ($1,$2,$3,$4)`,
+        [prizeId, t, u, amt]);
+      await this.credit.book(t, u, 'wager', amt, { refPrize: prizeId, client });
+      await client.query('COMMIT');
+      await this._touchUser(t, u);
+      return { amount: amt, stake: await this.prizeStake(prizeId, u), prizeTitle: prize.title,
+               balance: await this.availableCredit(t, u) };
+    } catch (e) {
+      try { await client.query('ROLLBACK'); } catch { /* schon zu */ }
+      throw e;
+    } finally { client.release(); }
   }
 
   // Pool je Preis: Einsatzsumme je User (> 0). Gewicht = Einsatz (§5.2).
@@ -1174,13 +1215,15 @@ class WatchtimeEngine {
       // nicht mehr) — Warnung/Bestätigung ist oben erzwungen.
       await this.pg.query(`DELETE FROM contest_votes WHERE entry_id=$1`, [existing.rows[0].id]);
     }
+    // image_token: unerratbare Bild-URL (ChatGPT-Review #8) — rotiert beim
+    // Ersetzen, alte URLs werden damit ungültig.
     await this.pg.query(`
-      INSERT INTO contest_entries (team_id, session_id, username, title, mime, image, status)
-      VALUES ($1,$2,$3,$4,$5,$6,'pending')
+      INSERT INTO contest_entries (team_id, session_id, username, title, mime, image, status, image_token)
+      VALUES ($1,$2,$3,$4,$5,$6,'pending',$7)
       ON CONFLICT (session_id, username) DO UPDATE SET
         title=EXCLUDED.title, mime=EXCLUDED.mime, image=EXCLUDED.image,
-        status='pending', created_at=NOW()
-    `, [t, gid, u, sanitizeStr(title, 100), mime, image]);
+        image_token=EXCLUDED.image_token, status='pending', created_at=NOW()
+    `, [t, gid, u, sanitizeStr(title, 100), mime, image, randomBytes(16).toString('hex')]);
     await this._touchUser(t, u);
     return { ok: true, replaced: existing.rowCount > 0 };
   }
@@ -1242,15 +1285,16 @@ class WatchtimeEngine {
   async getContestStandings(teamId, gid, { all = false } = {}) {
     const t = sanitizeTeamId(teamId);
     const r = await this.pg.query(
-      `SELECT e.id AS entry_id, e.username, e.title, e.status,
+      `SELECT e.id AS entry_id, e.username, e.title, e.status, e.image_token,
               COALESCE(SUM(v.score),0)::int AS score, COUNT(v.id)::int AS votes
        FROM contest_entries e
        LEFT JOIN contest_votes v ON v.entry_id = e.id
        WHERE e.session_id=$1 AND e.team_id=$2` + (all ? '' : ` AND e.status='approved'`) +
-      ` GROUP BY e.id, e.username, e.title, e.status
+      ` GROUP BY e.id, e.username, e.title, e.status, e.image_token
        ORDER BY score DESC, votes DESC, e.id`, [gid, t]);
     return r.rows.map(x => ({ entryId: parseInt(x.entry_id), username: x.username, title: x.title || '',
-                              status: x.status, score: x.score, votes: x.votes }));
+                              status: x.status, score: x.score, votes: x.votes,
+                              imageToken: x.image_token || null }));
   }
 
   // Räumt eine (gezogene/geschlossene) Instanz vollständig aus Redis —
@@ -1326,6 +1370,18 @@ class WatchtimeEngine {
     let drawId = null, drawIndex = 1;
     try {
       await client.query('BEGIN');
+      // TicketBuy: Preis-Zeile SOFORT sperren und Einsatzsumme gegen den
+      // Pool prüfen — eine Rücknahme zwischen Pool-Aufbau und Ziehung würde
+      // sonst mit bereits erstattetem Einsatz gewinnen (ChatGPT-Review #1).
+      if (drawPrizeId && !isTest) {
+        const chk = await client.query(
+          `SELECT id, status FROM giveaway_prizes WHERE id=$1 AND team_id=$2 FOR UPDATE`, [drawPrizeId, t]);
+        if (!chk.rowCount || chk.rows[0].status !== 'open') throw new Error('prize_not_open');
+        const sum = await client.query(
+          `SELECT COALESCE(SUM(amount),0) AS total FROM prize_wagers WHERE prize_id=$1`, [drawPrizeId]);
+        const cur = Math.round((parseFloat(sum.rows[0].total) || 0) * 10000) / 10000;
+        if (Math.abs(cur - totalRounded) > 1e-6) throw new Error('stakes_changed_retry');
+      }
       const idxRes = await client.query(
         sessionId ? `SELECT COUNT(*)::int AS n FROM giveaway_draws WHERE session_id=$1`
                   : `SELECT COUNT(*)::int AS n FROM giveaway_draws WHERE session_id IS NULL AND drawn_at > NOW() - INTERVAL '1 day'`,

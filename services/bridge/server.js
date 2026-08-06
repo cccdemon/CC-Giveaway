@@ -72,8 +72,22 @@ const ROUTES = {
 // ── WS ingest server ──────────────────────────────────────
 const app    = express();
 const server = http.createServer(app);
-const wss    = new WebSocket.Server({ server });
+// maxPayload: Ingest-Nachrichten sind klein (Ticks/Chat) — 128 KiB ist
+// großzügig und verhindert Speicher-DoS über Riesen-Frames.
+const wss    = new WebSocket.Server({ server, maxPayload: 128 * 1024 });
 const clients = new Map();   // ws → { channel, ip, authed, connectedAt }
+
+// Drosseln: max. Nachrichten je Verbindung im 10s-Fenster (Ticks kommen je
+// Zuschauer ~1/min — 300 Zuschauer ≈ 50/10s; Limit lässt viel Luft) und
+// max. gleichzeitige UNauthentifizierte Verbindungen (Auth-Fenster 10 s).
+const MSG_WINDOW_MS  = 10000;
+const MSG_MAX        = 500;
+const UNAUTHED_MAX   = 20;
+function unauthedCount() {
+  let n = 0;
+  for (const [, c] of clients) if (!c.authed) n++;
+  return n;
+}
 
 function connectedChannels() {
   const out = {};
@@ -82,7 +96,13 @@ function connectedChannels() {
 }
 
 wss.on('connection', (ws, req) => {
-  const meta = { team: null, channel: null, ip: req.socket.remoteAddress, authed: false, connectedAt: Date.now() };
+  if (unauthedCount() >= UNAUTHED_MAX) {
+    log('Ingest', `Connect rejected (unauthed limit) from ${req.socket.remoteAddress}`);
+    try { ws.close(); } catch(e) {}
+    return;
+  }
+  const meta = { team: null, channel: null, ip: req.socket.remoteAddress, authed: false, connectedAt: Date.now(),
+                 msgWindow: Date.now(), msgN: 0 };
   clients.set(ws, meta);
   log('Ingest', `Connect ${meta.ip} (${clients.size} total)`);
 
@@ -90,6 +110,13 @@ wss.on('connection', (ws, req) => {
   const authTimer = setTimeout(() => { if (!meta.authed) { try { ws.close(); } catch(e){} } }, 10000);
 
   ws.on('message', async (data) => {
+    const now = Date.now();
+    if (now - meta.msgWindow > MSG_WINDOW_MS) { meta.msgWindow = now; meta.msgN = 0; }
+    if (++meta.msgN > MSG_MAX) {
+      log('Ingest', `Rate limit ${meta.channel || meta.ip} — closing`);
+      try { ws.close(); } catch(e) {}
+      return;
+    }
     let msg;
     try { msg = JSON.parse(data.toString()); } catch { return; }
     if (!msg || !msg.event) return;

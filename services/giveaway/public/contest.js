@@ -88,7 +88,7 @@ function renderEntry(c, e) {
     }
   }
   return '<div class="sc-card' + (e.own ? ' own' : '') + '">'
-    + '<img src="/giveaway/api/contest/image/' + e.entryId + '" alt="" loading="lazy" onclick="window.open(this.src)">'
+    + '<img src="/giveaway/api/contest/image/' + esc(e.imageToken || '') + '" alt="" loading="lazy" onclick="window.open(this.src)">'
     + '<div class="sc-body"><h4>' + esc(e.title || 'Ohne Titel') + '</h4>'
     + '<div class="sc-meta">von ' + esc(e.username) + (e.own ? ' (du, Status: ' + esc(e.status) + ')' : '') + '</div>'
     + voteRow

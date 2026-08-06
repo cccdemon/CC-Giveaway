@@ -78,10 +78,12 @@
     }
 
     header {
-        Access-Control-Allow-Origin *
-        Access-Control-Allow-Methods "GET, POST, OPTIONS"
         X-Frame-Options SAMEORIGIN
         Cache-Control "no-cache, must-revalidate"
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://static-cdn.jtvnw.net; connect-src 'self' ws: wss:; frame-ancestors 'self'; base-uri 'self'; object-src 'none'; form-action 'self'"
         -Server
     }
 

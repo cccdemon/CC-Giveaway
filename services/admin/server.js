@@ -74,6 +74,11 @@ const pg = new Pool(CFG.pg);
 pg.on('error', (e) => logErr('PG', e.message));
 
 const app = express();
+// Hinter Caddy: genau EIN Proxy-Hop vertrauenswürdig — req.ip ist damit die
+// echte Client-IP (letzter X-Forwarded-For-Eintrag, von Caddy gesetzt).
+// Ohne das teilen sich alle Clients Caddys IP und die Login-/Join-Bremsen
+// wären global statt je Client.
+app.set('trust proxy', 1);
 app.use(express.json());
 
 // ── Session helper ────────────────────────────────────────
@@ -113,15 +118,37 @@ app.get('/auth/me', (req, res) => {
   res.json({ user: sess.user, role: sess.role });
 });
 
+// Bruteforce-Bremse für den Passwort-Login (ChatGPT-Review #5): 5 Fehl-
+// versuche je (IP|User) → 15 min Sperre. In-Memory reicht (ein Prozess);
+// Map wird bei Überlauf beschnitten. Unbekannte Nutzer kosten denselben
+// bcrypt-Aufwand (Dummy-Hash) — kein Username-Oracle über Timing.
+const loginFails = new Map();
+const LOGIN_DUMMY_HASH = A.hashPassword('nicht-das-passwort');
+function loginKey(req, user) { return `${req.ip}|${user}`; }
+function loginBlocked(key) {
+  const e = loginFails.get(key);
+  return !!(e && e.until && e.until > Date.now());
+}
+function loginFailed(key) {
+  if (loginFails.size > 5000) loginFails.clear();   // Überlauf-Schutz
+  const e = loginFails.get(key) || { n: 0, until: 0 };
+  e.n++;
+  if (e.n >= 5) { e.until = Date.now() + 15 * 60 * 1000; e.n = 0; }
+  loginFails.set(key, e);
+}
+
 app.post('/auth/login', async (req, res) => {
   const user = A.sanitizeUserName(req.body && req.body.username);
   const pass = req.body && req.body.password;
   if (!user || !pass) return res.status(400).json({ error: 'missing_credentials' });
+  const lk = loginKey(req, user);
+  if (loginBlocked(lk)) return res.status(429).json({ error: 'too_many_attempts' });
   try {
     const r = await pg.query('SELECT username, password_hash, role FROM admin_users WHERE username=$1', [user]);
     const row = r.rows[0];
-    const ok = row && await A.verifyPassword(pass, row.password_hash);
-    if (!ok) return res.status(401).json({ error: 'invalid_credentials' });
+    const ok = await A.verifyPassword(pass, row ? row.password_hash : await LOGIN_DUMMY_HASH) && !!row;
+    if (!ok) { loginFailed(lk); return res.status(401).json({ error: 'invalid_credentials' }); }
+    loginFails.delete(lk);
     await pg.query('UPDATE admin_users SET last_login=NOW() WHERE username=$1', [user]);
     const token = A.signToken({ user: row.username, role: row.role }, CFG.sessionSecret);
     res.set('Set-Cookie', A.serializeSessionCookie(token, { secure: CFG.cookieSecure }));
@@ -253,7 +280,11 @@ app.get('/auth/twitch/callback', async (req, res) => {
     res.append('Set-Cookie', `oauth_state=; Path=/; Max-Age=0`);
     const next = cookies.oauth_next ? decodeURIComponent(cookies.oauth_next) : '/admin/teams.html';
     res.append('Set-Cookie', `oauth_next=; Path=/; Max-Age=0`);
-    res.redirect(302, next.startsWith('/') ? next : '/admin/teams.html');
+    // Nur interne Pfade: "//host" und "/\host" werden von Browsern als
+    // externe URL interpretiert (Open Redirect nach erfolgreichem Login).
+    const safeNext = (next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/\\'))
+      ? next : '/admin/teams.html';
+    res.redirect(302, safeNext);
   } catch (e) {
     logErr('Auth', 'twitch callback:', e.message);
     res.redirect(302, CFG.loginPath + '?err=server');
@@ -407,9 +438,23 @@ app.get('/api/teams/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Beitritts-Bremse: Einladungscodes sind 10 Hex-Zeichen — 20 Versuche/h je
+// IP machen Durchprobieren aussichtslos, stören legitime Beitritte nicht.
+const joinAttempts = new Map();
+function joinLimited(ip) {
+  const now = Date.now();
+  if (joinAttempts.size > 5000) joinAttempts.clear();
+  const e = joinAttempts.get(ip) || { n: 0, reset: now + 3600000 };
+  if (now > e.reset) { e.n = 0; e.reset = now + 3600000; }
+  e.n++;
+  joinAttempts.set(ip, e);
+  return e.n > 20;
+}
+
 app.post('/api/teams/join', async (req, res) => {
   const s = requireSession(req, res); if (!s) return;
   if (!await requireTos(req, res, s)) return;
+  if (joinLimited(req.ip)) return res.status(429).json({ error: 'rate_limited' });
   const code = String((req.body && req.body.code) || '').replace(/[^a-f0-9]/gi, '').slice(0, 32);
   if (!code) return res.status(400).json({ error: 'code_required' });
   try {
