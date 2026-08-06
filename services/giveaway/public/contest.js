@@ -18,6 +18,7 @@ var ERRORS = {
   rate_limited: 'Langsam — eine Wertung pro Sekunde.',
   image_too_large: 'Bild zu groß (max. 2 MB).',
   bad_mime: 'Nur PNG, JPEG oder WebP.',
+  bad_image: 'Die Datei ist kein gültiges PNG/JPEG/WebP-Bild.',
   banned: 'Du bist von diesem Giveaway ausgeschlossen.',
 };
 

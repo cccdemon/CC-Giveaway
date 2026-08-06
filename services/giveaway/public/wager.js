@@ -21,6 +21,7 @@ var ERRORS = {
   no_credit: 'Nicht genug Guthaben.',
   nothing_to_refund: 'Auf diesen Preis hast du nichts gesetzt.',
   bad_request: 'Ungültige Eingabe.',
+  rate_limited: 'Langsam — ein Einsatz pro Sekunde.',
 };
 
 function load() {
