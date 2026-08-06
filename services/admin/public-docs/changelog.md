@@ -16,7 +16,10 @@ fasst zusammengehörige Sitzungen jetzt als **Kampagne** zusammen (goldene
 Karte): Gesamtzeitraum laut Daten, Teilnehmer über alle Sitzungen,
 Endstand, Ziehungen und Gewinner. Ein Klick filtert die zugehörigen
 Einzel-Sitzungen. Eine Kampagne endet mit der Sitzung, in der gezogen und
-geschlossen wurde (oder mit einem Zurücksetzen).
+geschlossen wurde (oder mit einem Zurücksetzen). Der Klick öffnet rechts
+außerdem das **kumulierte Kampagnen-Dossier**: Gesamtzeitraum, alle
+Ziehungen, Gewinnermeldungen und der Teilnehmerstand über alle Sitzungen
+(je Zuschauer der Endstand — keine Doppelzählung).
 
 ### Dashboard: Gewinn-Abwicklung und vergangene Giveaways direkt sichtbar
 

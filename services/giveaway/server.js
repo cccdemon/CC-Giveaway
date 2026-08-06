@@ -2470,6 +2470,42 @@ app.get('/api/archive', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// Kumuliertes Kampagnen-Dossier über mehrere Sitzungen. Die Teilnahme-
+// Snapshots sind je Sitzung bereits KUMULATIV (Redis-Bestand beim Close) —
+// darum zählt je (Zuschauer, Kanal) das MAXIMUM (= Endstand), keine Summe.
+app.get('/api/archive/campaign', async (req, res) => {
+  try {
+    const teamId = sanitizeTeamId(req.query.team);
+    const user = reqUser(req);
+    if (!await isMember(user, teamId)) return res.status(403).json({ error: 'forbidden' });
+    const owner = await ownsTeam(user, teamId);
+    const ids = String(req.query.sessions || '').split(',')
+      .map(s => sanitizeStr(s, 60).trim()).filter(Boolean).slice(0, 100);
+    if (!ids.length) return res.status(400).json({ error: 'bad_request' });
+    const ses = await pg.query(
+      `SELECT id, keyword, channels, opened_at, closed_at, prize, sponsor
+       FROM sessions WHERE team_id=$1 AND id = ANY($2) ORDER BY opened_at`, [teamId, ids]);
+    if (!ses.rowCount) return res.status(404).json({ error: 'not_found' });
+    const vids = ses.rows.map(x => x.id);
+    const contact = owner ? 'c.real_name, c.email, c.street, c.zip, c.city, c.country, c.note,' : '';
+    const [participation, draws, claims, activity] = await Promise.all([
+      pg.query(`SELECT username, channel, MAX(watch_sec)::bigint AS watch_sec, MAX(msgs)::int AS msgs,
+                       MAX(coins) AS coins, BOOL_OR(follows) AS follows, BOOL_OR(valid) AS valid
+                FROM campaign_participation WHERE session_id = ANY($1)
+                GROUP BY username, channel ORDER BY MAX(coins) DESC, username`, [vids]).then(r => r.rows),
+      pg.query(`SELECT id, session_id, winner, winner_coins, winner_watch_sec, total_coins, eligible_count,
+                       rand_value, draw_index, is_test, prize, drawn_at
+                FROM giveaway_draws WHERE session_id = ANY($1) ORDER BY drawn_at`, [vids]).then(r => r.rows),
+      pg.query(`SELECT c.id, c.session_id, c.winner, c.status, c.claim_source, c.handling,
+                       c.deadline_at, c.claimed_at, c.terms_version, c.purge_at, c.purged_at, ${contact} c.created_at
+                FROM draw_claims c WHERE c.session_id = ANY($1) ORDER BY c.created_at`, [vids]).then(r => r.rows),
+      pg.query(`SELECT MIN(ts) AS first_event, MAX(ts) AS last_event, COUNT(*)::bigint AS events
+                FROM watchtime_events WHERE session_id = ANY($1)`, [vids]).then(r => r.rows[0] || null),
+    ]);
+    res.json({ sessions: ses.rows, participation, draws, claims, activity, contactVisible: owner });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // Volles Dossier zu einer Sitzung. Kontaktdaten des Gewinners sieht nur der
 // Owner — Members bekommen dieselbe Seite ohne diese Felder.
 async function archiveDossier(teamId, sessionId, withContact) {
