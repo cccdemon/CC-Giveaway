@@ -1873,6 +1873,27 @@ app.get('/api/audit/archive', async (req, res) => {
 // fremde Adressdaten hinterlegen.
 const CLAIM_FIELDS = { real_name: 120, email: 190, street: 140, zip: 20, city: 90, country: 60, note: 500 };
 
+// Teams für die Zuschauer-Seiten (Setzen/Contest): der Redis-Reverse-Index
+// (getUserTeams) kennt nur Zuschauer, die schon einen viewer_tick hatten —
+// Streamer selbst und frisch eingeloggte Zuschauer stehen NICHT drin und
+// sahen „kein Contest/kein Guthaben", obwohl eine Instanz lief. Darum
+// Union aus Index + team_members + allen Teams mit offener Instanz der
+// gesuchten Mechanik (die Teilnahme-Gates prüfen ohnehin je Nutzer).
+async function viewerTeams(user, coreId) {
+  const set = new Set(await wte.getUserTeams(user));
+  try {
+    const r = await pg.query('SELECT team_id FROM team_members WHERE login=$1', [user]);
+    for (const row of r.rows) set.add(row.team_id);
+  } catch (e) { logErr('GW', 'viewerTeams members:', e.message); }
+  try {
+    for (const t of await redis.smembers(K.openTeams())) {
+      if (set.has(t)) continue;
+      if ((await wte.listGiveaways(t)).some(g => !g.primary && g.core === coreId)) set.add(t);
+    }
+  } catch (e) { logErr('GW', 'viewerTeams scan:', e.message); }
+  return [...set];
+}
+
 // ── Phase 4c: Lose setzen (CORE_TicketBuy) ────────────────
 // Identität kommt ausschließlich aus der Twitch-Session (X-Auth-User via
 // Caddy forward_auth) — wie bei der Gewinnermeldung, nie per Fremdeingabe.
@@ -1881,7 +1902,7 @@ app.get('/api/wager/state', async (req, res) => {
     const user = reqUser(req);
     if (!user) return res.status(401).json({ error: 'unauthenticated' });
     const out = [];
-    for (const t of await wte.getUserTeams(user)) {
+    for (const t of await viewerTeams(user, 'CORE_TicketBuy')) {
       const prizes = await wte.listPrizes(t);
       const available = await wte.availableCredit(t, user);
       if (!prizes.length && available <= 0) continue;   // nichts zu zeigen
@@ -2087,7 +2108,7 @@ app.get('/api/contest/state', async (req, res) => {
     const user = reqUser(req);
     if (!user) return res.status(401).json({ error: 'unauthenticated' });
     const teamId = sanitizeTeamId(req.query.team || '');
-    const teams = teamId ? [teamId] : await wte.getUserTeams(user);
+    const teams = teamId ? [teamId] : await viewerTeams(user, 'CORE_ScreenshotContest');
     const out = [];
     for (const t of teams) {
       const inst = await contestInstance(t);

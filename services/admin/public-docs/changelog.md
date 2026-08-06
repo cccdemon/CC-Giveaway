@@ -7,6 +7,14 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 6. August 2026
 
+### Repariert: Contest- und Setz-Seite fanden laufende Giveaways nicht
+
+Wer die Contest- oder Setz-Seite öffnete, ohne vorher als Zuschauer erfasst
+worden zu sein (z. B. der Streamer selbst oder ein frisch eingeloggter
+Zuschauer), sah „kein Contest" bzw. „kein Guthaben", obwohl eine Instanz
+lief. Beide Seiten finden laufende Instanzen jetzt zuverlässig; die
+Teilnahme-Voraussetzungen (Follow, Zuschauzeit) gelten unverändert.
+
 ### Contest-Moderation: Bild-Vorschau und endgültiges Löschen
 
 Die Einsendungs-Liste im Dashboard zeigt jetzt zu jeder Einsendung ein
