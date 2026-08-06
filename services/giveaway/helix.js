@@ -84,6 +84,27 @@ class Helix {
     } catch(e) { return null; }
   }
 
+  // Folgt EIN Nutzer dem Kanal? Ein Request mit user_id-Filter (Owner-Token,
+  // self = broadcaster). null = nicht feststellbar (kein Owner-Login/Fehler),
+  // sonst true/false — Ergebnis 5 min gecacht.
+  async userFollowsChannel(channelLogin, userLogin) {
+    const ch = String(channelLogin || '').toLowerCase(), u = String(userLogin || '').toLowerCase();
+    if (!this.configured || !ch || !u) return null;
+    const key = `helix:follows:${ch}:${u}`;
+    const cached = await this.redis.get(key);
+    if (cached === '1' || cached === '0') return cached === '1';
+    try {
+      const token = await this.validOwnerToken(ch);
+      if (!token) return null;
+      const [bId, uId] = await Promise.all([this.resolveUserId(ch), this.resolveUserId(u)]);
+      if (!bId || !uId) return null;
+      const d = await this._get(`${API}/channels/followers?broadcaster_id=${bId}&user_id=${uId}`, token);
+      const follows = !!(d.data && d.data.length);
+      await this.redis.set(key, follows ? '1' : '0', 'EX', 300);
+      return follows;
+    } catch (e) { return null; }
+  }
+
   // Set aller Follower-user_ids eines Kanals (broadcaster_id) via Owner-Token.
   async getFollowerIds(ownerToken, broadcasterId) {
     const ids = new Set();

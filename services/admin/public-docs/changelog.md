@@ -7,6 +7,13 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 6. August 2026
 
+### Repariert: Contest-Seite erkennt Follows auch ohne Live-Meldung
+
+Wer einem Contest-Kanal folgt, aber noch keine Live-Meldung aus dem Stream
+bekommen hatte, sah „Folge zuerst einem Contest-Kanal". Der Follow wird
+jetzt bei Bedarf direkt bei Twitch nachgeprüft (sofern der Kanal-Streamer
+auf der Plattform eingeloggt war und den Lese-Zugriff erteilt hat).
+
 ### Repariert: Login führt zur ursprünglich angeforderten Seite
 
 Wer ohne Anmeldung z. B. die Contest-Seite öffnete, landete nach dem

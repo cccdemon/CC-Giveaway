@@ -2103,6 +2103,28 @@ async function contestInstance(teamId) {
   return (await wte.listGiveaways(teamId)).find(g => g.core === 'CORE_ScreenshotContest' && g.gid) || null;
 }
 
+// Follow-Fallback für die Contest-Seite: das Redis-Flag (chFollows) entsteht
+// nur durch Streamerbot-Live-Events — wer der Seite ohne laufenden Ingest
+// begegnet, folgt vielleicht längst. Dann einmalig via Helix nachprüfen
+// (Owner-Token des Kanals) und das Flag setzen, wie es das Live-Event täte.
+// Kanäle ohne eingeloggten Owner liefern null → kein Nachweis, kein Flag.
+async function helixFollowFallback(teamId, gid, user) {
+  try {
+    if (!helix.configured) return false;
+    let chans = null;
+    try { const raw = await redis.get(K.gChanList(teamId, gid)); if (raw) chans = JSON.parse(raw); } catch { /* alle */ }
+    if (!Array.isArray(chans) || !chans.length) chans = await wte.getChannels(teamId);
+    for (const ch of chans) {
+      if (await redis.get(K.chFollows(teamId, ch, user)) === '1') return true;
+      if (await helix.userFollowsChannel(ch, user) === true) {
+        await redis.set(K.chFollows(teamId, ch, user), '1');
+        return true;
+      }
+    }
+  } catch (e) { logErr('Helix', 'follow fallback:', e.message); }
+  return false;
+}
+
 app.get('/api/contest/state', async (req, res) => {
   try {
     const user = reqUser(req);
@@ -2113,7 +2135,10 @@ app.get('/api/contest/state', async (req, res) => {
     for (const t of teams) {
       const inst = await contestInstance(t);
       if (!inst) continue;
-      const elig = await wte._contestEligibility(t, inst.gid, user);
+      let elig = await wte._contestEligibility(t, inst.gid, user);
+      if (!elig.followsHost && await helixFollowFallback(t, inst.gid, user)) {
+        elig = await wte._contestEligibility(t, inst.gid, user);   // Flag gesetzt → neu lesen
+      }
       const standings = await wte.getContestStandings(t, inst.gid, { all: true });
       const mine = standings.find(s => s.username === user) || null;
       // Sichtbar für Voter: nur approved; eigene Einsendung immer.
@@ -2152,6 +2177,7 @@ app.post('/api/contest/entry', express.json({ limit: '12mb' }), async (req, res)
     if (!image || !image.length) return res.status(400).json({ error: 'no_image' });
     if (image.length > ContestCore.IMAGE_MAX_BYTES) return res.status(413).json({ error: 'image_too_large' });
     if (sniffImage(image) !== mime) return res.status(400).json({ error: 'bad_image' });
+    await helixFollowFallback(teamId, inst.gid, user);   // Follow ggf. via Helix nachweisen
     const dims = imageDims(image, mime);
     if (!dims || dims.w < RES_MIN_W || dims.h < RES_MIN_H || dims.w > RES_MAX_W || dims.h > RES_MAX_H) {
       return res.status(400).json({ error: 'bad_resolution',
