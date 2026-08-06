@@ -7,7 +7,8 @@
 :root {
   --cyan:#00d4ff; --gold:#f0a500; --red:#ff4d6a; --green:#22e07a; --violet:#9146ff;
   --void:#04060a; --bg:#04060a; --bg2:#0a0e16; --bg3:#0c1520; --sunk:#05080e;
-  --text:#cfe0ec; --dim:rgba(200,220,232,0.48); --dim2:rgba(200,220,232,0.22);
+  /* --dim heller (0.48→0.72): Hinweistexte waren grau-auf-blau kaum lesbar. */
+  --text:#cfe0ec; --dim:rgba(200,220,232,0.72); --dim2:rgba(200,220,232,0.34);
   --border:rgba(0,212,255,0.13); --border-hi:rgba(0,212,255,0.28);
   --mono:'Share Tech Mono',ui-monospace,Consolas,monospace;
   --disp:'Rajdhani',system-ui,sans-serif;
@@ -22,6 +23,10 @@ body {
     var(--bg);
   color:var(--text); font-family:var(--disp); font-size:14px; line-height:1.4;
   overflow:hidden;
+  /* Lesbarkeit auf 4K/hochauflösenden Monitoren: alles proportional ~2pt
+     größer. zoom skaliert auch die fest gesetzten px-Größen der Komponenten
+     (Karten, Tabellen, Nav) mit — eine Stelle statt hunderte px-Werte. */
+  zoom: 1.15;
 }
 
 /* Nav is self-contained (injected by giveaway-shared.js with its own <style>). */

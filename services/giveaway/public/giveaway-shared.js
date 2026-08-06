@@ -277,7 +277,7 @@
   function isCur(h){ return cur === h.split('?')[0].replace(/^\//,''); }
 
   var css = [
-    '.gwnav{--gc:#00d4ff;--gg:#f0a500;--gr:#ff4d6a;--gv:#9146ff;--gink:#cfe0ec;--gmut:rgba(200,220,232,.5);--gfai:rgba(200,220,232,.3);--gbg:#0a0e16;--gedge:rgba(0,212,255,.14);--gedge2:rgba(0,212,255,.3);display:flex;align-items:center;height:44px;padding:0 12px;gap:3px;position:sticky;top:0;z-index:900;background:linear-gradient(180deg,rgba(255,255,255,.015),transparent),var(--gbg);border-bottom:1px solid var(--gedge2);font-family:"Share Tech Mono",monospace;}',
+    '.gwnav{--gc:#00d4ff;--gg:#f0a500;--gr:#ff4d6a;--gv:#9146ff;--gink:#cfe0ec;--gmut:rgba(200,220,232,.75);--gfai:rgba(200,220,232,.5);--gbg:#0a0e16;--gedge:rgba(0,212,255,.14);--gedge2:rgba(0,212,255,.3);display:flex;align-items:center;height:44px;padding:0 12px;gap:3px;position:sticky;top:0;z-index:900;background:linear-gradient(180deg,rgba(255,255,255,.015),transparent),var(--gbg);border-bottom:1px solid var(--gedge2);font-family:"Share Tech Mono",monospace;}',
     '.gwnav *{box-sizing:border-box;}',
     '.gwnav-brand{display:flex;align-items:center;gap:8px;font-size:12px;letter-spacing:2px;color:var(--gc);text-decoration:none;padding:0 12px 0 4px;margin-right:6px;white-space:nowrap;}',
     '.gwnav-brand b{color:var(--gink);font-weight:400;}.gwnav-brand:hover{color:#fff;}',

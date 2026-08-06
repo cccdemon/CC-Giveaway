@@ -13,14 +13,16 @@
   --bg2:      #080e14;
   --bg3:      #0c1520;
   --text:     #c8dce8;
-  --dim:      rgba(200,220,232,0.4);
-  --dim2:     rgba(200,220,232,0.18);
+  /* --dim heller (0.4→0.72): Hinweistexte waren grau-auf-blau kaum lesbar. */
+  --dim:      rgba(200,220,232,0.72);
+  --dim2:     rgba(200,220,232,0.3);
   --border:   rgba(0,212,255,0.1);
   --border-hi:rgba(0,212,255,0.28);
 }
 
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: var(--bg); color: var(--text); font-family: 'Rajdhani', sans-serif; font-size: 14px; line-height: 1.4; }
+/* zoom: Lesbarkeit auf 4K — skaliert alle festen px-Größen proportional mit. */
+body { background: var(--bg); color: var(--text); font-family: 'Rajdhani', sans-serif; font-size: 14px; line-height: 1.4; zoom: 1.15; }
 
 /* Nav is self-contained (injected by admin-shared.js with its own <style>). */
 
