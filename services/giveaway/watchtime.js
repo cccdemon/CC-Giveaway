@@ -1470,6 +1470,18 @@ class WatchtimeEngine {
         UPDATE sessions SET total_participants=$1, total_coins=$2, channels=$3, closed_at=NOW()
         WHERE id=$4 AND closed_at IS NULL
       `, [active.length, Math.round(totalCoins * 10000) / 10000, JSON.stringify(channels), sessionId]);
+      // Kampagnen-Klammer sauber abschließen: Auto-Open hat je Stream-Start
+      // eine neue Sitzung angelegt und die alte offen liegen lassen — beim
+      // Beenden der Kampagne werden diese Vorgänger mitgeschlossen
+      // (closed_at = letztes eigenes Event, sonst opened_at).
+      const orphans = await client.query(`
+        UPDATE sessions s SET status='closed',
+          closed_at = COALESCE((SELECT MAX(ts) FROM watchtime_events w WHERE w.session_id = s.id), s.opened_at)
+        WHERE s.team_id=$1 AND s.closed_at IS NULL AND s.id <> $2
+          AND (s.core IS NULL OR s.core='CORE_WatchtimeChatActivity')
+          AND s.opened_at < (SELECT opened_at FROM sessions WHERE id=$2)
+      `, [t, sessionId]);
+      if (orphans.rowCount) console.log(`[WTE] [${t}] ${orphans.rowCount} verwaiste Vorgänger-Sitzungen mitgeschlossen`);
       if (upd.rowCount > 0) {
         for (const p of participants) {
           await client.query(`INSERT INTO users (username, display, total_watch_sec, last_seen) VALUES ($1,$1,$2,NOW())
