@@ -94,7 +94,8 @@ function render() {
 var HANDLING_LABEL = { contacted: 'KONTAKTIERT', shipped: 'VERSENDET', done: 'ERLEDIGT' };
 
 function renderItem(c) {
-  var stat = c.status === 'claimed' ? '<span class="cl-badge claimed">GEMELDET</span>'
+  var stat = c.status === 'claimed'
+             ? '<span class="cl-badge claimed">' + (c.claim_source === 'external' ? 'EXTERN GEMELDET' : 'GEMELDET') + '</span>'
            : c.status === 'expired' ? '<span class="cl-badge expired">VERFALLEN</span>'
            : c.overdue              ? '<span class="cl-badge expired">FRIST ABGELAUFEN</span>'
            :                          '<span class="cl-badge pending">WARTET AUF GEWINNER</span>';
@@ -111,16 +112,27 @@ function renderItem(c) {
     + (c.handled_at ? ' · Stand gesetzt: ' + fmt(c.handled_at) + (c.handled_by ? ' von ' + esc(c.handled_by) : '') : '')
     + '</div>';
 
-  if (c.status === 'claimed' && !c.purged_at) {
+  if (c.status === 'claimed' && !c.purged_at && c.claim_source !== 'external') {
     html += '<div class="cl-contact"><span class="warn">KONTAKTDATEN — vertraulich, nur für den Versand</span>'
       + esc(c.real_name || '–') + ' · ' + esc(c.email || '–')
       + (c.street ? '<br>' + esc(c.street) + ', ' + esc(c.zip || '') + ' ' + esc(c.city || '') + (c.country ? ', ' + esc(c.country) : '') : '')
       + (c.note ? '<br>Hinweis: ' + esc(c.note) : '')
       + '</div>';
   }
+  if (c.status === 'claimed' && c.claim_source === 'external') {
+    html += '<div class="cl-sub">Meldung außerhalb der Plattform erfasst (z. B. WhatsApp/Discord) — keine Kontaktdaten gespeichert.</div>';
+  }
 
   if (c.overdue || c.status === 'expired') {
     html += '<div class="cl-hint-red">Frist verstrichen ohne Meldung — Ersatz ziehst du im Dashboard mit ★ (neue Ziehung derselben Sitzung).</div>';
+  }
+
+  // Gewinner hat sich außerhalb der Plattform gemeldet → Owner erfasst das.
+  if (c.status === 'pending' || c.status === 'expired') {
+    html += '<div class="cl-actions">'
+      + '<button class="btn btn-gold btn-sm" onclick="markExternal(' + c.id + ')" '
+      + 'title="Der Gewinner hat sich z. B. per WhatsApp/Discord/live gemeldet — Frist gilt als erfüllt, danach Stand setzen (kontaktiert/versendet/erledigt)">'
+      + '✔ EXTERN GEMELDET</button></div>';
   }
 
   if (c.status === 'claimed') {
@@ -139,6 +151,19 @@ function renderItem(c) {
 }
 
 function setFilter(f) { filter = f; render(); }
+
+async function markExternal(claimId) {
+  if (!confirm('Meldung außerhalb der Plattform erfassen? Der Gewinn gilt damit als fristgerecht gemeldet '
+    + '(Nachweis: „extern gemeldet" + Zeitpunkt). Danach den Abwicklungs-Stand setzen.')) return;
+  try {
+    var r = await (await fetch('/giveaway/api/claims/external', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ team: currentTeam, claimId: claimId }),
+    })).json();
+    if (r.error) throw new Error(r.error);
+    load();
+  } catch(e) { alert('Erfassen fehlgeschlagen: ' + e.message); }
+}
 
 async function setHandling(claimId, handling) {
   try {

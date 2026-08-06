@@ -2284,7 +2284,7 @@ app.get('/api/claims', async (req, res) => {
     if (!user) return res.status(401).json({ error: 'unauthenticated' });
     if (!await ownsTeam(user, teamId)) return res.status(403).json({ error: 'forbidden' });
     const r = await pg.query(`
-      SELECT c.id, c.session_id, c.winner, c.status, c.handling, c.handled_at, c.handled_by,
+      SELECT c.id, c.session_id, c.winner, c.status, c.claim_source, c.handling, c.handled_at, c.handled_by,
              c.deadline_at, c.claimed_at, c.purge_at, c.purged_at, c.created_at,
              c.real_name, c.email, c.street, c.zip, c.city, c.country, c.note,
              d.drawn_at, d.prize
@@ -2298,6 +2298,29 @@ app.get('/api/claims', async (req, res) => {
     res.json({ team: teamId,
                claims: r.rows.map(c => ({ ...c,
                  overdue: c.status === 'pending' && new Date(c.deadline_at) < new Date() })) });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Gewinner hat sich AUSSERHALB der Plattform gemeldet (WhatsApp, Discord,
+// live im Stream …) — der Owner erfasst das, damit Frist/Abwicklung stimmen.
+// claim_source='external' hält den Unterschied zur Selbstmeldung im
+// Nachweis fest; Kontaktdaten entstehen dabei keine.
+app.post('/api/claims/external', express.json(), async (req, res) => {
+  try {
+    const user = reqUser(req);
+    const teamId = sanitizeTeamId(req.body && req.body.team);
+    const claimId = parseInt(req.body && req.body.claimId, 10);
+    if (!user) return res.status(401).json({ error: 'unauthenticated' });
+    if (!await ownsTeam(user, teamId)) return res.status(403).json({ error: 'forbidden' });
+    if (!Number.isFinite(claimId)) return res.status(400).json({ error: 'bad_request' });
+    const r = await pg.query(`
+      UPDATE draw_claims SET status='claimed', claimed_at=NOW(), claim_source='external'
+      WHERE id=$1 AND team_id=$2 AND status IN ('pending','expired')
+      RETURNING id, winner`, [claimId, teamId]);
+    if (!r.rowCount) return res.status(409).json({ error: 'not_open_or_missing' });
+    await audit({ teamId, actor: user, ip: req.ip, action: 'claim_external', target: r.rows[0].winner,
+                  detail: { claimId } });
+    res.json({ ok: true, claimId });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2416,20 +2439,27 @@ async function archiveDossier(teamId, sessionId, withContact) {
   const contact = withContact
     ? 'c.real_name, c.email, c.street, c.zip, c.city, c.country, c.note, c.claim_ip,'
     : '';
-  const [session, draws, participation, claims, auditRows] = await Promise.all([
+  const [session, draws, participation, claims, auditRows, activity] = await Promise.all([
     q(`SELECT * FROM sessions WHERE id=$1 AND team_id=$2`, [sessionId, teamId]),
     q(`SELECT id, winner, winner_coins, winner_watch_sec, total_coins, eligible_count,
               rand_value, draw_index, is_test, prize, drawn_at, eligible_snapshot
        FROM giveaway_draws WHERE session_id=$1 ORDER BY drawn_at`, [sessionId]),
     q(`SELECT username, channel, watch_sec, msgs, coins, follows, valid
        FROM campaign_participation WHERE session_id=$1 ORDER BY coins DESC, username`, [sessionId]),
-    q(`SELECT c.id, c.draw_id, c.winner, c.status, c.deadline_at, c.claimed_at,
+    q(`SELECT c.id, c.draw_id, c.winner, c.status, c.claim_source, c.handling, c.handled_at,
+              c.deadline_at, c.claimed_at,
               c.terms_version, c.purge_at, c.purged_at, ${contact} c.created_at
        FROM draw_claims c WHERE c.session_id=$1 ORDER BY c.created_at`, [sessionId]),
     q(`SELECT id, ts, actor, actor_ip, action, target, result, detail
        FROM audit_log WHERE session_id=$1 ORDER BY ts LIMIT 50000`, [sessionId]),
+    // Tatsächlicher Datenzeitraum: opened_at kann bei migrierten Kampagnen
+    // jünger sein als die ältesten Viewtime-Events (Altbestand vor dem
+    // Core-Umbau) — das Dossier zeigt darum beides.
+    q(`SELECT MIN(ts) AS first_event, MAX(ts) AS last_event, COUNT(*)::bigint AS events
+       FROM watchtime_events WHERE session_id=$1`, [sessionId]),
   ]);
-  return { session: session[0] || null, draws, participation, claims, audit: auditRows };
+  return { session: session[0] || null, draws, participation, claims, audit: auditRows,
+           activity: activity[0] || null };
 }
 
 app.get('/api/archive/:sessionId', async (req, res) => {
@@ -2782,6 +2812,9 @@ async function ensureSchema() {
   await pg.query(`ALTER TABLE draw_claims ADD COLUMN IF NOT EXISTS handling   TEXT`);
   await pg.query(`ALTER TABLE draw_claims ADD COLUMN IF NOT EXISTS handled_at TIMESTAMPTZ`);
   await pg.query(`ALTER TABLE draw_claims ADD COLUMN IF NOT EXISTS handled_by TEXT`);
+  // 'external' = Owner hat eine Meldung außerhalb der Plattform erfasst
+  // (WhatsApp/Discord/live) — im Nachweis von der Selbstmeldung unterscheidbar.
+  await pg.query(`ALTER TABLE draw_claims ADD COLUMN IF NOT EXISTS claim_source TEXT`);
   // Chat-KI pro Team. ai_key_enc ist AES-256-GCM; Schluessel aus app_secrets.
   await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS ai_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
   await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS ai_provider TEXT`);

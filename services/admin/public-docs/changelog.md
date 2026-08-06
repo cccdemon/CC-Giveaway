@@ -7,6 +7,20 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 6. August 2026
 
+### Archiv: Teilnehmer kumuliert, echter Zeitraum, externe Gewinnmeldung
+
+Drei Verbesserungen an Nachweis und Abwicklung: **(1)** Der Teilnehmerstand
+im Archiv zeigt jetzt **eine Zeile je Zuschauer** mit Gesamt-Zuschauzeit und
+der Aufschlüsselung, wer wie lange auf welchem Kanal geschaut hat (vorher
+eine Zeile je Kanal, nicht kumuliert). **(2)** Bei Kampagnen aus der Zeit
+vor der Systemumstellung zeigt das Dossier die **echte Eröffnung** laut
+ältestem Viewtime-Event statt des Migrations-Datums — der Datenzeitraum
+steht jetzt immer dabei. **(3)** Meldet sich ein Gewinner **außerhalb der
+Plattform** (z. B. WhatsApp), erfasst der Owner das in der Gewinn-Abwicklung
+mit einem Klick („Extern gemeldet") — die Frist gilt als erfüllt, der
+Nachweis unterscheidet das sauber von der Selbstmeldung, Kontaktdaten
+entstehen dabei keine. Danach wie gewohnt kontaktiert/versendet/erledigt.
+
 ### Repariert: Contest-Seite erkennt Follows auch ohne Live-Meldung
 
 Wer einem Contest-Kanal folgt, aber noch keine Live-Meldung aus dem Stream

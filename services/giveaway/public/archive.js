@@ -112,16 +112,25 @@ function renderDetail(sid, d) {
 
   var kv = function(label, v) { return '<div><label>' + label + '</label>' + v + '</div>'; };
 
+  // Tatsächlicher Datenzeitraum aus den Viewtime-Events: bei migrierten
+  // Kampagnen (Altbestand) ist opened_at jünger als die ältesten Daten.
+  var act = d.activity || {};
+  var migrated = act.first_event && s.opened_at
+    && (new Date(s.opened_at) - new Date(act.first_event)) > 3600000;
   var html = '<div class="ar-sec"><h3>SITZUNG</h3><div class="ar-kv">'
     + kv('ID', esc(sid))
     + kv('KEYWORD', s.keyword ? esc(s.keyword) : '–')
     + kv('KANÄLE', chans.length ? esc(chans.join(', ')) : '–')
-    + kv('ERÖFFNET', fmt(s.opened_at))
+    + kv('ERÖFFNET', fmt(migrated ? act.first_event : s.opened_at))
     + kv('GESCHLOSSEN', s.closed_at ? fmt(s.closed_at) : 'läuft noch')
-    + kv('DAUER', dur(s.opened_at, s.closed_at))
+    + kv('DAUER', dur(migrated ? act.first_event : s.opened_at, s.closed_at))
+    + (act.first_event ? kv('DATEN VON/BIS', fmt(act.first_event) + ' – ' + fmt(act.last_event)) : '')
     + kv('TEILNEHMER', num(s.total_participants))
     + kv('PUNKTE GESAMT', num(s.total_coins).toFixed(2))
-    + '</div></div>';
+    + '</div>'
+    + (migrated ? '<div class="ar-note" style="margin-top:6px">Die Kampagne lief schon vor der Anlage dieses '
+        + 'Sitzungsdatensatzes (Systemumstellung) — Eröffnung laut ältestem Viewtime-Event.</div>' : '')
+    + '</div>';
 
   // ── Ziehungen ──
   html += '<div class="ar-sec"><h3>ZIEHUNGEN (' + real.length
@@ -145,7 +154,8 @@ function renderDetail(sid, d) {
   html += '<div class="ar-sec"><h3>GEWINNERMELDUNG</h3>';
   if (!d.claims.length) html += '<div class="wsc-empty">Keine Meldung angelegt (nur echte Ziehungen erzeugen eine).</div>';
   else html += d.claims.map(function(c){
-    var st = c.status === 'claimed' ? '✓ gemeldet am ' + fmt(c.claimed_at)
+    var st = c.status === 'claimed'
+             ? '✓ ' + (c.claim_source === 'external' ? 'extern gemeldet (außerhalb der Plattform, vom Veranstalter erfasst)' : 'gemeldet') + ' am ' + fmt(c.claimed_at)
            : (c.status === 'expired' ? '✗ Frist verstrichen' : '⏳ offen, Frist bis ' + fmt(c.deadline_at));
     var body = '<div class="ar-kv">'
       + '<div><label>GEWINNER</label>' + mask(c.winner) + '</div>'
@@ -158,6 +168,8 @@ function renderDetail(sid, d) {
     } else if (c.purged_at) {
       body += '<div class="ar-note" style="margin-top:8px">Kontaktdaten am ' + fmt(c.purged_at)
             + ' fristgemäß gelöscht. Der Ziehungsnachweis bleibt vollständig.</div>';
+    } else if (c.status === 'claimed' && c.claim_source === 'external') {
+      body += '<div class="ar-note" style="margin-top:8px">Meldung außerhalb der Plattform erfasst — keine Kontaktdaten gespeichert.</div>';
     } else if (c.status === 'claimed') {
       body += '<div class="ar-pii" style="margin-top:9px">'
         + '<div class="warn">⚠ Personenbezogene Daten — automatische Löschung am ' + fmt(c.purge_at) + '</div>'
@@ -172,19 +184,38 @@ function renderDetail(sid, d) {
   }).join('');
   html += '</div>';
 
-  // ── Teilnehmer ──
-  html += '<div class="ar-sec"><h3>TEILNEHMERSTAND (' + d.participation.length + ' Kanal-Datensätze)</h3>';
-  if (!d.participation.length) {
+  // ── Teilnehmer: eine Zeile je ZUSCHAUER (kumuliert über alle Kanäle),
+  //    Aufschlüsselung wer wie lange auf welchem Kanal geschaut hat. ──
+  var byUser = {};
+  d.participation.forEach(function(p){
+    var u = byUser[p.username] || (byUser[p.username] =
+      { username: p.username, watch: 0, msgs: 0, coins: 0, follows: 0, chans: 0, valid: false, perCh: [] });
+    u.watch += num(p.watch_sec); u.msgs += num(p.msgs); u.coins += num(p.coins);
+    u.chans++;
+    if (p.follows) u.follows++;
+    if (p.valid) u.valid = true;
+    u.perCh.push(esc(p.channel) + ': ' + Math.round(num(p.watch_sec) / 60) + ' min'
+      + (num(p.msgs) ? ' / ' + num(p.msgs) + ' Chat' : ''));
+  });
+  var users = Object.keys(byUser).map(function(k){ return byUser[k]; })
+    .sort(function(a, b){ return b.coins - a.coins || b.watch - a.watch; });
+  html += '<div class="ar-sec"><h3>TEILNEHMERSTAND (' + users.length + ' Zuschauer, '
+    + d.participation.length + ' Kanal-Datensätze)</h3>';
+  if (!users.length) {
     html += '<div class="wsc-empty">Kein Snapshot vorhanden — Teilnahmedaten werden 90 Tage '
           + 'nach Abschluss gelöscht (Datenschutz).</div>';
   } else {
     html += '<div class="ar-scroll"><table class="ar-tbl"><tr>'
-      + '<th>Zuschauer</th><th>Kanal</th><th>Zuschauzeit</th><th>Chat</th><th>Punkte</th><th>Folgt</th><th>Gültig</th></tr>'
-      + d.participation.map(function(p){
-          return '<tr><td>' + mask(p.username) + '</td><td>' + esc(p.channel) + '</td>'
-            + '<td>' + Math.round(num(p.watch_sec) / 60) + ' min</td><td>' + num(p.msgs) + '</td>'
-            + '<td>' + num(p.coins).toFixed(2) + '</td><td>' + (p.follows ? 'ja' : 'nein') + '</td>'
-            + '<td>' + (p.valid ? 'ja' : 'nein') + '</td></tr>';
+      + '<th>Zuschauer</th><th>Zuschauzeit gesamt</th><th>je Kanal</th><th>Chat</th>'
+      + '<th>Punkte</th><th>Folgt</th><th>Gültig</th></tr>'
+      + users.map(function(u){
+          return '<tr><td>' + mask(u.username) + '</td>'
+            + '<td>' + Math.round(u.watch / 60) + ' min</td>'
+            + '<td>' + u.perCh.join('<br>') + '</td>'
+            + '<td>' + u.msgs + '</td>'
+            + '<td>' + u.coins.toFixed(2) + '</td>'
+            + '<td>' + u.follows + '/' + u.chans + '</td>'
+            + '<td>' + (u.valid ? 'ja' : 'nein') + '</td></tr>';
         }).join('') + '</table></div>';
   }
   html += '</div>';

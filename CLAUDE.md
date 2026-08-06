@@ -135,7 +135,7 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 `GET audit` (Filter + Verdichtung + `before`-Cursor) · `GET audit/stats` · `GET audit/archive` (tar.gz)
 `GET archive` (Sitzungsliste) · `GET archive/:sid` (Dossier) · `GET archive/:sid/export` (tar.gz, Owner)
 `GET claim/mine` · `POST claim` (nur der eingeloggte Gewinner)
-`GET claims` (`?team=`, nur Owner — Inbox mit Kontaktdaten, Zugriff auditiert) · `POST claims/handling` (contacted/shipped/done) · `POST claims/purge` (Kontaktfelder sofort löschen, Nachweis bleibt)
+`GET claims` (`?team=`, nur Owner — Inbox mit Kontaktdaten, Zugriff auditiert) · `POST claims/handling` (contacted/shipped/done) · `POST claims/external` (Owner erfasst Meldung außerhalb der Plattform — `claim_source='external'`, keine Kontaktdaten) · `POST claims/purge` (Kontaktfelder sofort löschen, Nachweis bleibt)
 `POST contest/withdraw` (Einsender zieht eigene Einsendung zurück — Bild weg, Stimmen CASCADE; nur solange Instanz offen)
 `GET wager/state` · `POST wager` (nur der eingeloggte Zuschauer; auditiert `wager_set`/`wager_retract`)
 `POST prize/image` (Team-Mitglied, nur offene Preise, PNG/JPG max 7 MB, leer = entfernen; auditiert) · `GET prize/image/:token` (eingeloggt)
