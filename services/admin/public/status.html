@@ -192,6 +192,7 @@
       + (t.giveaways||[]).map(function(g){ return gwSection(g, t.teamId); }).join('')
       + creditSection(t)
       + contestHistorySection(t)
+      + consentsSection(t)
       + '<a class="tlink" href="/viewer/terms?team='+encodeURIComponent(t.teamId)+'" target="_blank" '
       + 'rel="noopener">Teilnahmebedingungen &amp; Impressum von '+esc(t.name)+' ↗</a>'
       + '</div>';
@@ -220,11 +221,14 @@
       rows += '<div class="row">Dein Los-Guthaben: <b>'+Number(tb.balance||0).toFixed(2)+' Lose</b>'
         + ' · <a class="tlink" style="margin-top:0" href="/viewer/wager">Lose setzen ↗</a></div>';
       if((tb.prizes||[]).length){
-        rows += '<table><tr><th>Preis</th><th>Status</th><th>Dein Einsatz</th><th>Gesamt</th></tr>'
+        rows += '<table><tr><th>Preis</th><th>Status</th><th>Dein Einsatz</th><th>Gesamt</th><th>Dein Ergebnis</th></tr>'
           + tb.prizes.map(function(p){
               var st = p.status==='open' ? 'offen' : (p.status==='drawn' ? 'GEZOGEN' : 'storniert (zurückgebucht)');
+              var res = { gewonnen:'<span class="ok">gewonnen 🎉</span>', nicht_gewonnen:'nicht gewonnen',
+                          storniert:'storniert — Einsatz zurück', offen:'offen' }[p.myResult] || '—';
               return '<tr><td><b>#'+p.id+' '+esc(p.title)+'</b></td><td>'+st+'</td>'
-                + '<td>'+(Number(p.myStake)||0).toFixed(0)+'</td><td>'+(Number(p.totalStake)||0).toFixed(0)+'</td></tr>';
+                + '<td>'+(Number(p.myStake)||0).toFixed(0)+'</td><td>'+(Number(p.totalStake)||0).toFixed(0)+'</td>'
+                + '<td>'+res+'</td></tr>';
             }).join('')+'</table>';
       }
       rows += '<div class="row">Ziehung je Preis, gewichtet nach Einsatz. Guthaben bleibt dir team-weit erhalten; Verfall nach 12 Monaten ohne Bewegung.</div>';
@@ -263,6 +267,25 @@
       + '</div>';
   }
 
+  // Kenntnisnahme-Beleg: welche Bedingungen-Fassung wann akzeptiert wurde.
+  var CONSENT_LABEL = { register:'Anmeldung per Keyword', wager:'Erster Los-Einsatz',
+                        contest_entry:'Contest-Einsendung', contest_vote:'Contest-Stimmabgabe',
+                        withdraw:'Teilnahme zurückgezogen' };
+  function consentsSection(t){
+    var rows = (t.consents||[]).filter(function(c){ return c.action !== 'withdraw'; });
+    if(!rows.length) return '';
+    return '<div class="gwsec"><h3>📜 Deine Kenntnisnahmen der Teilnahmebedingungen</h3>'
+      + rows.map(function(c){
+          var v = c.terms_version > 0
+            ? '<a class="tlink" style="margin-top:0" href="/viewer/terms?team='+encodeURIComponent(t.teamId)
+              + '&version='+c.terms_version+'" target="_blank" rel="noopener">Fassung '+c.terms_version+' ↗</a>'
+            : 'Standard-Vorlage';
+          return '<div class="row">'+esc(CONSENT_LABEL[c.action]||c.action)+' am '
+            + new Date(c.created_at).toLocaleDateString('de-DE')+' · galt: '+v+'</div>';
+        }).join('')
+      + '</div>';
+  }
+
   function contestHistorySection(t){
     var past = (t.contestHistory||[]).filter(function(h){ return h.closed_at; });
     if(!past.length) return '';
@@ -270,7 +293,8 @@
       var st = {pending:'nicht freigegeben',approved:'freigegeben',rejected:'abgelehnt'}[h.status]||h.status;
       return '<div class="row">„'+esc(h.title||'ohne Titel')+'" ('+new Date(h.created_at).toLocaleDateString('de-DE')+'): '
         + st+' · '+h.score+' Punkte aus '+h.votes+' Stimmen'
-        + (h.image_token?' · <a class="tlink" style="margin-top:0" href="/giveaway/api/contest/image/'+esc(h.image_token)+'" target="_blank" rel="noopener">Bild ansehen ↗</a>':'')
+        + (h.image_token?' · <a class="tlink" style="margin-top:0" href="/giveaway/api/contest/image/'+esc(h.image_token)+'" target="_blank" rel="noopener">Bild ansehen ↗</a>'
+          + ' · <a class="tlink" style="margin-top:0" href="/giveaway/api/contest/image/'+esc(h.image_token)+'" download="contest-'+esc(h.session_id||'bild')+'">herunterladen ⬇</a>':'')
         + '</div>';
     }).join('');
     return '<div class="gwsec"><h3>📸 Deine früheren Contest-Einsendungen</h3>'+rows+'</div>';

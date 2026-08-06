@@ -961,13 +961,10 @@ function handle(msg) {
 
     case 'gw_ack': {
       log(`ACK: ${msg.type} -> ${msg.user || msg.keyword || msg.winner || msg.channel || ''}`, 'cyan');
-      // P6: Startwarnungen (blockieren nicht, sollen aber auffallen).
+      // Startwarnungen (blockieren nicht — Platzhalter in eigenen Bedingungen
+      // sind seit der Bereinigung ein BLOCKER und kommen als open_blocked).
       if (msg.warnings && msg.warnings.length) {
-        var WARN_TXT = {
-          terms_default: 'Hinweis: Es gilt die Standard-Vorlage der Teilnahmebedingungen (mit Platzhaltern) — eigene Bedingungen in der Team-Verwaltung hinterlegen.',
-          terms_placeholders: 'WARNUNG: Deine Teilnahmebedingungen enthalten noch unausgefüllte Platzhalter [ … ] — bitte vor der Ziehung vervollständigen.',
-        };
-        msg.warnings.forEach(function(w){ log(WARN_TXT[w] || ('Startwarnung: ' + w), 'gold'); });
+        msg.warnings.forEach(function(w){ log('Startwarnung: ' + w, 'gold'); });
       }
       // Read-only Antworten (NIE requestData → sonst Endlosschleife)
       if (msg.type === 'giveaways')     { giveawayList = msg.giveaways || []; renderGiveawaySelect(); break; }
@@ -1308,16 +1305,15 @@ function reroll() {
 }
 function rerollConfirm() {
   if (!lastDraw || !lastDraw.drawId) return;
-  var reason  = (document.getElementById('reroll-reason') || {}).value || '';
-  var exclude = !document.getElementById('reroll-exclude') || document.getElementById('reroll-exclude').checked;
+  var reason = (document.getElementById('reroll-reason') || {}).value || '';
   var cmd = { event: 'gw_cmd', cmd: 'gw_draw_winner', rerollOf: lastDraw.drawId,
-              reason: reason.trim(), excludeWinner: exclude };
+              reason: reason.trim() };
   if (lastDraw.giveawayId) cmd.giveawayId = lastDraw.giveawayId;
   if (lastDraw.prizeId)    cmd.prizeId    = lastDraw.prizeId;
   send(cmd);
   var f = document.getElementById('reroll-form');
   if (f) f.style.display = 'none';
-  log('Ersatzziehung angefordert (Ursprung #' + lastDraw.drawId + (exclude ? ', bisheriger Gewinner ausgeschlossen' : '') + ')', 'gold');
+  log('Ersatzziehung angefordert (Ursprung #' + lastDraw.drawId + ', bisheriger Gewinner ausgeschlossen)', 'gold');
 }
 function clearWinner() { lastWinner=null; document.getElementById('winner-card').style.display='none'; clearOverlay(); }
 

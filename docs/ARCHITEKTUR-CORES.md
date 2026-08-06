@@ -1,17 +1,27 @@
 # Architektur: austauschbare Giveaway-Systeme („Cores")
 
-**Umgesetzt — Stand 4. August 2026, Branch `feature/EngineCores`.** Alle
-Phasen 0–5 sind implementiert (Stand-Blöcke bei den jeweiligen Phasen in
-Abschnitt 8). Das Dokument bleibt die verbindliche Referenz für den
-Core-Vertrag (Abschnitt 4), die Abgrenzung Engine/Core (Abschnitt 3) und
-die getroffenen Entscheidungen (Abschnitt 10). Die Abschnitte 2 und 6–7
-beschreiben Ausgangslage und Zielbild des Umbaus; wo der Ist-Zustand
-abweicht, steht es in den Stand-Blöcken.
+**Umgesetzt — Stand 7. August 2026, `main`.** Alle Phasen 0–6 sind
+implementiert, dazu der **CORE-UI-Vertrag** (`display` mit
+css/icon/unit/winnerStat/drawKind/emptyPool/columns/tiles/panelCard):
+Panel-Spalten, Statistik-Kacheln (STAT_TILES-Registry), Rail-Karten,
+Ziehungs-Payloads, Historie, Claim-Seite, Overlay und Archiv lesen ihre
+CORE-Semantik aus dieser Deklaration. Das Dokument bleibt die verbindliche
+Referenz für den Core-Vertrag (Abschnitt 4), die Abgrenzung Engine/Core
+(Abschnitt 3) und die getroffenen Entscheidungen (Abschnitt 10). Die
+Abschnitte 2 und 6–7 beschreiben Ausgangslage und Zielbild des Umbaus; wo
+der Ist-Zustand abweicht, steht es in den Stand-Blöcken.
 
-Noch offen (Kür, nicht Teil der Phasen): generisches Panel-Rendering aus
-`CORE.display`, `!los` nennt bei parallelen Giveaways nur die Kampagne,
-Preisbild, Redis-Aufräumen für manuell geschlossene Nicht-TicketBuy-Instanzen
-(Ziehung nach Close braucht deren Stand — Cleanup erst nach der Ziehung).
+**Ehrliche Erweiterungsgrenze:** Ein NEUER Core braucht neben dem
+Core-Modul (inkl. `display`) weiterhin Handarbeit an den Stellen, die echte
+Funktionalität statt Anzeige sind — Server-Aggregation (`sendTeamData`,
+`/api/my-status`, Archiv-Dossier-Queries), eine eigene Rail-Karte samt
+Loader-Registry-Eintrag, ggf. eigene Zuschauer-Seite. „Nur Manifest
+ausfüllen" gilt für Beschriftung/Semantik, nicht für neue Datenpfade.
+
+Noch offen (Kür, nicht Teil der Phasen): `!los` nennt bei parallelen
+Giveaways nur die Kampagne, Redis-Aufräumen für manuell geschlossene
+Nicht-TicketBuy-Instanzen (Ziehung nach Close braucht deren Stand —
+Cleanup erst nach der Ziehung).
 
 ---
 
@@ -231,7 +241,7 @@ Die heutige Mechanik, unverändert übernommen. Der Umbau darf ihr Verhalten
 **nicht** ändern — das ist die Messlatte für Phase 1 (Abschnitt 8).
 
 - `onViewerTick`: Zuschauzeit hochzählen, Multiplier anwenden.
-- `onChatMessage`: >3 Wörter (oder KI-Urteil) → Bonussekunden, Cooldown.
+- `onChatMessage`: Mindestwortzahl (konfigurierbar, Default >3 Wörter; oder KI-Urteil) → Bonussekunden, Cooldown.
 - `buildPool`: alle mit ≥1 Coin, Keyword geschrieben, ≥`followMin` Kanälen
   folgend. Gewicht = Coins.
 

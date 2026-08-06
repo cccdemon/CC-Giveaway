@@ -1,30 +1,27 @@
 # Teilnahmebedingungen für das Community-Giveaway
 
-> **Vorlage.** Platzhalter `[…]` pro Kampagne ersetzen. Die teilnehmenden
-> Kanäle ergeben sich aus den Mitgliedern des jeweiligen Teams.
+> **Standard-Vorlage.** Sie gilt, solange der Veranstalter keine eigenen
+> Bedingungen hinterlegt hat, und ist bewusst ohne auszufüllende Platzhalter
+> formuliert: Kanäle, Impressum und Fassungsstand stehen auf dieser Seite.
 
-**Stand:** [TT.MM.JJJJ]
+**Stand:** siehe Fassung und Änderungsverlauf auf dieser Seite.
 
 ## § 1 Veranstalter
-Veranstalter dieses Giveaways sind die folgenden Twitch-Creator (Team):
-
-* [Kanal 1]
-* [Kanal 2]
-* [Kanal 3]
-* *(ggf. weitere Team-Mitglieder)*
-
-**Kontakt:** [E-Mail] · **Website:** [https://…]
+Veranstalter dieses Giveaways ist das oben auf dieser Seite genannte
+**Team**; die teilnehmenden Kanäle sind dort aufgeführt. **Kontakt** über das
+**Impressum des Veranstalters** am Ende dieser Seite.
 
 Dieses Giveaway steht **in keiner Verbindung zu Twitch** und wird weder von Twitch
 gesponsert, unterstützt noch organisiert. Verantwortlich ist ausschließlich der Veranstalter.
 
-Sofern Gewinne von **Roberts Space Industries (RSI)** bereitgestellt werden:
-> Die Gewinne werden von Roberts Space Industries bereitgestellt. RSI ist weder
-> Veranstalter noch Sponsor dieses Giveaways und übernimmt keine Verantwortung für dessen Durchführung.
+Werden Gewinne von einem Dritten (z. B. einem Sponsor) bereitgestellt, ist
+dieser weder Veranstalter noch für die Durchführung verantwortlich; der
+Sponsor wird bei der Ankündigung des jeweiligen Gewinns genannt.
 
 ## § 2 Teilnahmezeitraum
-Beginn **[Datum, Uhrzeit] (MESZ)**, Ende **[Datum, Uhrzeit] (MESZ)**.
-Die Gewinner werden am **[Datum]** live auf **[Haupt-Kanal]** ausgelost.
+Beginn und Ende ergeben sich aus der **Ansage im Chat** der teilnehmenden
+Kanäle (Eröffnung und Schließung werden dort angesagt). Die Ziehung wird
+**live im Stream** angesagt und durchgeführt.
 
 ## § 3 Teilnahmeberechtigung
 Teilnahmeberechtigt sind natürliche Personen, die
@@ -145,7 +142,7 @@ Bereits erworbene Gewinnchancen können vollständig entfallen.
 Gewinne ergeben sich aus der jeweiligen Ankündigung. Barauszahlung, Umtausch und Übertragung sind ausgeschlossen.
 
 ## § 8 Gewinnermittlung und Meldung
-Auslosung live auf **[Haupt-Kanal]**. Die Gewinnermittlung folgt der jeweiligen Mechanik:
+Auslosung **live im Stream** auf einem der teilnehmenden Kanäle. Die Gewinnermittlung folgt der jeweiligen Mechanik:
 * **Kampagne (§ 4):** Zufall, gewichtet nach aktiver Teilnahme.
 * **Sofortverlosung (§ 4b):** Zufall, **alle Berechtigten mit derselben Chance**.
 * **Los-Giveaway (§ 4c):** Zufall **je Preis**, gewichtet nach dem Einsatz auf diesen Preis.
@@ -195,11 +192,16 @@ Chatnachrichten werden **nicht inhaltlich gespeichert**; für den Zuschauzeit-Bo
 ob eine Nachricht als sinnvoll gewertet wurde. Wird eine Nachricht als Spam auffällig, wird ein
 kurzer Auszug als Nachweis der Markierung gespeichert.
 
-*[Nur ausfüllen, wenn die KI-Bewertung aktiviert ist:]* Zur Bewertung, ob eine Chatnachricht
-sinnvoll ist, wird der Nachrichtentext an **[Anbieter, z.B. Anthropic / OpenAI / Google]**
-übermittelt und dort verarbeitet. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO; der Anbieter
-handelt als Auftragsverarbeiter. **[Bei Anbietern außerhalb der EU: Hinweis auf den
-Drittlandtransfer und die Garantien nach Art. 46 DSGVO ergänzen.]**
+**Nur wenn der Veranstalter die KI-Chatbewertung aktiviert hat**, gilt zusätzlich: Zur
+Bewertung, ob eine Chatnachricht sinnvoll ist, wird der **Text der einzelnen Nachricht**
+(ohne Twitch-Benutzername und ohne Kontodaten) an den vom Veranstalter gewählten Anbieter
+(Anthropic, OpenAI oder Google) übermittelt und dort verarbeitet; das Ergebnis ist eine
+Ja/Nein-Bewertung. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO; der Anbieter handelt als
+Auftragsverarbeiter. Diese Anbieter verarbeiten in der Regel in den **USA**; die Übermittlung
+stützt sich auf einen Angemessenheitsbeschluss nach Art. 45 DSGVO (EU-US Data Privacy
+Framework, soweit der Anbieter dort zertifiziert ist) bzw. auf Standardvertragsklauseln nach
+Art. 46 Abs. 2 lit. c DSGVO. Ob die KI-Bewertung aktiv ist, zeigt der Chat-Hinweis des
+Giveaways; Näheres steht in der Datenschutzerklärung der Plattform.
 
 ## § 11 Haftung
 Keine Haftung für technische Störungen, Server-/Twitch-/Internet-Ausfälle, Softwarefehler,

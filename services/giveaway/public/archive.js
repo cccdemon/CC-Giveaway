@@ -238,7 +238,9 @@ function drawsSection(draws, meta) {
           + '<td>' + num(x.eligible_count) + '</td>'
           + (kind === 'equal' ? '' : '<td>' + num(x.total_coins).toFixed(kind === 'weighted' ? 2 : 0) + '</td>')
           + '<td>' + num(x.rand_value).toFixed(6) + '</td><td>' + esc(x.prize || '–') + '</td>'
-          + '<td>' + (x.is_test ? 'TEST' : 'echt') + '</td></tr>';
+          + '<td>' + (x.is_test ? 'TEST' : (x.reroll_of
+              ? 'ERSATZ für #' + esc(String(x.reroll_of)) + (x.reroll_reason ? ' („' + esc(x.reroll_reason) + '")' : '')
+              : 'echt')) + '</td></tr>';
       }).join('') + '</table></div>'
     + '<div class="ar-note" style="margin:6px 0 0">'
     + (kind === 'equal'    ? 'Alle Berechtigten gehen mit gleichem Gewicht in die Ziehung — der Zufallswert liegt zwischen 0 und der Teilnehmerzahl.'
@@ -255,6 +257,7 @@ function claimsSection(claims, contactVisible) {
   html += claims.map(function(c){
     var st = c.status === 'claimed'
              ? '✓ ' + (c.claim_source === 'external' ? 'extern gemeldet (außerhalb der Plattform, vom Veranstalter erfasst)' : 'gemeldet') + ' am ' + fmt(c.claimed_at)
+           : c.status === 'replaced' ? '↻ ersetzt — Ersatzgewinner wurde gezogen (siehe Ziehungen)'
            : (c.status === 'expired' ? '✗ Frist verstrichen' : '⏳ offen, Frist bis ' + fmt(c.deadline_at));
     var body = '<div class="ar-kv">'
       + '<div><label>GEWINNER</label>' + mask(c.winner) + '</div>'

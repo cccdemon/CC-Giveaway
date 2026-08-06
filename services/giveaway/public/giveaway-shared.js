@@ -179,7 +179,7 @@
     switch (e.action) {
       case 'gw_add_ticket': return '+1 Coin (' + d.deltaSec + 's) auf ' + (d.channel || '?');
       case 'gw_sub_ticket': return '-1 Coin (' + d.deltaSec + 's) auf ' + (d.channel || '?');
-      case 'gw_ban':        return 'gebannt (hatte ' + num(d.coinsAtBan).toFixed(2) + ' Coins'
+      case 'gw_ban':        return 'gebannt (hatte ' + num(d.coinsAtBan).toFixed(2) + ' Punkte Kampagnenstand'
                                  + (d.wasEligible ? ', war im Lostopf' : '') + ')';
       case 'gw_unban':      return 'entbannt';
       case 'gw_set_multiplier':
@@ -191,12 +191,19 @@
       case 'gw_set_stream_settings':
         return 'Follows ' + d.followMinBefore + '→' + d.followMinAfter
              + ', Coin-Basis ' + durShort(d.coinBaseSecBefore) + '→' + durShort(d.coinBaseSecAfter);
-      case 'gw_draw_winner':
+      case 'gw_draw_winner': {
         if (d.error)   return 'Ziehung fehlgeschlagen: ' + d.error;
         if (!d.winner) return 'Ziehung ohne Teilnehmer';
-        return (d.isTest ? 'TEST-' : '') + 'Ziehung: ' + d.winner
-             + ' (' + num(d.winnerCoins).toFixed(2) + ' Coins von ' + d.eligibleCount + ' Teilnehmern)';
-      case 'gw_reset':  return 'RESET – ' + d.wipedParticipants + ' Teilnehmer / ' + d.wipedCoins + ' Coins gelöscht';
+        // CORE-Einheit aus dem Audit-Detail (Altbestand ohne core = Kampagne).
+        var stat;
+        if (d.core === 'CORE_CurrentViewers')          stat = 'gleiche Chance, ' + d.eligibleCount + ' im Topf';
+        else if (d.core === 'CORE_TicketBuy')          stat = num(d.winnerCoins).toFixed(0) + ' Lose gesetzt, ' + d.eligibleCount + ' Setzer';
+        else if (d.core === 'CORE_ScreenshotContest')  stat = num(d.winnerCoins).toFixed(0) + ' Punkte (Voting), ' + d.eligibleCount + ' im Stechen';
+        else                                           stat = num(d.winnerCoins).toFixed(2) + ' Coins von ' + d.eligibleCount + ' Teilnehmern';
+        return (d.isTest ? 'TEST-' : '') + 'Ziehung: ' + d.winner + ' (' + stat + ')'
+             + (d.rerollOf ? ' — Ersatz für Ziehung #' + d.rerollOf : '');
+      }
+      case 'gw_reset':  return 'RESET – ' + d.wipedParticipants + ' Teilnehmer / ' + d.wipedCoins + ' Punkte (Kampagnenstand) gelöscht';
       case 'gw_open':   return 'geöffnet (' + (d.sessionOpened || '?') + ')';
       case 'gw_close':  return 'geschlossen (' + (d.sessionClosed || '?') + ')';
       case 'gw_pause':  return 'pausiert';
@@ -231,10 +238,11 @@
   };
 
   global.escHtml = escHtml;
-})(window);
+})(typeof window !== 'undefined' ? window : globalThis);   // globalThis: node --test kann CC.audit.summary prüfen
 
 // ── Navigation ────────────────────────────────────────────
 (function() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;   // node --test: nur CC.* nutzbar
   var JOIN_HREF = '/giveaway/giveaway-join.html';   // admin-shared.js overrides with ?test=1
 
   function e(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
@@ -385,6 +393,7 @@
 
 // ── Debug Console ─────────────────────────────────────────
 (function() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;   // node --test: nur CC.* nutzbar
   var MAX_ENTRIES = 200;
   var entries     = [];
   var paused      = false;

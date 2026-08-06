@@ -5,6 +5,55 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ---
 
+## 6. August 2026 (viertes Update)
+
+### Plattform-Verwaltung: Moderation durch den Betreiber
+
+Neu für Plattform-Administratoren: die Seite **Plattform-Verwaltung** mit
+Überblick (aktive und deaktivierte Teams, Streamer, Zuschauer, offene
+Giveaways), Team-Liste und Streamer-Liste. Der Betreiber kann dort Teams
+deaktivieren und reaktivieren, Streamer-Konten sperren und entsperren und
+**Verwarnungen** aussprechen. Jede Aktion braucht einen Grund und steht im
+Prüfprotokoll.
+
+Für Betroffene sichtbar: eine Verwarnung erscheint beim nächsten Besuch als
+**Banner** oben auf den Verwaltungsseiten, mit Knopf „Zur Kenntnis genommen".
+Ein gesperrtes Konto kann sich nicht mehr anmelden; beim Login erscheint eine
+klare Meldung. Eine Sperre löscht keine Daten, Auskunft und Löschung laufen
+weiter über „Meine Daten".
+
+---
+
+## 6. August 2026 (drittes Update)
+
+### Kein Start ohne eingefrorene Teilnahmebedingungen
+
+Ein Giveaway startet nur noch, wenn die geltende Bedingungen-Fassung
+erfolgreich eingefroren wurde — schlägt das fehl (z. B. Verwaltungsdienst
+nicht erreichbar), bricht der Start mit verständlicher Meldung ab, ohne
+halb geöffnete Sitzung. Die Standard-Vorlage ist jetzt **komplett ohne
+auszufüllende Platzhalter** formuliert (inkl. konkretem Hinweis zum
+Drittlandtransfer bei der optionalen KI-Chatbewertung); eigene Bedingungen
+mit unausgefüllten Platzhaltern `[ … ]` blockieren den Start.
+
+### Ersatzziehung kann keinen abgewickelten Gewinn duplizieren
+
+Hat sich der Gewinner bereits gemeldet oder hat der Veranstalter die
+Abwicklung begonnen (kontaktiert/versendet/erledigt), ist die Ersatzziehung
+gesperrt. Der bisherige Gewinner ist bei einer Ersatzziehung immer
+ausgeschlossen; das Archiv zeigt Ersatzziehungen mit Ursprung und Grund.
+
+### Klarere Beschriftung überall
+
+„Meine Daten" nennt den Ziehungswert jetzt je Mechanik (Coins, gesetzte
+Lose, Voting-Punkte — bei der Sofortverlosung ausdrücklich „ohne Aussage,
+gleiche Chance"). Das Audit-Log beschriftet Ziehungen genauso. „Meine
+Teilnahmen" zeigt zusätzlich dein Ergebnis je Los-Preis (offen/gewonnen/
+nicht gewonnen/storniert), deine Kenntnisnahmen samt geltender Fassung
+und einen Download-Button für eigene Contest-Bilder.
+
+---
+
 ## 6. August 2026 (zweites Update)
 
 ### Alle vier Mechaniken jetzt überall sauber abgebildet

@@ -172,15 +172,13 @@
           <button class="btn btn-cyan btn-sm" onclick="reroll()">ERSATZ ZIEHEN</button>
           <button class="btn btn-red btn-sm"  onclick="clearWinner()">SCHLIESSEN</button>
         </div>
-        <!-- P6: Ersatzziehung mit Grund + Ausschluss des bisherigen Gewinners.
-             Erst nach Klick sichtbar; verknüpft die neue Ziehung (reroll_of). -->
+        <!-- P6: Ersatzziehung mit Grund; der bisherige Gewinner ist IMMER
+             ausgeschlossen (keine Abwahl — sonst zwei Ansprüche auf einen
+             Gewinn). Verknüpft die neue Ziehung über reroll_of. -->
         <div id="reroll-form" style="display:none;margin-top:8px">
           <input type="text" id="reroll-reason" maxlength="200"
                  placeholder="Grund (z.B. keine Meldung in der Frist)" style="width:100%">
-          <label style="display:flex;gap:6px;align-items:center;font-size:11px;margin:6px 0">
-            <input type="checkbox" id="reroll-exclude" checked>
-            bisherigen Gewinner ausschließen
-          </label>
+          <div class="hint" style="margin:6px 0">Der bisherige Gewinner wird von der Ersatzziehung ausgeschlossen.</div>
           <div class="btn-group">
             <button class="btn btn-gold btn-sm" onclick="rerollConfirm()">ERSATZ JETZT ZIEHEN</button>
             <button class="btn btn-sm" onclick="document.getElementById('reroll-form').style.display='none'">ABBRECHEN</button>

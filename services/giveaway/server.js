@@ -24,6 +24,8 @@ const { fmtDur, kw2 } = CORE;
 const { Helix } = require('./helix.js');
 const { judgeMessage, listModels, encryptKey, decryptKey, PROVIDERS } = require('./cores/chat-ai.js');
 const { targz } = require('./targz.js');
+const TermsMod = require('./terms.js');
+const { rerollBlocked, REROLL_BLOCK_MSG } = require('./claim-rules.js');
 
 function log(tag, ...args)    { console.log( `[${tag}]`, ...args); }
 function logErr(tag, ...args) { console.error(`[${tag}]`, ...args); }
@@ -392,6 +394,9 @@ function prizeLine(prize, sponsor) {
 }
 
 async function openGiveaway(teamId, keyword, prize = '', sponsor = '') {
+  // START-GATE zuerst: wirft TermsSnapshotError, BEVOR Redis-/DB-Zustand
+  // entsteht — es bleibt keine teilweise geöffnete Session zurück.
+  const termsV = await snapshotTermsVersion(teamId);
   const sid = `sess_${Date.now()}`;
   await wte.openGiveaway(teamId, keyword, sid);
   await redis.del(K.gwAutoPaused(teamId));   // frischer Start ist nie auto-pausiert
@@ -401,7 +406,6 @@ async function openGiveaway(teamId, keyword, prize = '', sponsor = '') {
   // Gelesen wird zur Laufzeit weiterhin aus Redis; der Snapshot dokumentiert,
   // mit welcher Konfiguration dieses Giveaway gestartet ist.
   const coreConfig = await snapshotCoreConfig(teamId);
-  const termsV = await snapshotTermsVersion(teamId);
   await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels, core, status, core_config, prize, sponsor, terms_version) VALUES ($1,$2,$3,$4,$5,'open',$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`,
     [sid, teamId, keyword || '', JSON.stringify(chans), CORE.id, JSON.stringify(coreConfig), prize || null, sponsor || null, termsV]);
   broadcastTeam(teamId, { event: 'gw_status', status: 'open' });
@@ -428,47 +432,34 @@ async function snapshotCoreConfig(teamId) {
     chat:        await wte.getChatConfig(teamId),
   };
 }
-// P6: Startprüfung — Warnungen, die den Start nicht blockieren, aber im
-// Panel sichtbar werden. Blocker (TOS, Impressum, Gewinn) bleiben Gates.
-// Erkennung: eckige Platzhalter wie "[Datum]" im eigenen Rechtstext —
-// Markdown-Links "[Text](url)" sind ausgenommen.
-async function startWarnings(teamId) {
-  const w = [];
+// Startprüfung — klar getrennt in BLOCKER (Start bricht ab) und WARNUNGEN
+// (Start läuft, Panel zeigt den Hinweis). Harte Gates davor bleiben:
+// TOS, Impressum, Gewinn, eingefrorene Bedingungen-Fassung.
+// Blocker terms_placeholders: eigene Bedingungen mit unausgefüllten
+// Platzhaltern wie "[Datum]" dürfen nicht als Fassung eingefroren werden.
+// Markdown-Links "[Text](url)" sind ausgenommen; die Standard-Vorlage ist
+// seit der Platzhalter-Bereinigung platzhalterfrei und blockiert nie.
+const TERMS_PLACEHOLDER_RE = /\[[^\]\n]{2,60}\](?!\()/;
+async function startChecks(teamId) {
+  const out = { blockers: [], warnings: [] };
   try {
     const tr = await pg.query('SELECT terms FROM teams WHERE id=$1', [teamId]);
     const terms = tr.rowCount ? tr.rows[0].terms : null;
-    if (!terms) w.push('terms_default');
-    else if (/\[[^\]\n]{2,60}\](?!\()/.test(terms)) w.push('terms_placeholders');
-  } catch (e) { logErr('GW', 'startWarnings:', e.message); }
-  return w;
+    if (terms && TERMS_PLACEHOLDER_RE.test(terms)) out.blockers.push('terms_placeholders');
+  } catch (e) { logErr('GW', 'startChecks:', e.message); }
+  return out;
 }
+const PLACEHOLDER_BLOCK_MSG = 'Deine Teilnahmebedingungen enthalten noch unausgefüllte Platzhalter '
+  + '[ … ] — bitte in der Team-Verwaltung vervollständigen, dann starten.';
 
 // Geltende Teilnahmebedingungen je Session festhalten (sessions.terms_version).
-// terms_versions schreibt der admin-Service; Fassung 0 = unveränderte Vorlage.
-// Damit auch dieser Stand unveränderlich ist, wird beim ersten Giveaway eines
-// Teams ein v1-Snapshot der effektiven Bedingungen angelegt (Quelle: die
-// öffentliche Team-Seite des admin-Service). Schlägt das fehl, bleibt 0 —
-// Archiv/Terms-Seite kennzeichnen das als "Vorlage, nicht eingefroren".
-// Spätere Änderungen laufen über PUT /api/teams/:id/terms und zählen ab v2.
+// HARTES START-GATE: liefert immer eine Fassung > 0 oder wirft
+// TermsSnapshotError — ohne eingefrorene Fassung startet kein Giveaway
+// (Logik + Tests in terms.js). Altbestand mit 0/NULL bleibt lesbar und
+// wird im Archiv als "nicht eingefroren" gekennzeichnet, aber nie
+// nachträglich umgeschrieben.
 async function snapshotTermsVersion(teamId) {
-  try {
-    const r = await pg.query(
-      `SELECT COALESCE(MAX(version),0) AS v FROM terms_versions WHERE team_id=$1`, [teamId]);
-    const v = parseInt(r.rows[0] && r.rows[0].v, 10) || 0;
-    if (v > 0) return v;
-    const resp = await fetch(`${ADMIN_URL}/pub/team/${encodeURIComponent(teamId)}`,
-      { signal: AbortSignal.timeout(3000) });
-    if (!resp.ok) return 0;
-    const info = await resp.json();
-    if (!info || !info.terms) return 0;
-    // WHERE NOT EXISTS: parallele Opens desselben Teams erzeugen keine zwei v1.
-    await pg.query(`
-      INSERT INTO terms_versions (team_id, version, terms, changed_by, note, sections)
-      SELECT $1, 1, $2, 'system', 'Automatischer Snapshot beim ersten Giveaway-Start', $3
-      WHERE NOT EXISTS (SELECT 1 FROM terms_versions WHERE team_id=$1)`,
-      [teamId, info.terms, JSON.stringify([{ section: '(alle)', kind: 'neu' }])]);
-    return 1;
-  } catch (e) { logErr('GW', 'snapshotTermsVersion:', e.message); return 0; }
+  return TermsMod.snapshotTermsVersion(pg, teamId, { adminUrl: ADMIN_URL });
 }
 // Ansage nur in bestimmte Kanäle (Instanz mit Kanal-Teilmenge);
 // channels null = alle Team-Kanäle.
@@ -542,8 +533,26 @@ async function handleStreamOnline(teamId, channel) {
                     result: 'denied', detail: { reason: 'no_imprint' } });
       return;
     }
+    const aChecks = await startChecks(teamId);
+    if (aChecks.blockers.length) {
+      log('Auto', `[${teamId}] stream online (${ch}) -> NICHT geoeffnet: Platzhalter in den Bedingungen`);
+      await audit({ teamId, actor: 'system', action: 'auto_open', target: ch,
+                    result: 'denied', detail: { reason: aChecks.blockers[0] } });
+      return;
+    }
     const kw = await redis.get(K.gwKeyword(teamId)) || '';
-    const newSid = await openGiveaway(teamId, kw);
+    let newSid;
+    try {
+      newSid = await openGiveaway(teamId, kw);
+    } catch (e) {
+      if (e && e.code === 'terms_snapshot_failed') {
+        log('Auto', `[${teamId}] stream online (${ch}) -> NICHT geoeffnet: ${e.message}`);
+        await audit({ teamId, actor: 'system', action: 'auto_open', target: ch,
+                      result: 'denied', detail: { reason: 'no_terms_snapshot', error: e.reason } });
+        return;
+      }
+      throw e;
+    }
     log('Auto', `[${teamId}] stream online (${ch}) → open`);
     await audit({ teamId, actor: 'system', action: 'auto_open', target: ch,
                   sessionId: newSid, detail: { trigger: 'stream_online', keyword: kw } });
@@ -848,13 +857,23 @@ async function runAdminCmd(send, msg, meta, ctx) {
                error: 'Bitte zuerst eintragen, was verlost wird (Feld „Gewinn" — ggf. mit Sponsor).' });
         break;
       }
+      const oChecks = await startChecks(teamId);
+      if (oChecks.blockers.length) {
+        Object.assign(outcome, { blocked: oChecks.blockers[0] });
+        send({ event: 'gw_ack', type: 'open_blocked', error: PLACEHOLDER_BLOCK_MSG });
+        break;
+      }
       Object.assign(outcome, { prize: oPrize, sponsor: oSponsor || undefined });
-      outcome.sessionOpened = await openGiveaway(teamId, sanitizeStr(msg.keyword || '', 100), oPrize, oSponsor);
-      // P6: nicht blockierende Startwarnungen (Platzhalter in den Bedingungen).
-      const oWarn = await startWarnings(teamId);
-      if (oWarn.length) {
-        outcome.warnings = oWarn;
-        send({ event: 'gw_ack', type: 'open_warnings', warnings: oWarn });
+      try {
+        outcome.sessionOpened = await openGiveaway(teamId, sanitizeStr(msg.keyword || '', 100), oPrize, oSponsor);
+      } catch (e) {
+        if (e && e.code === 'terms_snapshot_failed') {
+          Object.assign(outcome, { blocked: 'no_terms_snapshot', error: e.reason });
+          send({ event: 'gw_ack', type: 'open_blocked',
+                 error: 'Start abgebrochen: ' + e.message + ' Bitte später erneut versuchen.' });
+          break;
+        }
+        throw e;
       }
       send({ event: 'gw_status', status: 'open' });
       break;
@@ -1007,6 +1026,12 @@ async function runAdminCmd(send, msg, meta, ctx) {
         send({ event: 'gw_ack', type: 'open_blocked', error: IMPRINT_HINT });
         break;
       }
+      const iChecks = await startChecks(teamId);
+      if (iChecks.blockers.length) {
+        Object.assign(outcome, { blocked: iChecks.blockers[0] });
+        send({ event: 'gw_ack', type: 'open_blocked', error: PLACEHOLDER_BLOCK_MSG });
+        break;
+      }
       const running = await wte.listGiveaways(teamId);
       if (running.length >= MAX_PARALLEL_GIVEAWAYS) {
         Object.assign(outcome, { blocked: 'limit', running: running.length });
@@ -1073,7 +1098,20 @@ async function runAdminCmd(send, msg, meta, ctx) {
                        : coreId === 'CORE_ScreenshotContest' ? { minWatchSec }
                        : coreId === 'CORE_TicketBuy' ? { ...(await snapshotCoreConfig(teamId)), wagerCmd }
                        : await snapshotCoreConfig(teamId);
-      const termsV = await snapshotTermsVersion(teamId);
+      // START-GATE: ohne eingefrorene Bedingungen-Fassung keine Instanz —
+      // vor INSERT und vor openGiveawayInstance, damit nichts zurückbleibt.
+      let termsV;
+      try {
+        termsV = await snapshotTermsVersion(teamId);
+      } catch (e) {
+        if (e && e.code === 'terms_snapshot_failed') {
+          Object.assign(outcome, { blocked: 'no_terms_snapshot', error: e.reason });
+          send({ event: 'gw_ack', type: 'open_blocked',
+                 error: 'Start abgebrochen: ' + e.message + ' Bitte später erneut versuchen.' });
+          break;
+        }
+        throw e;
+      }
       await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels, core, status, core_config, prize, sponsor, terms_version)
                       VALUES ($1,$2,$3,$4,$5,'open',$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`,
         [gid, teamId, keyword, JSON.stringify(channels.length ? channels : teamChans), coreId,
@@ -1124,13 +1162,9 @@ async function runAdminCmd(send, msg, meta, ctx) {
           Object.assign(outcome, { draftId: usedDraft });
         } catch (e) { logErr('GW', 'draft cleanup:', e.message); }
       }
-      // P6: Startprüfung — nicht blockierende Warnungen (z.B. Platzhalter
-      // in den Teilnahmebedingungen). Blocker stehen weiter oben als Gates.
-      const openWarnings = await startWarnings(teamId);
       send({ event: 'gw_ack', type: 'instance_opened', giveawayId: gid, keyword, core: coreId,
              windowSec: windowSec || null, wagerCmd: wagerCmd || null,
-             channels: channels.length ? channels : null,
-             warnings: openWarnings.length ? openWarnings : null });
+             channels: channels.length ? channels : null });
       break;
     }
     case 'gw_close_instance': {
@@ -1663,8 +1697,10 @@ async function runAdminCmd(send, msg, meta, ctx) {
           } catch (e) { logErr('GW', 'draw prize lookup:', e.message); }
         }
         // P6: Ersatzziehung — verknüpft mit der Ursprungsziehung, mit Grund;
-        // der ursprüngliche Gewinner ist ausgeschlossen (abschaltbar über
-        // excludeWinner:false), sein Claim wird danach 'replaced'.
+        // der ursprüngliche Gewinner ist IMMER ausgeschlossen, sein Claim
+        // wird danach 'replaced'. Bereits wirksam abgewickelte Gewinne
+        // (gemeldet/kontaktiert/versendet/erledigt) blockieren den Ersatz —
+        // sonst gäbe es zwei gültige Ansprüche auf denselben Gewinn.
         let rerollOf = parseInt(msg.rerollOf, 10);
         let rerollWinner = null, rerollReason = null;
         if (Number.isFinite(rerollOf) && rerollOf > 0) {
@@ -1676,13 +1712,23 @@ async function runAdminCmd(send, msg, meta, ctx) {
             send({ event: 'gw_ack', type: 'draw_error', error: 'Ursprungsziehung nicht gefunden.' });
             break;
           }
+          const oc = await pg.query(
+            `SELECT status, handling FROM draw_claims WHERE draw_id=$1 AND team_id=$2`, [rerollOf, teamId]);
+          const blockReason = rerollBlocked(oc.rows[0] || null);
+          if (blockReason) {
+            Object.assign(outcome, { error: 'reroll_blocked', rerollOf, reason: blockReason });
+            send({ event: 'gw_ack', type: 'draw_error',
+                   error: (REROLL_BLOCK_MSG[blockReason] || 'Der Gewinn ist bereits abgewickelt')
+                        + ' — Ersatzziehung nicht möglich. Kläre die bestehende Abwicklung zuerst mit dem Gewinner.' });
+            break;
+          }
           rerollWinner = orig.rows[0].winner;
           rerollReason = sanitizeStr(msg.reason || '', 200).trim() || 'Gewinner hat sich nicht fristgerecht gemeldet';
         } else { rerollOf = null; }
         const result = await wte.drawWinner(teamId, drawGid, {
           test: !!msg.test, prize: drawPrize, prizeId: msg.prizeId,
           rerollOf, rerollReason,
-          excludeWinner: rerollOf && msg.excludeWinner !== false ? rerollWinner : null });
+          excludeWinner: rerollOf ? rerollWinner : null });
         if (!result) {
           outcome.winner = null;
           // P4: Leermeldung aus dem Core-Vertrag statt pauschal "keine Coins".
@@ -2856,7 +2902,8 @@ async function archiveDossier(teamId, sessionId, withContact) {
   const [session, draws, participation, claims, auditRows, activity, consents] = await Promise.all([
     q(`SELECT * FROM sessions WHERE id=$1 AND team_id=$2`, [sessionId, teamId]),
     q(`SELECT id, winner, winner_coins, winner_watch_sec, total_coins, eligible_count,
-              rand_value, draw_index, is_test, prize, drawn_at, eligible_snapshot, core, prize_id
+              rand_value, draw_index, is_test, prize, drawn_at, eligible_snapshot, core, prize_id,
+              reroll_of, reroll_reason
        FROM giveaway_draws WHERE session_id=$1 ORDER BY drawn_at`, [sessionId]),
     q(`SELECT username, channel, watch_sec, msgs, coins, follows, valid
        FROM campaign_participation WHERE session_id=$1 ORDER BY coins DESC, username`, [sessionId]),
@@ -3052,6 +3099,20 @@ app.get('/api/my-status', async (req, res) => {
             withStake.push({ id: p.id, title: p.title, status: p.status, wagerEnd: p.wager_end,
                              totalStake: p.total_stake, myStake: await wte.prizeStake(p.id, user) });
           }
+          // Persönlicher Ergebnisstatus je Preis: offen / gewonnen /
+          // nicht gewonnen (nur wenn gesetzt) / storniert.
+          const pids = withStake.map(p => p.id);
+          if (pids.length) {
+            const dr = await pg.query(
+              `SELECT prize_id, winner FROM giveaway_draws WHERE prize_id = ANY($1) AND NOT is_test`, [pids]);
+            const wonBy = new Map(dr.rows.map(r => [parseInt(r.prize_id), r.winner]));
+            for (const p of withStake) {
+              if (p.status === 'cancelled')  p.myResult = 'storniert';
+              else if (p.status === 'drawn') p.myResult = wonBy.get(p.id) === user ? 'gewonnen'
+                                            : (Number(p.myStake) > 0 ? 'nicht_gewonnen' : null);
+              else                           p.myResult = 'offen';
+            }
+          }
           row.ticketBuy = { balance: await wte.availableCredit(t, user), prizes: withStake };
         } else if (g.core === 'CORE_ScreenshotContest') {
           const standings = await wte.getContestStandings(t, g.gid, { all: true });
@@ -3090,13 +3151,20 @@ app.get('/api/my-status', async (req, res) => {
         WHERE e.team_id=$1 AND e.username=$2
         GROUP BY e.id, s.closed_at, s.prize
         ORDER BY e.created_at DESC LIMIT 10`, [t, user]);
-      const hasAny = a.totalCoins > 0 || a.registered || giveaways.length || credit || hist.rowCount;
+      // Kenntnisnahmen: welche Bedingungen-Fassung hat die Person wann
+      // akzeptiert (je Giveaway die erste Aktion) — Beleg auf der Statusseite.
+      const myConsents = await pg.query(`
+        SELECT session_id, action, terms_version, created_at
+        FROM participation_consents WHERE team_id=$1 AND username=$2
+        ORDER BY created_at DESC LIMIT 5`, [t, user]);
+      const hasAny = a.totalCoins > 0 || a.registered || giveaways.length || credit || hist.rowCount
+                   || myConsents.rowCount;
       if (!hasAny) continue;   // veraltet/leer überspringen
       out.push({ teamId: t, name: nr.rows[0].name, coins: a.totalCoins, watchSec: a.totalWatchSec,
                  channelsQualified: a.channelsQualified, followMin: a.followMin, drawMinSec: a.drawMinSec,
                  registered: a.registered, eligible: a.eligible,
                  chance, open: await wte.isOpen(t), paused: await wte.isPaused(t), perChannel: a.perChannel,
-                 giveaways, credit, contestHistory: hist.rows });
+                 giveaways, credit, contestHistory: hist.rows, consents: myConsents.rows });
     }
     res.json({ login: user, teams: out.sort((x, y) => y.coins - x.coins) });
   } catch(e) { res.status(500).json({ error: e.message }); }

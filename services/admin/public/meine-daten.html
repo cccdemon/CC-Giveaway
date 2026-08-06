@@ -89,13 +89,35 @@ var LABELS = {
   msgs:'Nachrichten', coins:'Coins', follows:'Folgt Kanälen', valid:'Gewertet',
   reason:'Grund', occurrences:'Vorkommen', first_seen:'Erstmals', last_seen:'Zuletzt',
   detail:'Details', id:'Nr.', ts:'Zeitpunkt', actor:'Ausgelöst von', action:'Aktion',
-  result:'Ergebnis', winner:'Gewinner', winner_coins:'Coins', drawn_at:'Gezogen am',
+  result:'Ergebnis', winner:'Gewinner', winner_coins:'Ziehungswert', drawn_at:'Gezogen am',
+  core:'Mechanik', einheit:'Bedeutung des Ziehungswerts',
   is_test:'Testziehung', version:'Fassung', accepted_at:'Zugestimmt am',
   entry_type:'Vorgang', amount:'Betrag (Lose)', ref_session:'Giveaway',
   ref_prize:'Preis-Nr.', created_at:'Zeitpunkt', prize_id:'Preis-Nr.',
   title:'Titel', mime:'Dateityp', status:'Status', image_bytes:'Bildgröße (Bytes)',
   entry_id:'Einsendung-Nr.', score:'Wertung'
 };
+
+// P4 (CORE-Restpunkte): winner_coins ist je Mechanik etwas anderes — die
+// Anzeige bekommt Mechanik + Bedeutung dazu. Nur fuer die Darstellung;
+// der JSON-Download (Rohauskunft) bleibt unveraendert bei den Rohdaten.
+var DRAW_CORE_NAME = {
+  CORE_WatchtimeChatActivity: 'Kampagne', CORE_CurrentViewers: 'Sofortverlosung',
+  CORE_TicketBuy: 'Los-Giveaway', CORE_ScreenshotContest: 'Screenshot-Contest',
+};
+var DRAW_UNIT = {
+  CORE_WatchtimeChatActivity: 'Coins (aktive Teilnahme)',
+  CORE_CurrentViewers: 'ohne Aussage — gleiche Chance für alle',
+  CORE_TicketBuy: 'gesetzte Lose auf den gezogenen Preis',
+  CORE_ScreenshotContest: 'Punktsumme aus dem Voting',
+};
+function drawsForDisplay(rows) {
+  return (rows || []).map(function(r) {
+    var core = r.core || 'CORE_WatchtimeChatActivity';   // Altbestand = Kampagne
+    return Object.assign({}, r, { core: DRAW_CORE_NAME[core] || core,
+                                  einheit: DRAW_UNIT[core] || DRAW_UNIT.CORE_WatchtimeChatActivity });
+  });
+}
 
 function tableOf(rows) {
   if (!rows || !rows.length) return '<div class="empty">Keine Einträge.</div>';
@@ -151,7 +173,9 @@ function render(d) {
       + sec('Teilnahme je Gewinnspiel', d.participation)
       + sec('Auffälligkeiten', d.abuseFlags,
             'Markierungen wegen wiederholter oder sehr schneller Nachrichten.')
-      + sec('Gewinne', d.draws)
+      + sec('Gewinne', drawsForDisplay(d.draws),
+            'Der Ziehungswert bedeutet je Mechanik etwas anderes — bei der Sofortverlosung haben '
+            + 'alle Berechtigten dieselbe Chance, dort hat er keine Aussage.')
       + sec('Guthaben-Bewegungen', d.creditLedger,
             'Erspielte Lose und Einsätze (nur bei Los-Giveaways). Guthaben verfällt nach 12 Monaten ohne Bewegung.')
       + sec('Einsätze auf Preise', d.prizeWagers,
