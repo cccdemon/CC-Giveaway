@@ -79,12 +79,12 @@
   .iw-field label { display:block; font-size:9px; letter-spacing:1.4px; color:rgba(200,220,232,.55);
                     text-transform:uppercase; margin-bottom:4px; }
   .iw-field input[type=text], .iw-field input[type=number] { width:100%; }
-  /* Preise-Textarea im Input-Look (chaos-crew-admin.css stylt nur input/select) */
-  .iw-field textarea { width:100%; background:var(--sunk); border:1px solid rgba(0,212,255,.2);
-    color:var(--text); font-family:var(--mono); font-size:12px; padding:8px 10px; outline:none;
-    border-radius:6px; resize:vertical; min-height:64px; }
-  .iw-field textarea:focus { border-color:rgba(0,212,255,.5); box-shadow:0 0 0 2px rgba(0,212,255,.12); }
-  .iw-field textarea::placeholder { color:rgba(200,220,232,.24); }
+  /* Preis-Zeilen im Start-Modal: Titel | Sponsor | Minuten | entfernen */
+  .iw-prize-row { display:flex; gap:6px; margin-bottom:6px; align-items:center; }
+  .iw-prize-row input.pr-title   { flex:2 1 0; min-width:0; }
+  .iw-prize-row input.pr-sponsor { flex:1.4 1 0; min-width:0; }
+  .iw-prize-row input.pr-min     { flex:0 0 92px; text-align:center; }
+  .iw-prize-row .btn { flex:0 0 auto; padding:8px 10px; }
   .iw-field .hint { font-size:10px; color:rgba(200,220,232,.7); margin-top:3px; line-height:1.5; }
   .iw-chips { display:flex; flex-wrap:wrap; gap:6px; }
   .iw-chip { display:inline-flex; align-items:center; gap:5px; font-size:10.5px; cursor:pointer;
@@ -480,10 +480,10 @@
       </div>
       <!-- P6: Preise schon im Entwurf — werden beim Start automatisch angelegt. -->
       <div class="iw-field" id="iw-f-prizes">
-        <label for="iw-prizes">Preise (eine Zeile je Preis: Titel | Sponsor | Einsatz-Ende in Minuten)</label>
-        <textarea id="iw-prizes" rows="3" maxlength="2000"
-                  placeholder="Game-Key | Sponsor XY | 60&#10;T-Shirt"></textarea>
-        <div class="hint">Sponsor und Minuten sind optional. Beim Start aus dem Entwurf werden die Preise angelegt und im Chat angesagt; weitere Preise gehen jederzeit über die Preis-Karte.</div>
+        <label>Preise</label>
+        <div id="iw-prize-list"></div>
+        <button type="button" class="btn btn-sm" onclick="iwAddPrizeRow()" style="margin-top:4px">+ PREIS HINZUFÜGEN</button>
+        <div class="hint">Sponsor und Einsatz-Ende sind optional (leer = offen bis zur Ziehung). Die Preise werden beim Start angelegt und im Chat angesagt; weitere gehen jederzeit über die Preis-Karte.</div>
       </div>
 
       <div class="iw-sec">KANÄLE</div>

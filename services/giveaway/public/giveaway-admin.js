@@ -501,6 +501,7 @@ function openInstance() {
   // Kanalauswahl ändert die Teilnehmer-Vorschau → neu rechnen.
   Array.prototype.forEach.call(chips.querySelectorAll('input'), function(cb){ cb.onchange = iwPreflight; });
   var pf = document.getElementById('iw-preflight'); if (pf) pf.textContent = '';
+  iwSetPrizeRows([]);   // frisches Modal = keine Preis-Zeilen aus der letzten Sitzung
   document.getElementById('iw-overlay').style.display = 'flex';
 }
 
@@ -525,6 +526,8 @@ function iwSelect(type) {
   document.getElementById('iw-f-minwatch').style.display = f.minwatch ? '' : 'none';
   var fp = document.getElementById('iw-f-prizes');
   if (fp) fp.style.display = type === 'ticketbuy' ? '' : 'none';   // P6: Preise im Entwurf
+  // Los-Giveaway frisch gewählt: eine leere Preis-Zeile als Einstieg.
+  if (type === 'ticketbuy' && !document.querySelector('#iw-prize-list .iw-prize-row')) iwAddPrizeRow();
   if (f.keyword) {
     document.getElementById('iw-keyword-label').textContent = type === 'instant' ? 'Keyword (Pflicht)' : 'Keyword (optional)';
     document.getElementById('iw-keyword-hint').textContent = type === 'instant'
@@ -565,6 +568,44 @@ function renderPreflight(msg) {
     + ' <a href="#" onclick="iwPreflight();return false;" style="color:inherit">neu prüfen</a>';
 }
 
+// ── P6: Preis-Zeilen im Modal (Titel / Sponsor / Einsatz-Ende) ──
+function iwAddPrizeRow(vals) {
+  var host = document.getElementById('iw-prize-list');
+  if (!host || host.children.length >= 20) return;
+  var row = document.createElement('div');
+  row.className = 'iw-prize-row';
+  row.innerHTML =
+      '<input type="text" class="pr-title" maxlength="100" placeholder="Was wird verlost? (z.B. Game-Key)">'
+    + '<input type="text" class="pr-sponsor" maxlength="100" placeholder="Sponsor (optional)">'
+    + '<input type="number" class="pr-min" min="0" max="10080" placeholder="Min." title="Einsatz-Ende in Minuten ab Start — leer/0 = offen bis zur Ziehung">'
+    + '<button type="button" class="btn btn-red btn-sm" title="Preis entfernen">✖</button>';
+  row.querySelector('button').onclick = function(){ row.remove(); };
+  if (vals) {
+    row.querySelector('.pr-title').value   = vals.title || '';
+    row.querySelector('.pr-sponsor').value = vals.sponsor || '';
+    if (vals.wagerEndMinutes) row.querySelector('.pr-min').value = vals.wagerEndMinutes;
+  }
+  host.appendChild(row);
+  if (!vals) row.querySelector('.pr-title').focus();
+}
+function iwSetPrizeRows(prizes) {
+  var host = document.getElementById('iw-prize-list');
+  if (!host) return;
+  host.innerHTML = '';
+  (prizes || []).forEach(function(p){ iwAddPrizeRow(p); });
+}
+function iwCollectPrizeRows() {
+  var out = [];
+  Array.prototype.forEach.call(document.querySelectorAll('#iw-prize-list .iw-prize-row'), function(row){
+    var title = row.querySelector('.pr-title').value.trim().slice(0, 100);
+    if (!title) return;
+    out.push({ title: title,
+               sponsor: row.querySelector('.pr-sponsor').value.trim().slice(0, 100),
+               wagerEndMinutes: Math.max(0, parseInt(row.querySelector('.pr-min').value, 10) || 0) });
+  });
+  return out.slice(0, 20);
+}
+
 // Formularstand einsammeln + validieren — gemeinsame Basis für „starten"
 // und „als Entwurf speichern". null = Validierung fehlgeschlagen (Meldung
 // steht dann in #iw-err).
@@ -600,18 +641,10 @@ function iwCollect() {
   }
   if (t.fields.wagercmd) payload.wagerCmd  = (document.getElementById('iw-wagercmd').value.trim() || '!setzen').toLowerCase();
   if (t.fields.minwatch) payload.minWatchSec = CC.validate.sanitizeInt(document.getElementById('iw-minwatch').value, 0, 6000, 10) * 60;
-  // P6: Preise (nur Los-Giveaway) — "Titel | Sponsor | Einsatz-Ende (min)".
+  // P6: Preise (nur Los-Giveaway) aus den Eingabezeilen des Modals.
   if (iwType === 'ticketbuy') {
-    var pEl = document.getElementById('iw-prizes');
-    var lines = pEl ? pEl.value.split('\n') : [];
-    var prizes = [];
-    lines.forEach(function(line){
-      var parts = line.split('|').map(function(x){ return x.trim(); });
-      if (!parts[0]) return;
-      prizes.push({ title: parts[0].slice(0, 100), sponsor: (parts[1] || '').slice(0, 100),
-                    wagerEndMinutes: Math.max(0, parseInt(parts[2], 10) || 0) });
-    });
-    if (prizes.length) payload.prizes = prizes.slice(0, 20);
+    var prizes = iwCollectPrizeRows();
+    if (prizes.length) payload.prizes = prizes;
   }
 
   var picked = Array.prototype.slice.call(document.querySelectorAll('#iw-channels input:checked')).map(function(c){ return c.value; });
@@ -694,9 +727,7 @@ function draftEdit(id) {
   set('iw-window', c.windowSec ? Math.round(c.windowSec / 60 * 10) / 10 : 1);
   set('iw-wagercmd', c.wagerCmd || '');
   set('iw-minwatch', c.minWatchSec ? Math.round(c.minWatchSec / 60) : 10);
-  set('iw-prizes', Array.isArray(c.prizes) ? c.prizes.map(function(p){
-    return [p.title, p.sponsor || '', p.wagerEndMinutes || ''].join(' | ').replace(/(\s\|\s)+$/, '');
-  }).join('\n') : '');
+  iwSetPrizeRows(Array.isArray(c.prizes) ? c.prizes : []);
   var ann = document.getElementById('iw-announce'); if (ann) ann.checked = c.announce !== false;
   Array.prototype.forEach.call(document.querySelectorAll('#iw-channels input'), function(cb){
     cb.checked = Array.isArray(c.channels) && c.channels.indexOf(cb.value) >= 0;
