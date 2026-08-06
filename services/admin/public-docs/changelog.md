@@ -7,6 +7,13 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 6. August 2026
 
+### Chat-Ansagen verlinken jetzt die Mitmach-Seiten
+
+Beim Start eines Screenshot-Contests oder Los-Giveaways stand in der
+Chat-Ansage zwar „auf der Contest-Seite" — aber ohne Link. Jetzt nennen die
+Eröffnungs-Ansage, die `!los`-Zusatzzeile und die „Voting ist offen"-Ansage
+die vollständige Adresse (…/viewer/contest bzw. …/viewer/wager).
+
 ### Sicherheits-Härtung nach externer Prüfung
 
 Eine erneute externe Sicherheitsprüfung hat keine Datenlecks gefunden, aber

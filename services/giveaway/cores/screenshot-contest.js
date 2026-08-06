@@ -46,16 +46,20 @@ function buildPool(standings) {
   }));
 }
 
-function infoText() {
+// url optional: Ansagen aus dem Server hängen den Link zur Contest-Seite an
+// (ohne url bleiben die Texte byte-gleich — eingefrorene Tests).
+function infoText({ url } = {}) {
   return '📸 SCREENSHOT-CONTEST! Sende deinen besten Screenshot ein und bewerte die '
        + 'Einsendungen der anderen mit 1–10 — auf der Contest-Seite (Login mit Twitch). '
-       + 'Einsenden und Voten können nur echte Zuschauer. Die höchste Punktsumme gewinnt!';
+       + 'Einsenden und Voten können nur echte Zuschauer. Die höchste Punktsumme gewinnt!'
+       + (url ? ` → ${url}` : '');
 }
 
 // Eine Zeile für !los, wenn diese Instanz parallel zur Kampagne läuft.
-function statusLine({ voting }) {
-  if (voting === 'open') return '📸 Außerdem läuft ein Screenshot-Contest — das VOTING ist offen (Contest-Seite, Login mit Twitch).';
-  return '📸 Außerdem läuft ein Screenshot-Contest — Einsendungen auf der Contest-Seite (Login mit Twitch).';
+function statusLine({ voting, url } = {}) {
+  const link = url ? ` → ${url}` : '';
+  if (voting === 'open') return '📸 Außerdem läuft ein Screenshot-Contest — das VOTING ist offen (Contest-Seite, Login mit Twitch).' + link;
+  return '📸 Außerdem läuft ein Screenshot-Contest — Einsendungen auf der Contest-Seite (Login mit Twitch).' + link;
 }
 
 function winnerText({ winner, coins }) {

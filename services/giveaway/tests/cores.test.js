@@ -234,6 +234,12 @@ test('statusLine: jede Sekundär-Mechanik liefert eine !los-Zusatzzeile', () => 
   assert.ok(sc.statusLine({ voting: 'closed' }).includes('Einsendungen'));
   assert.ok(sc.statusLine({ voting: 'paused' }).includes('Einsendungen'));
 
+  // Mit url hängen infoText/statusLine den Seiten-Link an (Ansagen im Chat).
+  assert.ok(tb.statusLine({ cmd: '!lose', url: 'https://x/viewer/wager' }).endsWith('→ https://x/viewer/wager'));
+  assert.ok(tb.infoText({ cmd: '!lose', url: 'https://x/viewer/wager' }).includes('https://x/viewer/wager'));
+  assert.ok(sc.statusLine({ voting: 'open', url: 'https://x/viewer/contest' }).endsWith('→ https://x/viewer/contest'));
+  assert.ok(sc.infoText({ url: 'https://x/viewer/contest' }).includes('https://x/viewer/contest'));
+
   // Kampagnen-Core braucht KEINE statusLine (Primary spricht via statusText).
   assert.strictEqual(typeof CORE.statusLine, 'undefined');
 });

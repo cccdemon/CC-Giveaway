@@ -73,13 +73,17 @@ function wagerErrText(username, reason) {
   return `@${username} ❌ ${msgs[reason] || 'Einsatz nicht möglich.'}`;
 }
 
-function infoText({ cmd }) {
-  return `🎁 Los-Giveaway: Zuschauzeit wird zu Los-Guthaben. Setze deine Lose gezielt auf Preise: „${cmd} <preis-nr> <anzahl>". Gezogen wird je Preis, gewichtet nach Einsatz — jedes Los kann gewinnen. Nach der Ziehung sind die Einsätze aller Teilnehmer dieses Preises verbraucht.`;
+// url optional: Ansagen aus dem Server hängen den Link zur Setz-Seite an
+// (ohne url bleiben die Texte byte-gleich — eingefrorene Tests).
+function infoText({ cmd, url } = {}) {
+  return `🎁 Los-Giveaway: Zuschauzeit wird zu Los-Guthaben. Setze deine Lose gezielt auf Preise: „${cmd} <preis-nr> <anzahl>". Gezogen wird je Preis, gewichtet nach Einsatz — jedes Los kann gewinnen. Nach der Ziehung sind die Einsätze aller Teilnehmer dieses Preises verbraucht.`
+       + (url ? ` Setz-Seite: ${url}` : '');
 }
 
 // Eine Zeile für !los, wenn diese Instanz parallel zur Kampagne läuft.
-function statusLine({ cmd }) {
-  return `🎟 Außerdem läuft ein Los-Giveaway — Lose setzen mit „${cmd || WAGER_CMD_DEF} <preis-nr> <anzahl>" oder auf der Setz-Seite.`;
+function statusLine({ cmd, url } = {}) {
+  return `🎟 Außerdem läuft ein Los-Giveaway — Lose setzen mit „${cmd || WAGER_CMD_DEF} <preis-nr> <anzahl>" oder auf der Setz-Seite.`
+       + (url ? ` → ${url}` : '');
 }
 
 function winnerText({ winner, prizeTitle }) {

@@ -357,8 +357,10 @@ async function secondaryStatusLines(teamId, channel) {
         ctx.secondsLeft = g.windowEndsAt ? g.windowEndsAt - Math.floor(Date.now() / 1000) : 0;
       } else if (core.id === 'CORE_TicketBuy') {
         ctx.cmd = await redis.get(K.gWagerCmd(teamId, g.gid)) || '';
+        ctx.url = publicHost() + '/viewer/wager';
       } else if (core.id === 'CORE_ScreenshotContest') {
         ctx.voting = await redis.get(K.gVoteState(teamId, g.gid)) || 'closed';
+        ctx.url = publicHost() + '/viewer/contest';
       }
       lines.push(core.statusLine(ctx));
     }
@@ -941,8 +943,8 @@ async function runAdminCmd(send, msg, meta, ctx) {
       if (announceOn) await announceChannels(teamId, channels.length ? channels : null,
         (coreId === 'CORE_CurrentViewers'
           ? (windowSec > 0 ? coreMod.infoText({ keyword, windowSec }) : coreMod.prepText({ keyword }))
-        : coreId === 'CORE_ScreenshotContest' ? coreMod.infoText()
-        : coreId === 'CORE_TicketBuy' ? coreMod.infoText({ cmd: wagerCmd })
+        : coreId === 'CORE_ScreenshotContest' ? coreMod.infoText({ url: publicHost() + '/viewer/contest' })
+        : coreId === 'CORE_TicketBuy' ? coreMod.infoText({ cmd: wagerCmd, url: publicHost() + '/viewer/wager' })
         : '🎁 Zusätzliches Giveaway gestartet!' + (keyword ? ` Mitmachen: schreib "${keyword}" im Chat.` : ''))
         + prizeLine(iPrize, iSponsor));
       send({ event: 'gw_ack', type: 'instance_opened', giveawayId: gid, keyword, core: coreId,
@@ -1167,7 +1169,7 @@ async function runAdminCmd(send, msg, meta, ctx) {
       const state = await wte.setContestVoting(teamId, gid, map[action]);
       Object.assign(outcome, { giveawayId: gid, votingBefore: before, votingAfter: state });
       const texts = {
-        open:   '📸 Das VOTING ist offen! Bewerte die Screenshots mit 1–10 auf der Contest-Seite (Login mit Twitch).',
+        open:   `📸 Das VOTING ist offen! Bewerte die Screenshots mit 1–10 auf ${publicHost()}/viewer/contest (Login mit Twitch).`,
         paused: '📸 Voting pausiert — abgegebene Stimmen bleiben erhalten.',
         closed: '📸 Voting beendet — die Auswertung folgt!',
       };
