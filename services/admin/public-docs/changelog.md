@@ -7,6 +7,23 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 6. August 2026
 
+### Teams lassen sich jetzt vollständig selbst verwalten
+
+Unter **Meine Teams** gibt es einen neuen Verwaltungsbereich: Mitglieder
+können ein Team **selbst verlassen**, der Owner kann das Team **umbenennen**,
+die **Eigentümerschaft an ein Mitglied übergeben** (die Veranstalter-Pflichten
+wie Impressum und Nutzungsbedingungen gehen mit über — der neue Owner muss den
+aktuellen Nutzungsbedingungen bereits zugestimmt haben), **Einladungen
+pausieren** und das Team **deaktivieren**. Jedes Mitglied kann außerdem den
+**eigenen Twitch-Kanal ändern** (nur solange kein Giveaway läuft; der alte
+Zugangs-Token wird dabei widerrufen).
+
+Beim Deaktivieren werden alle Live-Daten (Zuschauzeiten, Anmeldungen) und
+Zugangs-Tokens gelöscht — **Ziehungsnachweise und Protokolle bleiben**, wie es
+die Nachweispflichten verlangen. Ein deaktiviertes Team kann keine Giveaways
+mehr öffnen; der Owner kann es jederzeit reaktivieren. Alle
+Verwaltungsaktionen werden protokolliert.
+
 ### Dashboard zeigt jedes Giveaway in seinen eigenen Spalten
 
 Die Teilnehmer-Tabelle zeigte bisher immer die Coin- und Viewtime-Spalten

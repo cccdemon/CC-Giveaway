@@ -56,6 +56,20 @@ Weiterleitung zum Login:
 /viewer/status · /viewer/terms · /health
 ```
 
+### INTERNAL_API_KEY (Team-Verwaltung, seit Aug 2026)
+
+Shared-Secret zwischen admin- und giveaway-Service für den internen
+Endpunkt `POST giveaway:/internal/team/cleanup` (Ingest-Token-Widerruf bei
+Kanalwechsel/Austritt, Live-State-Wipe bei Team-Deaktivierung). In der
+`.env` auf dem Server setzen:
+
+```bash
+grep -q INTERNAL_API_KEY .env || echo "INTERNAL_API_KEY=$(openssl rand -hex 24)" >> .env
+```
+
+Fehlt der Key, funktionieren die Team-Aktionen trotzdem (PG-Seite), nur das
+Redis-Aufräumen wird übersprungen (`{skipped:'no_internal_key'}` im Audit-Detail).
+
 ### Deploy-Hinweise Core-Umbau (Branch `feature/EngineCores`)
 
 Der erste Deploy dieses Standes hat gewollte, aber sichtbare Effekte:

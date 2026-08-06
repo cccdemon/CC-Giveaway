@@ -32,7 +32,11 @@ async function joinByCode() {
     var r = await jfetch(API + '/join', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ code:code }) });
     var d = await r.json();
     if (r.ok) { setMsg('join-msg', 'Beigetreten!', true); document.getElementById('join-code').value=''; load(); }
-    else setMsg('join-msg', d.error==='invalid_code' ? 'Ungültiger Code' : ('Fehler: '+(d.error||r.status)), false);
+    else setMsg('join-msg',
+      d.error==='invalid_code' ? 'Ungültiger Code'
+      : d.error==='invites_disabled' ? 'Einladungen sind für dieses Team gerade deaktiviert'
+      : d.error==='team_deactivated' ? 'Dieses Team ist deaktiviert'
+      : ('Fehler: '+(d.error||r.status)), false);
   } catch(e){ if(e.message!=='unauth') setMsg('join-msg', e.message, false); }
 }
 
@@ -46,6 +50,135 @@ async function removeMember(id, login) {
   if (r.ok) load();
 }
 function copyInvite(code) { navigator.clipboard && navigator.clipboard.writeText(inviteLink(code)); }
+
+// ── Team-Verwaltung (Issue #1): verlassen, umbenennen, übertragen,
+// Einladungen pausieren, Kanal ändern, deaktivieren/reaktivieren ──
+var TM_ERR = {
+  giveaway_open: 'Nicht möglich, solange ein Giveaway läuft — erst schließen.',
+  channel_taken: 'Diesen Kanal nutzt schon ein anderes Mitglied.',
+  channel_invalid: 'Ungültiger Kanalname (a-z, 0-9, _, min. 3 Zeichen).',
+  target_tos_missing: 'Der neue Owner muss zuerst den aktuellen Nutzungsbedingungen zustimmen (einloggen → Zustimmung).',
+  not_a_member: 'Kein Mitglied dieses Teams.',
+  owner_must_transfer: 'Als Owner erst die Eigentümerschaft übertragen.',
+  confirm_mismatch: 'Teamname stimmt nicht überein — nichts passiert.',
+  already_deactivated: 'Team ist bereits deaktiviert.',
+  not_deactivated: 'Team ist nicht deaktiviert.',
+  name_required: 'Name fehlt.',
+};
+function tmMsg(id, text, ok) {
+  var el = document.getElementById('tm-msg-' + id);
+  if (el) { el.textContent = text || ''; el.className = 'msg ' + (ok ? 'ok' : 'err'); }
+}
+async function tmCall(id, url, opts, okText) {
+  try {
+    var r = await jfetch(url, opts);
+    var d = await r.json().catch(function(){ return {}; });
+    if (r.ok) { tmMsg(id, okText, true); load(); return true; }
+    if (r.status === 451) { tmMsg(id, 'Bitte zuerst den Nutzungsbedingungen zustimmen (neu einloggen).', false); return false; }
+    tmMsg(id, TM_ERR[d.error] || ('Fehler: ' + (d.error || r.status)), false);
+    return false;
+  } catch(e) { if (e.message !== 'unauth') tmMsg(id, e.message, false); return false; }
+}
+
+// Team-Daten je id (aus load()) — onclick-Handler bekommen NUR die id;
+// Namen o.ä. gehören nicht in Attribut-Strings (Quote-Injection).
+var tmData = {};
+
+function leaveTeam(id) {
+  var name = (tmData[id] && tmData[id].name) || id;
+  if (!confirm('Team „' + name + '" wirklich verlassen? Dein Ingest-Token wird widerrufen.')) return;
+  tmCall(id, API + '/' + id + '/leave', { method:'POST' }, 'Team verlassen.');
+}
+
+function renameTeam(id) {
+  var name = (document.getElementById('rn-' + id) || {}).value || '';
+  if (!name.trim()) { tmMsg(id, 'Name fehlt.', false); return; }
+  tmCall(id, API + '/' + id + '/name',
+    { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name: name.trim() }) },
+    'Umbenannt.');
+}
+
+function transferTeam(id) {
+  var sel = document.getElementById('tr-' + id);
+  var to = sel && sel.value;
+  if (!to) { tmMsg(id, 'Mitglied auswählen.', false); return; }
+  if (!confirm('Eigentümerschaft an „' + to + '" übertragen? Du wirst normales Mitglied; '
+    + 'Veranstalter-Pflichten (Impressum, Nutzungsbedingungen) gehen auf „' + to + '" über.')) return;
+  tmCall(id, API + '/' + id + '/transfer',
+    { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ to: to }) },
+    'Übertragen — „' + to + '" ist jetzt Owner.');
+}
+
+function toggleInvites(id, enable) {
+  tmCall(id, API + '/' + id + '/invites',
+    { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ enabled: enable }) },
+    enable ? 'Einladungen aktiv.' : 'Einladungen pausiert.');
+}
+
+function changeChannel(id) {
+  var ch = ((document.getElementById('ch-' + id) || {}).value || '').trim().toLowerCase();
+  if (!ch) { tmMsg(id, 'Kanal fehlt.', false); return; }
+  if (!confirm('Eigenen Kanal auf „' + ch + '" ändern? Der alte Ingest-Token wird widerrufen — '
+    + 'danach im Dashboard einen neuen Token erzeugen und in Streamerbot eintragen.')) return;
+  tmCall(id, API + '/' + id + '/channel',
+    { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ channel: ch }) },
+    'Kanal geändert — neuen Ingest-Token im Dashboard erzeugen.');
+}
+
+function deactivateTeam(id) {
+  var confirmName = (document.getElementById('deact-' + id) || {}).value || '';
+  if (!confirmName.trim()) { tmMsg(id, 'Zur Bestätigung den Teamnamen eintippen.', false); return; }
+  if (!confirm('Team wirklich deaktivieren? Alle Live-Daten (Zuschauzeiten, Anmeldungen) und '
+    + 'Ingest-Tokens werden gelöscht. Ziehungsnachweise bleiben. Reaktivieren ist möglich.')) return;
+  tmCall(id, API + '/' + id + '/deactivate',
+    { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ confirmName: confirmName.trim() }) },
+    'Team deaktiviert.');
+}
+
+function reactivateTeam(id) {
+  tmCall(id, API + '/' + id + '/reactivate', { method:'POST' },
+    'Team reaktiviert — Ingest-Tokens im Dashboard neu erzeugen.');
+}
+
+function renderMgmt(t) {
+  var owner = t.you_owner;
+  var inputStyle = 'background:#060a11;border:1px solid rgba(0,212,255,0.25);color:#c8dce8;border-radius:6px;padding:8px;font-size:12px;';
+  var html = '<div style="margin-top:12px;border-top:1px solid rgba(255,255,255,.08);padding-top:10px">'
+    + '<div class="lk-sub">Verwaltung</div>';
+  if (t.deactivated_at) {
+    html += '<div class="msg err" style="margin-bottom:6px">Deaktiviert seit '
+      + esc(new Date(t.deactivated_at).toLocaleString('de-DE'))
+      + ' — es lassen sich keine Giveaways mehr öffnen.</div>'
+      + (owner ? '<button onclick="reactivateTeam(\'' + t.id + '\')">Team reaktivieren</button>' : '');
+    return html + '<span class="msg" id="tm-msg-' + t.id + '"></span></div>';
+  }
+  var me = (t.members || []).filter(function(m){ return m.login === t.you; })[0] || {};
+  html += '<div class="invite"><input id="ch-' + t.id + '" value="' + esc(me.channel || '') + '" maxlength="25" style="' + inputStyle + '" title="Dein Twitch-Kanal in diesem Team">'
+    + '<button class="ghost" onclick="changeChannel(\'' + t.id + '\')">Eigenen Kanal ändern</button></div>'
+    + '<div class="muted" style="font-size:11px;margin:2px 0 8px">Nur ohne laufendes Giveaway. Der alte Ingest-Token wird widerrufen.</div>';
+  if (owner) {
+    var candidates = (t.members || []).filter(function(m){ return m.role !== 'owner'; });
+    html += '<div class="invite"><input id="rn-' + t.id + '" value="' + esc(t.name) + '" maxlength="60" style="' + inputStyle + '">'
+      + '<button class="ghost" onclick="renameTeam(\'' + t.id + '\')">Umbenennen</button></div>';
+    html += '<div class="invite" style="margin-top:6px">'
+      + '<select id="tr-' + t.id + '" style="' + inputStyle + '">'
+      + '<option value="">— Mitglied wählen —</option>'
+      + candidates.map(function(m){ return '<option value="' + esc(m.login) + '">' + esc(m.login) + '</option>'; }).join('')
+      + '</select>'
+      + '<button class="ghost" onclick="transferTeam(\'' + t.id + '\')"' + (candidates.length ? '' : ' disabled title="Keine weiteren Mitglieder"') + '>Eigentümerschaft übertragen</button></div>';
+    html += '<div class="invite" style="margin-top:6px">'
+      + '<button class="ghost" onclick="toggleInvites(\'' + t.id + '\',' + (t.invites_disabled ? 'true' : 'false') + ')">'
+      + (t.invites_disabled ? 'Einladungen aktivieren' : 'Einladungen pausieren') + '</button>'
+      + (t.invites_disabled ? '<span class="muted" style="font-size:11px">Beitritt per Code ist gerade abgeschaltet.</span>' : '')
+      + '</div>';
+    html += '<div class="invite" style="margin-top:10px"><input id="deact-' + t.id + '" placeholder="Teamname zur Bestätigung" style="' + inputStyle + '">'
+      + '<button class="danger" onclick="deactivateTeam(\'' + t.id + '\')">Team deaktivieren</button></div>'
+      + '<div class="muted" style="font-size:11px;margin-top:2px">Löscht Live-Daten und Tokens; Ziehungsnachweise und Protokolle bleiben. Reaktivieren möglich.</div>';
+  } else {
+    html += '<div class="invite" style="margin-top:6px"><button class="danger" onclick="leaveTeam(\'' + esc(t.id) + '\')">Team verlassen</button></div>';
+  }
+  return html + '<span class="msg" id="tm-msg-' + t.id + '"></span></div>';
+}
 
 async function editImprint(id) {
   var box = document.getElementById('imprint-' + id);
@@ -165,6 +298,8 @@ async function load() {
       return fetch('/admin/pub/team/' + encodeURIComponent(t.id))
         .then(function(r){ return r.json(); }).catch(function(){ return null; });
     }));
+    tmData = {};
+    details.filter(Boolean).forEach(function(t){ tmData[t.id] = t; });
     host.innerHTML = details.filter(Boolean).map(function(t, i) {
       return renderTeam(Object.assign({}, t, { pub: pub[i] || null }));
     }).join('');
@@ -195,8 +330,11 @@ function renderTeam(t) {
     + (owner ? '<button class="ghost" onclick="editImprint(\''+t.id+'\')">Impressum (Pflicht)</button>' : '')
     + '</div><div id="terms-'+t.id+'"></div><div id="imprint-'+t.id+'"></div>';
   return '<div class="team"><div class="team-head"><span class="team-name">'+esc(t.name)+'</span>'
-    + (owner?'<span class="badge">OWNER</span>':'') + '</div>'
-    + '<div class="members">'+members+'</div>' + invite + overlay + terms
+    + (owner?'<span class="badge">OWNER</span>':'')
+    + (t.deactivated_at?'<span class="badge" style="background:#5a1f1f;color:#ff9c9c">DEAKTIVIERT</span>':'') + '</div>'
+    + '<div class="members">'+members+'</div>'
+    + (t.deactivated_at ? '' : invite + overlay) + terms
+    + renderMgmt(t)
     + legalLinks(t) + '</div>';
 }
 

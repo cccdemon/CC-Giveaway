@@ -327,6 +327,45 @@ async function isTeamMember(teamId, login) {
   return r.rowCount > 0;
 }
 
+// Team-Verwaltungsaktionen sind zustandsändernd → audit_log mit team_id
+// (auditGdpr bleibt für die team-losen DSGVO-Vorgänge). Bewusst ohne IP —
+// gleiche Zusage wie bei den DSGVO-Zugriffen.
+async function auditTeam(teamId, actor, action, target, result, detail) {
+  try {
+    await pg.query(
+      `INSERT INTO audit_log (team_id, actor, action, target, result, detail)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [teamId, actor, action, target, result || 'ok', JSON.stringify(detail || {})]);
+  } catch (e) { logErr('Audit', `WRITE FAILED action=${action} team=${teamId}: ${e.message}`); }
+}
+
+// Live-State (Redis) gehört dem giveaway-Service — Aufräumen (Token-Widerruf,
+// Team-Wipe) läuft über dessen internen Endpunkt. Shared-Secret INTERNAL_API_KEY;
+// ohne Key wird nur übersprungen (die PG-Seite der Aktion gilt trotzdem).
+async function giveawayCleanup(teamId, channel = null) {
+  const key = process.env.INTERNAL_API_KEY || '';
+  if (!key) return { skipped: 'no_internal_key' };
+  try {
+    const r = await fetch(CFG.services.giveaway + '/internal/team/cleanup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Internal-Key': key },
+      body: JSON.stringify({ teamId, channel: channel || undefined }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return { error: d.error || ('http_' + r.status) };
+    return d;
+  } catch (e) { logErr('Teams', 'cleanup call failed:', e.message); return { error: e.message }; }
+}
+
+// Kanalwechsel/Deaktivierung nicht mitten im laufenden Giveaway — die
+// Accrual-Schlüssel hängen am Kanalnamen, ein Wechsel würde Zuschauzeit
+// unsichtbar machen. status spiegelt Redis (open/paused/closed).
+async function teamHasOpenGiveaway(teamId) {
+  const r = await pg.query(
+    `SELECT 1 FROM sessions WHERE team_id=$1 AND status IN ('open','paused') LIMIT 1`, [teamId]);
+  return r.rowCount > 0;
+}
+
 app.post('/api/teams', async (req, res) => {
   const s = requireSession(req, res); if (!s) return;
   if (!await requireTos(req, res, s)) return;
@@ -345,7 +384,7 @@ app.get('/api/teams/mine', async (req, res) => {
   const s = requireSession(req, res); if (!s) return;
   try {
     const r = await pg.query(`
-      SELECT t.id, t.name, t.owner_login, t.invite_code, m.role
+      SELECT t.id, t.name, t.owner_login, t.invite_code, t.deactivated_at, m.role
       FROM team_members m JOIN teams t ON t.id = m.team_id
       WHERE m.login = $1 ORDER BY t.created_at DESC
     `, [s.user]);
@@ -358,13 +397,13 @@ app.get('/api/teams/:id', async (req, res) => {
   const id = req.params.id;
   try {
     if (!await isTeamMember(id, s.user)) return res.status(403).json({ error: 'forbidden' });
-    const t = await pg.query('SELECT id, name, owner_login, invite_code, overlay_key FROM teams WHERE id=$1', [id]);
+    const t = await pg.query('SELECT id, name, owner_login, invite_code, overlay_key, deactivated_at, invites_disabled FROM teams WHERE id=$1', [id]);
     if (!t.rowCount) return res.status(404).json({ error: 'not_found' });
     const mem = await pg.query('SELECT login, role, channel, joined_at FROM team_members WHERE team_id=$1 ORDER BY role DESC, joined_at', [id]);
     const owner = await isTeamOwner(id, s.user);
     const row = t.rows[0];
     if (!owner) delete row.overlay_key;   // Overlay-Key nur für Owner
-    res.json({ ...row, members: mem.rows, you_owner: owner });
+    res.json({ ...row, members: mem.rows, you_owner: owner, you: s.user });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -374,11 +413,14 @@ app.post('/api/teams/join', async (req, res) => {
   const code = String((req.body && req.body.code) || '').replace(/[^a-f0-9]/gi, '').slice(0, 32);
   if (!code) return res.status(400).json({ error: 'code_required' });
   try {
-    const t = await pg.query('SELECT id FROM teams WHERE invite_code=$1', [code]);
+    const t = await pg.query('SELECT id, deactivated_at, invites_disabled FROM teams WHERE invite_code=$1', [code]);
     if (!t.rowCount) return res.status(404).json({ error: 'invalid_code' });
+    if (t.rows[0].deactivated_at) return res.status(403).json({ error: 'team_deactivated' });
+    if (t.rows[0].invites_disabled) return res.status(403).json({ error: 'invites_disabled' });
     const id = t.rows[0].id;
     await pg.query(`INSERT INTO team_members (team_id, login, role, channel) VALUES ($1,$2,'member',$2)
                     ON CONFLICT (team_id, login) DO NOTHING`, [id, s.user]);
+    await auditTeam(id, s.user, 'team_join', s.user, 'ok', {});
     res.json({ ok: true, id });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -399,8 +441,153 @@ app.delete('/api/teams/:id/members/:login', async (req, res) => {
   if (!await isTeamOwner(id, s.user)) return res.status(403).json({ error: 'forbidden' });
   const t = await pg.query('SELECT owner_login FROM teams WHERE id=$1', [id]);
   if (t.rows[0] && t.rows[0].owner_login === target) return res.status(400).json({ error: 'cannot_remove_owner' });
-  try { await pg.query('DELETE FROM team_members WHERE team_id=$1 AND login=$2', [id, target]); res.json({ ok: true }); }
+  try {
+    const m = await pg.query('SELECT channel FROM team_members WHERE team_id=$1 AND login=$2', [id, target]);
+    await pg.query('DELETE FROM team_members WHERE team_id=$1 AND login=$2', [id, target]);
+    // Ingest-Token des Kanals widerrufen — sonst füttert der Ex-Kanal weiter.
+    const cleanup = m.rowCount ? await giveawayCleanup(id, m.rows[0].channel) : null;
+    await auditTeam(id, s.user, 'team_member_removed', target, 'ok', { cleanup });
+    res.json({ ok: true });
+  }
   catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Team-Lebenszyklus (Issue #1) ──────────────────────────
+
+// Member verlässt das Team selbst. Der Owner kann nicht raus — erst
+// Eigentümerschaft übertragen (Impressums-/TOS-Pflichten hängen an ihm).
+app.post('/api/teams/:id/leave', async (req, res) => {
+  const s = requireSession(req, res); if (!s) return;
+  const id = req.params.id;
+  try {
+    if (!await isTeamMember(id, s.user)) return res.status(403).json({ error: 'forbidden' });
+    if (await isTeamOwner(id, s.user)) return res.status(409).json({ error: 'owner_must_transfer' });
+    const m = await pg.query('SELECT channel FROM team_members WHERE team_id=$1 AND login=$2', [id, s.user]);
+    await pg.query('DELETE FROM team_members WHERE team_id=$1 AND login=$2', [id, s.user]);
+    const cleanup = m.rowCount ? await giveawayCleanup(id, m.rows[0].channel) : null;
+    await auditTeam(id, s.user, 'team_leave', s.user, 'ok', { cleanup });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/teams/:id/name', async (req, res) => {
+  const s = requireSession(req, res); if (!s) return;
+  if (!await requireTos(req, res, s)) return;
+  const id = req.params.id;
+  const name = String((req.body && req.body.name) || '').replace(/[^\w \-]/g, '').slice(0, 60).trim();
+  if (!name) return res.status(400).json({ error: 'name_required' });
+  try {
+    if (!await isTeamOwner(id, s.user)) return res.status(403).json({ error: 'forbidden' });
+    const old = await pg.query('SELECT name FROM teams WHERE id=$1', [id]);
+    await pg.query('UPDATE teams SET name=$1 WHERE id=$2', [name, id]);
+    await auditTeam(id, s.user, 'team_rename', id, 'ok',
+                    { from: old.rowCount ? old.rows[0].name : null, to: name });
+    res.json({ ok: true, name });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Eigentümerschaft übertragen: Ziel muss Mitglied sein und die AKTUELLEN
+// Nutzungsbedingungen akzeptiert haben — sonst stünde das Team sofort vor
+// dem TOS-Gate (gw_open prüft den Owner). Impressum bleibt beim Team; der
+// neue Owner ist ab jetzt der Veranstalter.
+app.post('/api/teams/:id/transfer', async (req, res) => {
+  const s = requireSession(req, res); if (!s) return;
+  if (!await requireTos(req, res, s)) return;
+  const id = req.params.id;
+  const to = A.sanitizeUserName((req.body && req.body.to) || '');
+  if (!to) return res.status(400).json({ error: 'target_required' });
+  try {
+    if (!await isTeamOwner(id, s.user)) return res.status(403).json({ error: 'forbidden' });
+    if (to === s.user) return res.status(400).json({ error: 'already_owner' });
+    if (!await isTeamMember(id, to)) return res.status(404).json({ error: 'not_a_member' });
+    const a = await tosAcceptedVersion(to);
+    if (!a || a.version < TOS_VERSION) return res.status(409).json({ error: 'target_tos_missing' });
+    const client = await pg.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('UPDATE teams SET owner_login=$1 WHERE id=$2', [to, id]);
+      await client.query(`UPDATE team_members SET role='member' WHERE team_id=$1 AND login=$2`, [id, s.user]);
+      await client.query(`UPDATE team_members SET role='owner' WHERE team_id=$1 AND login=$2`, [id, to]);
+      await client.query('COMMIT');
+    } catch (e) { await client.query('ROLLBACK'); throw e; }
+    finally { client.release(); }
+    await auditTeam(id, s.user, 'team_transfer', to, 'ok', { from: s.user, to });
+    res.json({ ok: true, owner: to });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Einladungen pausieren/aktivieren (Code bleibt, Beitritt wird abgelehnt).
+app.post('/api/teams/:id/invites', async (req, res) => {
+  const s = requireSession(req, res); if (!s) return;
+  const id = req.params.id;
+  const enabled = !!(req.body && req.body.enabled);
+  try {
+    if (!await isTeamOwner(id, s.user)) return res.status(403).json({ error: 'forbidden' });
+    await pg.query('UPDATE teams SET invites_disabled=$1 WHERE id=$2', [!enabled, id]);
+    await auditTeam(id, s.user, 'team_invites_toggle', id, 'ok', { enabled });
+    res.json({ ok: true, enabled });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Eigenen Kanal ändern — nur der Betroffene selbst, nur ohne laufendes
+// Giveaway (Accrual-Schlüssel hängen am Kanalnamen). Alter Ingest-Token
+// wird widerrufen; für den neuen Kanal im Dashboard einen neuen erzeugen.
+app.put('/api/teams/:id/channel', async (req, res) => {
+  const s = requireSession(req, res); if (!s) return;
+  const id = req.params.id;
+  const channel = A.sanitizeUserName((req.body && req.body.channel) || '');
+  if (!channel || channel.length < 3) return res.status(400).json({ error: 'channel_invalid' });
+  try {
+    if (!await isTeamMember(id, s.user)) return res.status(403).json({ error: 'forbidden' });
+    if (await teamHasOpenGiveaway(id)) return res.status(409).json({ error: 'giveaway_open' });
+    const dup = await pg.query(
+      'SELECT 1 FROM team_members WHERE team_id=$1 AND channel=$2 AND login<>$3', [id, channel, s.user]);
+    if (dup.rowCount) return res.status(409).json({ error: 'channel_taken' });
+    const old = await pg.query('SELECT channel FROM team_members WHERE team_id=$1 AND login=$2', [id, s.user]);
+    const oldCh = old.rowCount ? old.rows[0].channel : null;
+    if (oldCh === channel) return res.json({ ok: true, channel, unchanged: true });
+    await pg.query('UPDATE team_members SET channel=$1 WHERE team_id=$2 AND login=$3', [channel, id, s.user]);
+    const cleanup = oldCh ? await giveawayCleanup(id, oldCh) : null;
+    await auditTeam(id, s.user, 'team_channel_change', s.user, 'ok', { from: oldCh, to: channel, cleanup });
+    res.json({ ok: true, channel });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Team deaktivieren: Flag statt DELETE (Ziehungsnachweise/Audit referenzieren
+// die team_id dauerhaft, Art. 17 Abs. 3 lit. e). Live-State + Ingest-Tokens
+// werden abgeräumt; Mitglieder und Texte bleiben — Reaktivieren ist möglich,
+// Tokens müssen danach neu erzeugt werden.
+app.post('/api/teams/:id/deactivate', async (req, res) => {
+  const s = requireSession(req, res); if (!s) return;
+  const id = req.params.id;
+  try {
+    if (!await isTeamOwner(id, s.user)) return res.status(403).json({ error: 'forbidden' });
+    const t = await pg.query('SELECT name, deactivated_at FROM teams WHERE id=$1', [id]);
+    if (!t.rowCount) return res.status(404).json({ error: 'not_found' });
+    if (t.rows[0].deactivated_at) return res.status(409).json({ error: 'already_deactivated' });
+    if (String((req.body && req.body.confirmName) || '') !== t.rows[0].name) {
+      await auditTeam(id, s.user, 'team_deactivate', id, 'denied', { reason: 'confirm_mismatch' });
+      return res.status(400).json({ error: 'confirm_mismatch' });
+    }
+    if (await teamHasOpenGiveaway(id)) return res.status(409).json({ error: 'giveaway_open' });
+    await pg.query('UPDATE teams SET deactivated_at=NOW() WHERE id=$1', [id]);
+    const cleanup = await giveawayCleanup(id);
+    await auditTeam(id, s.user, 'team_deactivate', id, 'ok', { cleanup });
+    res.json({ ok: true, cleanup });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/teams/:id/reactivate', async (req, res) => {
+  const s = requireSession(req, res); if (!s) return;
+  if (!await requireTos(req, res, s)) return;
+  const id = req.params.id;
+  try {
+    if (!await isTeamOwner(id, s.user)) return res.status(403).json({ error: 'forbidden' });
+    const r = await pg.query('UPDATE teams SET deactivated_at=NULL WHERE id=$1 AND deactivated_at IS NOT NULL', [id]);
+    if (!r.rowCount) return res.status(409).json({ error: 'not_deactivated' });
+    await auditTeam(id, s.user, 'team_reactivate', id, 'ok', {});
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── Team-Teilnahmebedingungen ─────────────────────────────
@@ -981,6 +1168,10 @@ async function ensureSchema() {
   // entweder als Text oder als Link auf eine bestehende Seite.
   await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS imprint TEXT`);
   await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS imprint_url TEXT`);
+  // Team-Lebenszyklus (Issue #1): Deaktivierung ist ein Flag, kein DELETE —
+  // Ziehungsnachweise und Audit referenzieren die team_id dauerhaft.
+  await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMPTZ`);
+  await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS invites_disabled BOOLEAN NOT NULL DEFAULT FALSE`);
   await pg.query(`
     CREATE TABLE IF NOT EXISTS team_members (
       team_id   TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,

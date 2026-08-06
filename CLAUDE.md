@@ -184,6 +184,16 @@ docker compose -f docker-compose.yml -f docker-compose.team.yml -p team up -d --
 ```
 Details in Auto-Memory `deploy-target-team-giveaway`.
 
+## Team-Lebenszyklus (admin `/admin/api/teams/...`)
+`POST :id/leave` (Member; Owner muss erst übertragen) · `PUT :id/name` · `POST :id/transfer`
+(Ziel braucht aktuelle TOS-Zustimmung) · `POST :id/invites` (pausieren/aktivieren) ·
+`PUT :id/channel` (nur selbst, nur ohne laufendes Giveaway, alter Token wird widerrufen) ·
+`POST :id/deactivate` (Name-Bestätigung; Flag `teams.deactivated_at`, KEIN DELETE — Nachweise
+bleiben) · `POST :id/reactivate`. Alles auditiert (`auditTeam`, ohne IP). Live-State-Wipe/
+Token-Widerruf läuft über `POST giveaway:/internal/team/cleanup` — Shared-Secret
+`INTERNAL_API_KEY` (ENV in BEIDEN Services, leer = Endpunkt tot, Wipe wird übersprungen).
+`gw_open`/`gw_open_instance`/Auto-Open prüfen `teamActive()` (deaktivierte Teams öffnen nichts).
+
 ## Sicherheit
 Auth zentral über Caddy `forward_auth` → `admin:3005/auth/verify` (Session-Cookie).
 Login per Twitch-OAuth, Selbstregistrierung beim ersten Login (Upsert in `streamers`).

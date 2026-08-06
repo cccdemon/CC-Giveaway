@@ -110,6 +110,9 @@ services:
       # Test-Console-Simulation. Standard aus — simulierte Ticks erzeugen echte
       # Viewtime und gingen in den Ziehungs-Snapshot ein.
       ALLOW_SIM:            ${ALLOW_SIM:-false}
+      # Shared-Secret admin↔giveaway für /internal/team/cleanup (Team-Verwaltung).
+      # Leer = Endpunkt tot; Team-Aktionen funktionieren, nur ohne Live-State-Wipe.
+      INTERNAL_API_KEY:     ${INTERNAL_API_KEY:-}
       TZ: Europe/Berlin
     depends_on:
       redis:
@@ -147,6 +150,7 @@ services:
       PG_USER:    ${PG_USER:-chaoscrew}
       PG_PASSWORD: ${PG_PASSWORD:-changeme}
       SESSION_SECRET:       ${SESSION_SECRET:-}
+      INTERNAL_API_KEY:     ${INTERNAL_API_KEY:-}
       ADMIN_BOOTSTRAP_USER: ${ADMIN_BOOTSTRAP_USER:-admin}
       ADMIN_BOOTSTRAP_PASS: ${ADMIN_BOOTSTRAP_PASS:-}
       COOKIE_SECURE:        ${COOKIE_SECURE:-true}

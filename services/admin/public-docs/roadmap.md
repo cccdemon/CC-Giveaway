@@ -25,15 +25,6 @@ Reste werden nach und nach abgelöst.
 
 ## Als Nächstes
 
-### Teams selbst verwalten
-
-Ein Team lässt sich heute anlegen und per Einladungscode füllen — aber nicht
-wieder auflösen: Mitglieder können nicht selbst austreten, der Name ist fest,
-die Eigentümerschaft nicht übertragbar, der eigene Kanal nicht änderbar.
-Geplant: **Team verlassen, umbenennen, Eigentümerschaft übergeben, Team
-löschen/deaktivieren, eigenen Kanal ändern** — bevor weitere Streamer
-onboarden.
-
 ### Ersatzgewinner automatisch nachziehen
 
 Meldet sich ein Gewinner nicht innerhalb der Frist, verfällt der Gewinn und der

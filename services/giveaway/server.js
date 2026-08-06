@@ -305,6 +305,17 @@ async function hasImprint(teamId) {
 const IMPRINT_HINT = 'Kein Impressum hinterlegt. Trage unter MEINE TEAMS das Impressum des '
                    + 'Veranstalters ein (Text oder Link), dann laesst sich das Giveaway oeffnen.';
 
+// Deaktivierte Teams (teams.deactivated_at, Team-Verwaltung im admin-Service)
+// öffnen nichts mehr — Nachweise bleiben, der Live-Betrieb ist beendet.
+async function teamActive(teamId) {
+  try {
+    const r = await pg.query('SELECT deactivated_at FROM teams WHERE id=$1', [teamId]);
+    return r.rowCount > 0 && !r.rows[0].deactivated_at;
+  } catch(e) { logErr('GW', 'active check:', e.message); return false; }
+}
+const DEACTIVATED_HINT = 'Dieses Team ist deaktiviert — es lassen sich keine Giveaways mehr öffnen. '
+                       + 'Der Owner kann es unter MEINE TEAMS reaktivieren.';
+
 // Der Glueckspiel-Ausschluss der Nutzungsbedingungen bindet nur, wenn der
 // Veranstalter ihm zugestimmt hat. Ohne Zustimmung laeuft hier kein Giveaway.
 // Muss mit TOS_VERSION in services/admin/server.js uebereinstimmen.
@@ -464,6 +475,12 @@ async function handleStreamOnline(teamId, channel) {
                     sessionId: await wte.getSessionId(teamId), detail: { trigger: 'stream_online' } });
     }
   } else {
+    if (!await teamActive(teamId)) {
+      log('Auto', `[${teamId}] stream online (${ch}) -> NICHT geoeffnet: Team deaktiviert`);
+      await audit({ teamId, actor: 'system', action: 'auto_open', target: ch,
+                    result: 'denied', detail: { reason: 'team_deactivated' } });
+      return;
+    }
     if (!await ownerAcceptedTos(teamId)) {
       log('Auto', `[${teamId}] stream online (${ch}) -> NICHT geoeffnet: Nutzungsbedingungen offen`);
       await audit({ teamId, actor: 'system', action: 'auto_open', target: ch,
@@ -739,6 +756,11 @@ async function runAdminCmd(send, msg, meta, ctx) {
 
   switch (msg.cmd) {
     case 'gw_open': {
+      if (!await teamActive(teamId)) {
+        Object.assign(outcome, { blocked: 'team_deactivated' });
+        send({ event: 'gw_ack', type: 'open_blocked', error: DEACTIVATED_HINT });
+        break;
+      }
       if (!await ownerAcceptedTos(teamId)) {
         Object.assign(outcome, { blocked: 'no_tos' });
         send({ event: 'gw_ack', type: 'open_blocked', error: TOS_HINT });
@@ -805,6 +827,11 @@ async function runAdminCmd(send, msg, meta, ctx) {
     }
     case 'gw_open_instance': {
       // Dieselben Rechts-Gates wie gw_open — jede Instanz ist ein Gewinnspiel.
+      if (!await teamActive(teamId)) {
+        Object.assign(outcome, { blocked: 'team_deactivated' });
+        send({ event: 'gw_ack', type: 'open_blocked', error: DEACTIVATED_HINT });
+        break;
+      }
       if (!await ownerAcceptedTos(teamId)) {
         Object.assign(outcome, { blocked: 'no_tos' });
         send({ event: 'gw_ack', type: 'open_blocked', error: TOS_HINT });
@@ -1871,6 +1898,62 @@ app.get('/api/prize/image/:id', async (req, res) => {
     if (!r.rowCount || !r.rows[0].image) return res.status(404).end();
     res.set('Content-Type', r.rows[0].image_mime || 'application/octet-stream')
        .set('Cache-Control', 'private, max-age=300').send(r.rows[0].image);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Interner Team-Cleanup (nur admin-Service, Shared-Secret) ──
+// Der admin-Service hat kein Redis — Live-State-Aufräumen (Team verlassen /
+// Kanal ändern / Team deaktivieren) läuft darum über diesen Endpunkt.
+// Fail-closed: ohne INTERNAL_API_KEY (ENV, beide Services identisch) ist er
+// tot. Der Pfad ist über Caddy zwar session-gated erreichbar, aber ohne den
+// Key nutzlos. Mit channel: nur Ingest-Token dieses Kanals widerrufen +
+// Kanal-Cache invalidieren; ohne channel: volles Team-Wipe (Instanzen,
+// t:<team>:*-Namespace, alle Tokens). PG-Nachweise bleiben unberührt.
+app.post('/internal/team/cleanup', express.json(), async (req, res) => {
+  const key = process.env.INTERNAL_API_KEY || '';
+  if (!key || req.get('X-Internal-Key') !== key) return res.status(403).json({ error: 'forbidden' });
+  try {
+    const teamId = sanitizeTeamId(req.body && req.body.teamId);
+    if (!teamId) return res.status(400).json({ error: 'bad_request' });
+    const channel = sanitizeChannel((req.body && req.body.channel) || '');
+    if (channel) {
+      const k = teamId + '::' + channel;
+      const tok = await redis.hget('ingest:team_tokens', k);
+      if (tok) { await redis.hdel('ingest:tokens', tok); await redis.hdel('ingest:team_tokens', k); }
+      await redis.del(K.gwChannels(teamId));   // Kanalliste sofort neu aus PG lesen
+      await audit({ teamId, actor: 'system', action: 'team_channel_cleanup', target: channel,
+                    detail: { tokenRevoked: !!tok } });
+      return res.json({ ok: true, tokenRevoked: !!tok });
+    }
+    // Best-effort mit Fehlerliste: ein hängender Schritt darf die übrigen
+    // nicht verhindern — der Aufrufer (admin) protokolliert das Ergebnis.
+    const errors = [];
+    let closed = 0;
+    for (const g of await wte.listGiveaways(teamId)) {
+      if (!g.gid || g.primary) continue;
+      try {
+        await wte.closeGiveawayInstance(teamId, g.gid);
+        await wte.cleanupGiveawayInstance(teamId, g.gid);
+        closed++;
+      } catch (e) { errors.push(`instance ${g.gid}: ${e.message}`); }
+    }
+    try { await wte.resetGiveaway(teamId); }
+    catch (e) { errors.push(`reset: ${e.message}`); }
+    const map = await redis.hgetall('ingest:team_tokens');
+    let tokens = 0;
+    for (const [k, tok] of Object.entries(map)) {
+      if (!k.startsWith(teamId + '::')) continue;
+      try {
+        await redis.hdel('ingest:tokens', tok);
+        await redis.hdel('ingest:team_tokens', k);
+        tokens++;
+      } catch (e) { errors.push(`token ${k}: ${e.message}`); }
+    }
+    await audit({ teamId, actor: 'system', action: 'team_wipe', target: teamId,
+                  detail: { instancesClosed: closed, tokensRevoked: tokens,
+                            errors: errors.length ? errors : undefined } });
+    res.json({ ok: !errors.length, instancesClosed: closed, tokensRevoked: tokens,
+               errors: errors.length ? errors : undefined });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
