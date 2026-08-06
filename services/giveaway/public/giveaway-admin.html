@@ -79,6 +79,12 @@
   .iw-field label { display:block; font-size:9px; letter-spacing:1.4px; color:rgba(200,220,232,.55);
                     text-transform:uppercase; margin-bottom:4px; }
   .iw-field input[type=text], .iw-field input[type=number] { width:100%; }
+  /* Preise-Textarea im Input-Look (chaos-crew-admin.css stylt nur input/select) */
+  .iw-field textarea { width:100%; background:var(--sunk); border:1px solid rgba(0,212,255,.2);
+    color:var(--text); font-family:var(--mono); font-size:12px; padding:8px 10px; outline:none;
+    border-radius:6px; resize:vertical; min-height:64px; }
+  .iw-field textarea:focus { border-color:rgba(0,212,255,.5); box-shadow:0 0 0 2px rgba(0,212,255,.12); }
+  .iw-field textarea::placeholder { color:rgba(200,220,232,.24); }
   .iw-field .hint { font-size:10px; color:rgba(200,220,232,.7); margin-top:3px; line-height:1.5; }
   .iw-chips { display:flex; flex-wrap:wrap; gap:6px; }
   .iw-chip { display:inline-flex; align-items:center; gap:5px; font-size:10.5px; cursor:pointer;
@@ -417,7 +423,7 @@
       </button>
       <button type="button" class="iw-card" data-type="instant" style="--acc:#f0a500" onclick="iwSelect('instant')">
         <span class="ic">⚡</span><span class="nm">SOFORTVERLOSUNG</span>
-        <span class="ds">Keyword im Zeitfenster + echte Anwesenheit. Gleiche Chance für alle, zieht automatisch nach Ablauf.</span>
+        <span class="ds">Keyword im Zeitfenster + echte Anwesenheit. Gleiche Chance für alle — gezogen wird manuell (★), auch mehrere Fenster möglich.</span>
       </button>
       <button type="button" class="iw-card" data-type="ticketbuy" style="--acc:#22e07a" onclick="iwSelect('ticketbuy')">
         <span class="ic">🎟</span><span class="nm">LOS-GIVEAWAY</span>
