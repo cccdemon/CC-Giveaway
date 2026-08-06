@@ -160,6 +160,27 @@
         </div>
       </div>
 
+      <!-- Gewinn-Abwicklung: nur Owner (Server antwortet Members mit 403 →
+           Karte bleibt versteckt). Bewusst OHNE Kontaktdaten — die stehen
+           nur auf der Abwicklungs-Seite (Streamermodus/Screenshare). -->
+      <div class="card" id="card-claims" style="display:none">
+        <div class="card-title">GEWINN-ABWICKLUNG <span class="ct-badge" id="cl-open-count">0</span></div>
+        <div id="cl-card-list"><div class="wsc-empty">Lade…</div></div>
+        <div class="btn-group mt-6">
+          <button class="btn btn-cyan btn-sm" onclick="loadClaims()">↻</button>
+          <a class="btn btn-gold btn-sm" href="/giveaway/claims.html" style="text-decoration:none">ALLE + KONTAKTDATEN →</a>
+        </div>
+      </div>
+
+      <!-- Vergangene Giveaways: Kurzliste — Dossier/Export im Archiv -->
+      <div class="card" id="card-archive">
+        <div class="card-title">VERGANGENE GIVEAWAYS</div>
+        <div id="ar-card-list"><div class="wsc-empty">Lade…</div></div>
+        <div class="btn-group mt-6">
+          <a class="btn btn-gold btn-sm" href="/giveaway/archive.html" style="text-decoration:none">🗄 ARCHIV + NACHWEIS-EXPORT →</a>
+        </div>
+      </div>
+
       <!-- Keyword (nicht bei Los-Giveaway/Contest — dort kein Keyword-Opt-in) -->
       <div class="card" id="card-keyword">
         <div class="card-title">KEYWORD // TEILNAHME</div>

@@ -614,7 +614,101 @@ function closeInstance() {
   send({ event: 'gw_cmd', cmd: 'gw_close_instance', giveawayId: currentGiveaway });
 }
 
-function refresh() { requestData(); loadKeyword(); loadHistory(); loadAudit(); }
+function refresh() { requestData(); loadKeyword(); loadHistory(); loadAudit(); loadClaims(); loadArchiveCard(); }
+
+// ── Vergangene Giveaways (Rail-Karte) ─────────────────────
+async function loadArchiveCard() {
+  var host = document.getElementById('ar-card-list');
+  if (!host || !currentTeam) return;
+  try {
+    var d = await (await fetch('/giveaway/api/archive?team=' + encodeURIComponent(currentTeam))).json();
+    if (d.error) throw new Error(d.error);
+    var closed = (d.sessions || []).filter(function(s){ return s.closed_at; }).slice(0, 5);
+    if (!closed.length) { host.innerHTML = '<div class="wsc-empty">Noch kein abgeschlossenes Giveaway.</div>'; return; }
+    host.innerHTML = closed.map(function(s){
+      var when = new Date(s.closed_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+      var win = s.winners ? (privacyOn ? 'Gewinner maskiert' : String(s.winners)) : null;
+      return '<div class="tb-prize"><span class="t" title="' + esc((s.keyword || '') + (win ? ' — Gewinner: ' + win : '')) + '">'
+        + when + (s.keyword ? ' „' + esc(s.keyword) + '"' : '')
+        + (win ? ' <span style="opacity:.55">· 🏆 ' + esc(win) + '</span>' : '') + '</span>'
+        + '<span class="s">' + Number(s.total_participants || 0) + ' TN</span></div>';
+    }).join('');
+  } catch(e) { host.innerHTML = '<div class="wsc-empty">' + esc(e.message) + '</div>'; }
+}
+
+// ── Gewinn-Abwicklung (Rail-Karte, nur Owner) ─────────────
+// BEWUSST nicht im 10s-Poll: jeder /api/claims-Abruf wird auditiert
+// (claims_inbox_view) — Polling würde das Protokoll fluten. Laden bei
+// Connect/Team-Wechsel, nach einer Ziehung und per ↻.
+var clClaims = [];
+async function loadClaims() {
+  var card = document.getElementById('card-claims');
+  if (!card || !currentTeam) return;
+  try {
+    var r = await fetch('/giveaway/api/claims?team=' + encodeURIComponent(currentTeam));
+    if (r.status === 403) { card.style.display = 'none'; return; }   // kein Owner
+    var d = await r.json();
+    if (d.error) throw new Error(d.error);
+    clClaims = d.claims || [];
+    renderClaimsCard();
+  } catch(e) { log('Gewinn-Abwicklung: ' + e.message, 'red'); }
+}
+
+function renderClaimsCard() {
+  var card = document.getElementById('card-claims');
+  var host = document.getElementById('cl-card-list');
+  var badge = document.getElementById('cl-open-count');
+  if (!card || !host) return;
+  card.style.display = '';
+  var todo = clClaims.filter(function(c){
+    return c.status === 'claimed' ? c.handling !== 'done' : c.status === 'pending';
+  });
+  if (badge) badge.textContent = todo.length ? todo.length + ' OFFEN' : 'NICHTS OFFEN';
+  if (!todo.length) { host.innerHTML = '<div class="wsc-empty">Alles abgewickelt.</div>'; return; }
+  host.innerHTML = todo.slice(0, 6).map(function(c){
+    var key = (c.winner || '').toLowerCase();
+    var stat = c.status === 'claimed'
+      ? (c.claim_source === 'external' ? 'extern gemeldet' : 'gemeldet')
+      : (c.overdue ? 'FRIST ABGELAUFEN' : 'wartet auf Meldung');
+    var btns = c.status === 'claimed'
+      ? '<button class="btn btn-cyan btn-sm btn-mini" onclick="clAct(' + c.id + ',\'contacted\')" title="Als kontaktiert markieren">✉</button>'
+        + '<button class="btn btn-gold btn-sm btn-mini" onclick="clAct(' + c.id + ',\'shipped\')" title="Als versendet markieren">📦</button>'
+        + '<button class="btn btn-green btn-sm btn-mini" onclick="clAct(' + c.id + ',\'done\')" title="Abwicklung erledigt">✓</button>'
+      : '<button class="btn btn-gold btn-sm btn-mini" onclick="clExternal(' + c.id + ')" '
+        + 'title="Gewinner hat sich außerhalb der Plattform gemeldet (z. B. WhatsApp) — Frist gilt als erfüllt">✔ EXTERN</button>';
+    return '<div class="tb-prize"><span class="t">'
+      + esc(maskName(key, c.winner)) + (c.prize ? ' <span style="opacity:.55">· ' + esc(c.prize) + '</span>' : '')
+      + '</span><span class="s" style="font-size:10px">' + esc(stat)
+      + (c.handling && c.handling !== 'done' ? ' · ' + esc(c.handling === 'contacted' ? 'kontaktiert' : 'versendet') : '')
+      + '</span>' + btns + '</div>';
+  }).join('') + (todo.length > 6 ? '<div class="cfg-hint">+' + (todo.length - 6) + ' weitere auf der Abwicklungs-Seite.</div>' : '');
+}
+
+async function clAct(claimId, handling) {
+  try {
+    var r = await (await fetch('/giveaway/api/claims/handling', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ team: currentTeam, claimId: claimId, handling: handling }),
+    })).json();
+    if (r.error) throw new Error(r.error);
+    log('Abwicklung: Stand „' + handling + '" gesetzt', 'gold');
+    loadClaims();
+  } catch(e) { log('Stand setzen fehlgeschlagen: ' + e.message, 'red'); }
+}
+
+async function clExternal(claimId) {
+  if (!confirm('Meldung außerhalb der Plattform erfassen (z. B. WhatsApp)? '
+    + 'Der Gewinn gilt damit als fristgerecht gemeldet.')) return;
+  try {
+    var r = await (await fetch('/giveaway/api/claims/external', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ team: currentTeam, claimId: claimId }),
+    })).json();
+    if (r.error) throw new Error(r.error);
+    log('Externe Meldung erfasst', 'gold');
+    loadClaims();
+  } catch(e) { log('Erfassen fehlgeschlagen: ' + e.message, 'red'); }
+}
 
 function requestData() {
   send({ event: 'gw_get_all' });
@@ -753,11 +847,11 @@ function handle(msg) {
       if (msg.type === 'contest_voting') log('Contest-Voting: ' + (msg.voting || '?'), 'gold');
       if (msg.type === 'entry_reviewed') { log('Einsendung #' + msg.entryId + ' → ' + (msg.decision === 'approve' ? 'FREIGEGEBEN' : 'abgelehnt'), 'gold'); scLoadEntries(); }
       if (msg.type === 'entry_deleted')  { log('Einsendung #' + msg.entryId + ' von „' + maskName((msg.username || '').toLowerCase(), msg.username || '?') + '" endgültig gelöscht', 'gold'); scLoadEntries(); }
-      if (msg.type === 'instance_closed') log('Instanz geschlossen: ' + instanceLabel(msg.giveawayId || '?')
-            + ' — Nachweis unter Tools → 🗄 Vergangene Giveaways', 'gold');
+      if (msg.type === 'instance_closed') { log('Instanz geschlossen: ' + instanceLabel(msg.giveawayId || '?')
+            + ' — Nachweis unter Tools → 🗄 Vergangene Giveaways', 'gold'); loadArchiveCard(); }
       if (msg.type === 'instance_paused')  log('Instanz pausiert: '   + (msg.giveawayId || '?'), 'gold');
       if (msg.type === 'instance_resumed') log('Instanz läuft weiter: ' + (msg.giveawayId || '?'), 'cyan');
-      if (msg.type === 'winner_drawn') { showWinnerAnimation(msg.winner, msg.watchSec, msg.coins, msg.prize); loadHistory(); }
+      if (msg.type === 'winner_drawn') { showWinnerAnimation(msg.winner, msg.watchSec, msg.coins, msg.prize); loadHistory(); loadClaims(); }
       if (msg.type === 'no_winner') log('Keine Teilnehmer mit Coins im Pool!', 'red');
       if (msg.type === 'draw_error') log('ZIEHUNG FEHLGESCHLAGEN: ' + (msg.error || '?') + ' – nichts gespeichert, bitte erneut ziehen', 'red');
       if (msg.type === 'cmd_error') log('BEFEHL FEHLGESCHLAGEN (' + (msg.cmd || '?') + '): ' + (msg.error || '?'), 'red');

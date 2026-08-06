@@ -7,6 +7,15 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 6. August 2026
 
+### Dashboard: Gewinn-Abwicklung und vergangene Giveaways direkt sichtbar
+
+Zwei neue Karten in der rechten Spalte des Dashboards: **Gewinn-Abwicklung**
+(nur Owner) zeigt alle offenen Fälle mit Ein-Klick-Aktionen — „extern
+gemeldet" (z. B. WhatsApp), kontaktiert, versendet, erledigt; Kontaktdaten
+bleiben bewusst auf der Abwicklungs-Seite (Streamermodus-sicher).
+**Vergangene Giveaways** listet die letzten Abschlüsse mit Gewinner und
+Teilnehmerzahl, mit Direktlink ins Archiv samt Nachweis-Export.
+
 ### Archiv: Teilnehmer kumuliert, echter Zeitraum, externe Gewinnmeldung
 
 Drei Verbesserungen an Nachweis und Abwicklung: **(1)** Der Teilnehmerstand
