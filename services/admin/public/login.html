@@ -31,7 +31,7 @@
     <div class="logo">TEAM <b>//</b> GIVEAWAY</div>
     <div class="sub">Control Center · Login</div>
 
-    <a href="/admin/auth/twitch" style="display:block;text-align:center;background:#9146FF;color:#fff;padding:12px;border-radius:6px;font-weight:700;letter-spacing:.5px;text-decoration:none;margin-bottom:6px;">Mit Twitch anmelden oder registrieren</a>
+    <a id="tw-login" href="/admin/auth/twitch" style="display:block;text-align:center;background:#9146FF;color:#fff;padding:12px;border-radius:6px;font-weight:700;letter-spacing:.5px;text-decoration:none;margin-bottom:6px;">Mit Twitch anmelden oder registrieren</a>
     <div style="text-align:center;font-size:11px;color:var(--dim);margin:4px 0 0;line-height:1.5;">Noch kein Konto? Der erste Login legt alles an.</div>
     <div style="text-align:center;font-size:11px;color:var(--dim);margin:10px 0;">— oder —</div>
 
@@ -50,6 +50,12 @@
   var ERRMAP = { state:'Sitzung abgelaufen, bitte erneut.', token:'Twitch-Login fehlgeschlagen.', profile:'Twitch-Profil nicht lesbar.', notadmin:'Kein Zugang für diesen Account.', server:'Serverfehler beim Login.' };
   var qe = new URLSearchParams(location.search).get('err');
   if (qe) err.textContent = ERRMAP[qe] || ('Fehler: ' + qe);
+  // Ursprünglich angeforderte Seite an den Twitch-Login durchreichen —
+  // sonst landet man nach dem Login immer auf der Team-Seite.
+  var nx = new URLSearchParams(location.search).get('next');
+  if (nx && nx.indexOf('/') === 0 && nx.indexOf('//') !== 0) {
+    document.getElementById('tw-login').href = '/admin/auth/twitch?next=' + encodeURIComponent(nx);
+  }
   f.addEventListener('submit', async function(e) {
     e.preventDefault();
     err.textContent = '';
@@ -60,7 +66,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: document.getElementById('u').value, password: document.getElementById('p').value })
       });
-      if (r.ok) { window.location.href = '/admin/'; return; }
+      if (r.ok) { window.location.href = (nx && nx.indexOf('/') === 0 && nx.indexOf('//') !== 0) ? nx : '/admin/'; return; }
       var d = await r.json().catch(function(){ return {}; });
       err.textContent = d.error === 'invalid_credentials' ? 'Falscher Benutzername oder Passwort.' : ('Fehler: ' + (d.error || r.status));
     } catch (ex) {

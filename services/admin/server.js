@@ -91,7 +91,14 @@ function sessionFromReq(req) {
 // forward_auth target. 200 (+identity headers) if valid, else 302 → login.
 app.get('/auth/verify', (req, res) => {
   const sess = sessionFromReq(req);
-  if (!sess) return res.redirect(302, CFG.loginPath);
+  if (!sess) {
+    // Original-URL (Caddy: X-Forwarded-Uri) als next mitgeben — sonst
+    // landet man nach dem Login immer auf der Team-Seite statt der
+    // ursprünglich angeforderten Seite. Nur interne Pfade.
+    const orig = String(req.get('X-Forwarded-Uri') || '');
+    const safe = (orig.startsWith('/') && !orig.startsWith('//') && !orig.startsWith('/\\')) ? orig : '';
+    return res.redirect(302, CFG.loginPath + (safe ? '?next=' + encodeURIComponent(safe) : ''));
+  }
   res.set('X-Auth-User', sess.user);
   res.set('X-Auth-Role', sess.role);
   res.status(200).end();

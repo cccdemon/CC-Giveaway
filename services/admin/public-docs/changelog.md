@@ -7,6 +7,12 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 6. August 2026
 
+### Repariert: Login führt zur ursprünglich angeforderten Seite
+
+Wer ohne Anmeldung z. B. die Contest-Seite öffnete, landete nach dem
+Twitch-Login immer auf „Meine Teams" statt auf der angeforderten Seite.
+Die Ziel-Adresse wird jetzt durch den gesamten Login-Weg durchgereicht.
+
 ### Repariert: Contest- und Setz-Seite fanden laufende Giveaways nicht
 
 Wer die Contest- oder Setz-Seite öffnete, ohne vorher als Zuschauer erfasst
