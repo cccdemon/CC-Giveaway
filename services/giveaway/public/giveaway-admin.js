@@ -489,7 +489,7 @@ function requestData() {
   send({ event: 'gw_get_all' });
   send({ event: 'gw_cmd', cmd: 'gw_list_giveaways' });
   send({ event: 'gw_cmd', cmd: 'gw_get_multiplier' });
-  send({ event: 'gw_cmd', cmd: 'gw_get_stream_settings' });
+  send({ event: 'gw_cmd', cmd: 'gw_get_stream_settings', giveawayId: currentGiveaway });
   send({ event: 'gw_cmd', cmd: 'gw_get_channels' });
   send({ event: 'gw_cmd', cmd: 'gw_get_ingest_tokens' });
   send({ event: 'gw_cmd', cmd: 'gw_get_ai_settings' });
@@ -559,6 +559,14 @@ function handle(msg) {
       if (msg.type === 'ingest_tokens') { ingestTokens = {}; (msg.tokens || []).forEach(t => ingestTokens[t.channel] = t.token); renderIngest(); break; }
       if (msg.type === 'ingest_token')  { ingestTokens[msg.channel] = msg.token; renderIngest(); break; }
       if (msg.type === 'stream_settings') {
+        // Geltungsbereich anzeigen: eigene Werte des laufenden Giveaways
+        // oder Team-Vorgaben für den nächsten Start.
+        var scEl = document.getElementById('settings-scope');
+        if (scEl) scEl.textContent = (msg.scope && msg.scope !== 'defaults') ? 'DIESES GIVEAWAY' : 'VORGABEN';
+        var shEl = document.getElementById('settings-scope-hint');
+        if (shEl) shEl.textContent = (msg.scope && msg.scope !== 'defaults')
+          ? 'Gilt NUR für das laufende Giveaway (wirkt sofort). Die Vorgaben für künftige Giveaways änderst du bei geschlossenem Giveaway.'
+          : 'Vorgaben — gelten für das NÄCHSTE Giveaway. Beim Start bekommt jedes Giveaway eine eigene Kopie.';
         var apEl = document.getElementById('cfg-auto-pause');  if (apEl) apEl.checked = !!msg.autoPause;
         var arEl = document.getElementById('cfg-auto-resume'); if (arEl) arEl.checked = !!msg.autoResume;
         var fmEl = document.getElementById('cfg-follow-min');  if (fmEl && msg.followMin !== undefined) fmEl.value = msg.followMin;
@@ -657,7 +665,8 @@ function saveStreamSettings() {
   var dmRaw = parseFloat((document.getElementById('cfg-draw-min') || {}).value);
   var dm = isFinite(dmRaw) && dmRaw >= 0.05 ? Math.min(100, dmRaw) : 2;
   var num = function(id, def) { var v = parseFloat((document.getElementById(id) || {}).value); return isFinite(v) ? v : def; };
-  send({ event: 'gw_cmd', cmd: 'gw_set_stream_settings', autoPause: ap, autoResume: ar, followMin: fm, drawMinHours: dm,
+  send({ event: 'gw_cmd', cmd: 'gw_set_stream_settings', giveawayId: currentGiveaway,
+         autoPause: ap, autoResume: ar, followMin: fm, drawMinHours: dm,
          chatMinWords: num('cfg-chat-words', 4), chatBonusSec: num('cfg-chat-bonus', 2), chatCooldown: num('cfg-chat-cool', 10) });
   log('Einstellungen: folge≥' + fm + ' · Pause=' + ap + ' Start=' + ar, 'cyan');
 }

@@ -356,10 +356,11 @@ async function secondaryStatusLines(teamId, channel) {
 }
 
 async function giveawayInfoText(teamId) {
+  const sid = await wte.getSessionId(teamId);   // laufende Kampagne → deren Werte
   return CORE.infoText({
     keyword:    await redis.get(K.gwKeyword(teamId)) || '',
-    followMin:  await wte.getFollowMin(teamId),
-    drawMinSec: await wte.getDrawMinSec(teamId),
+    followMin:  await wte.getFollowMin(teamId, sid),
+    drawMinSec: await wte.getDrawMinSec(teamId, sid),
     host: chatHost(), teamId,
   });
 }
@@ -1149,23 +1150,30 @@ async function runAdminCmd(send, msg, meta, ctx) {
       break;
     }
     case 'gw_set_stream_settings': {
-      const ap = !!msg.autoPause, ar = !!msg.autoResume;
+      // Ziel bestimmen: gewählte offene Instanz → nur dieses Giveaway;
+      // laufende Kampagne → nur diese Kampagne; nichts offen → Team-Vorgaben
+      // (gelten ab dem nächsten Start, Copy-on-Open).
+      const sGid = validGid(msg.giveawayId)
+                || (await redis.get(K.gwOpen(teamId)) === 'true' ? await sid() : null);
+      const ap = !!msg.autoPause, ar = !!msg.autoResume;   // Auto-Pause bleibt team-weit (Stream-Ereignis)
       if (ap) await redis.set(K.cfgAutoPause(teamId), '1'); else await redis.del(K.cfgAutoPause(teamId));
       if (ar) await redis.set(K.cfgAutoResume(teamId), '1'); else await redis.del(K.cfgAutoResume(teamId));
-      let fm = await wte.getFollowMin(teamId);
-      const fmBefore = fm, dmBefore = await wte.getDrawMinSec(teamId);
-      if (msg.followMin !== undefined && msg.followMin !== null) fm = await wte.setFollowMin(teamId, msg.followMin);
+      let fm = await wte.getFollowMin(teamId, sGid);
+      const fmBefore = fm, dmBefore = await wte.getDrawMinSec(teamId, sGid);
+      if (msg.followMin !== undefined && msg.followMin !== null) fm = await wte.setFollowMin(teamId, msg.followMin, sGid);
       let dm = dmBefore;
-      if (msg.drawMinHours !== undefined && msg.drawMinHours !== null) dm = await wte.setDrawMinSec(teamId, parseFloat(msg.drawMinHours) * 3600);
-      const chatBefore = await wte.getChatConfig(teamId);
+      if (msg.drawMinHours !== undefined && msg.drawMinHours !== null) dm = await wte.setDrawMinSec(teamId, parseFloat(msg.drawMinHours) * 3600, sGid);
+      const chatBefore = await wte.getChatConfig(teamId, sGid);
       const chat = await wte.setChatConfig(teamId, {
-        bonusSec: msg.chatBonusSec, minWords: msg.chatMinWords, cooldown: msg.chatCooldown });
-      Object.assign(outcome, { followMinBefore: fmBefore, followMinAfter: fm,
+        bonusSec: msg.chatBonusSec, minWords: msg.chatMinWords, cooldown: msg.chatCooldown }, sGid);
+      Object.assign(outcome, { scope: sGid || 'team_defaults',
+                               followMinBefore: fmBefore, followMinAfter: fm,
                                coinBaseSecBefore: dmBefore, coinBaseSecAfter: dm,
                                chatBefore, chatAfter: chat });
-      send({ event: 'gw_ack', type: 'stream_settings', autoPause: ap, autoResume: ar, followMin: fm, drawMinHours: dm / 3600,
+      send({ event: 'gw_ack', type: 'stream_settings', scope: sGid || 'defaults',
+                autoPause: ap, autoResume: ar, followMin: fm, drawMinHours: dm / 3600,
                 chatBonusSec: chat.bonusSec, chatMinWords: chat.minWords, chatCooldown: chat.cooldown });
-      log('GW', `[${teamId}] settings: pause=${ap} resume=${ar} followMin=${fm} drawMin=${dm}s`);
+      log('GW', `[${teamId}] settings(${sGid || 'defaults'}): pause=${ap} resume=${ar} followMin=${fm} drawMin=${dm}s`);
       break;
     }
     case 'gw_get_ai_settings': {
@@ -1231,12 +1239,16 @@ async function runAdminCmd(send, msg, meta, ctx) {
       break;
     }
     case 'gw_get_stream_settings': {
-      const chat = await wte.getChatConfig(teamId);
-      send({ event: 'gw_ack', type: 'stream_settings',
+      // Effektive Werte der Auswahl: offene Instanz/Kampagne → deren eigene
+      // Werte; sonst die Team-Vorgaben für den nächsten Start.
+      const sGid = validGid(msg.giveawayId)
+                || (await redis.get(K.gwOpen(teamId)) === 'true' ? await sid() : null);
+      const chat = await wte.getChatConfig(teamId, sGid);
+      send({ event: 'gw_ack', type: 'stream_settings', scope: sGid || 'defaults',
         autoPause:  await redis.get(K.cfgAutoPause(teamId)) === '1',
         autoResume: await redis.get(K.cfgAutoResume(teamId)) === '1',
-        followMin:  await wte.getFollowMin(teamId),
-        drawMinHours: (await wte.getDrawMinSec(teamId)) / 3600,
+        followMin:  await wte.getFollowMin(teamId, sGid),
+        drawMinHours: (await wte.getDrawMinSec(teamId, sGid)) / 3600,
         chatBonusSec: chat.bonusSec, chatMinWords: chat.minWords, chatCooldown: chat.cooldown });
       break;
     }

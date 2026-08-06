@@ -7,6 +7,18 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 6. August 2026
 
+### Regeln gelten jetzt pro Giveaway — nicht mehr fürs ganze Team
+
+Die Einstellungen „folge X Kanälen", „1 Coin = X Stunden" und der Chat-Bonus
+waren bisher team-weit und wirkten sofort auf alles Laufende — das war
+schwer zu durchschauen. Jetzt bekommt **jedes Giveaway beim Start seine
+eigene Kopie** dieser Regeln. Die Karte im Dashboard heißt darum
+**„Regeln"** und zeigt an, was sie gerade bearbeitet: das **laufende
+Giveaway** (wirkt sofort, nur dort) oder die **Vorgaben** für den nächsten
+Start (wenn nichts läuft). Sie erscheint auch beim Los-Giveaway — dessen
+Guthaben-Umrechnung folgt denselben Regeln. KI-Chat-Bewertung und
+Auto-Pause/Start bleiben team-weit und sind entsprechend beschriftet.
+
 ### Neu: Gewinn-Abwicklung im Blick
 
 Neue Seite **Gewinn-Abwicklung** (Tools-Menü, nur Team-Owner): alle

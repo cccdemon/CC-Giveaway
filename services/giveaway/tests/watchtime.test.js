@@ -1031,6 +1031,35 @@ test('instanz: Anzeigename wird gespeichert, gelistet und mit aufgeraeumt', asyn
   assert.equal(await e.redis.get(K.gName(TEAM, 'sess_2')), null);
 });
 
+test('cfg: Regeln gelten pro Giveaway (Copy-on-Open, Vorgaben bleiben unberuehrt)', async () => {
+  const e = engine();
+  // Team-Vorgaben setzen, dann Kampagne oeffnen → eigene Kopie
+  await e.setCoinBaseSec(TEAM, 3600);
+  await e.setFollowMin(TEAM, 1);
+  await e.openGiveaway(TEAM, 'go', 'sess_1');
+  assert.equal(await e.getCoinBaseSec(TEAM, 'sess_1'), 3600);
+  // Vorgaben NACH dem Start aendern → laufendes Giveaway unberuehrt
+  await e.setCoinBaseSec(TEAM, 7200);
+  assert.equal(await e.getCoinBaseSec(TEAM, 'sess_1'), 3600);   // eigene Kopie
+  assert.equal(await e.getCoinBaseSec(TEAM), 7200);             // Vorgabe fuer den naechsten Start
+  // Live-Aenderung mit gid → wirkt nur auf dieses Giveaway
+  await e.setCoinBaseSec(TEAM, 1800, 'sess_1');
+  assert.equal(await e.getCoinBaseSec(TEAM, 'sess_1'), 1800);
+  assert.equal(await e.getCoinBaseSec(TEAM), 7200);
+  // Chat-Konfig genauso
+  await e.setChatConfig(TEAM, { minWords: 6 }, 'sess_1');
+  assert.equal((await e.getChatConfig(TEAM, 'sess_1')).minWords, 6);
+  assert.equal((await e.getChatConfig(TEAM)).minWords, 4);      // Default/Vorgabe
+  // TicketBuy-Instanz bekommt ebenfalls eine Kopie, Sofortverlosung nicht
+  await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy' });
+  assert.equal(await e.redis.get(K.gCfgCoinBase(TEAM, 'sess_2')), '7200');
+  await e.openGiveawayInstance(TEAM, 'sess_3', { keyword: 'x', core: 'CORE_CurrentViewers' });
+  assert.equal(await e.redis.get(K.gCfgCoinBase(TEAM, 'sess_3')), null);
+  // Cleanup raeumt die Kopie ab
+  await e.cleanupGiveawayInstance(TEAM, 'sess_2');
+  assert.equal(await e.redis.get(K.gCfgCoinBase(TEAM, 'sess_2')), null);
+});
+
 test('phase3c: Chat-Ansagen der Sofortverlosung sind schaltbar (announce-Flag)', async () => {
   const e = engine();
   // Default: an — kein Redis-Key, listGiveaways meldet announce=true.

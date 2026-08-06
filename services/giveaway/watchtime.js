@@ -94,6 +94,15 @@ const K = {
   gVoteState:(t, g) => `${K.GP(t, g)}vote_state`,// Contest: Voting closed|open|paused (Phase 6)
   gAnnounce: (t, g) => `${K.GP(t, g)}announce`,  // CV: Chat-Ansagen ('false' = stumm; Gewinner-Ansage bleibt)
   gName:     (t, g) => `${K.GP(t, g)}name`,      // frei vergebbarer Anzeigename der Instanz (Panel)
+  // Per-Giveaway-Konfiguration: beim Öffnen aus den Team-Vorgaben kopiert
+  // (copyCfgToInstance) — Änderungen wirken danach NUR auf dieses Giveaway.
+  // Team-Keys (cfg* oben) bleiben die Vorgaben für den nächsten Start und
+  // der Fallback für Alt-Instanzen ohne Kopie.
+  gCfgFollowMin: (t, g) => `${K.GP(t, g)}cfg:follow_min`,
+  gCfgCoinBase:  (t, g) => `${K.GP(t, g)}cfg:draw_min_sec`,
+  gCfgChatBonus: (t, g) => `${K.GP(t, g)}cfg:chat_bonus_sec`,
+  gCfgChatWords: (t, g) => `${K.GP(t, g)}cfg:chat_min_words`,
+  gCfgChatCool:  (t, g) => `${K.GP(t, g)}cfg:chat_cooldown`,
   abuseHist:  (t, u) => `${TP(t)}gw:abuse:hist:${u}`,     // letzte Msg-Hashes
   abuseTimes: (t, u) => `${TP(t)}gw:abuse:times:${u}`,    // letzte Timestamps (Rate)
 };
@@ -179,65 +188,88 @@ class WatchtimeEngine {
     const f = parseFloat(raw || '1');
     return (isFinite(f) && f > 0) ? f : 1;
   }
-  // Teilnahmebedingung: wie vielen Kanälen muss man folgen (per-Team, default MIN_CHANNELS).
-  async getFollowMin(teamId) {
-    const v = parseInt(await this.redis.get(K.cfgFollowMin(sanitizeTeamId(teamId))), 10);
+  // Per-Giveaway-Override lesen: g:-Key vor Team-Key. gid=null → Team-Wert
+  // (Vorgabe für den nächsten Start bzw. Fallback für Alt-Instanzen).
+  async _cfgRaw(teamId, gid, gKeyFn, teamKeyFn) {
+    const t = sanitizeTeamId(teamId);
+    if (gid) {
+      const v = await this.redis.get(gKeyFn(t, gid));
+      if (v !== null && v !== undefined) return v;
+    }
+    return this.redis.get(teamKeyFn(t));
+  }
+  // Teilnahmebedingung: wie vielen Kanälen muss man folgen (default MIN_CHANNELS).
+  async getFollowMin(teamId, gid = null) {
+    const v = parseInt(await this._cfgRaw(teamId, gid, K.gCfgFollowMin, K.cfgFollowMin), 10);
     return (Number.isFinite(v) && v >= 0) ? v : MIN_CHANNELS;
   }
-  async setFollowMin(teamId, n) {
+  async setFollowMin(teamId, n, gid = null) {
     const t = sanitizeTeamId(teamId);
     const c = CORE.config.followMin;   // Grenzen aus der Core-Deklaration
     const v = Math.max(c.min, Math.min(c.max, parseInt(n, 10) || 0));
-    await this.redis.set(K.cfgFollowMin(t), String(v));
+    await this.redis.set(gid ? K.gCfgFollowMin(t, gid) : K.cfgFollowMin(t), String(v));
     return v;
   }
-  // Coin-Basis (Sek.) = EIN Wert für zwei Dinge (per-Team):
+  // Coin-Basis (Sek.) = EIN Wert für zwei Dinge:
   //   1 Coin  = coinBaseSec Viewtime
   //   Lostopf = ab 1 Coin, also ebenfalls coinBaseSec Viewtime
   // Redis-Key bleibt cfgDrawMinSec (Abwärtskompatibilität bestehender Configs).
-  async getCoinBaseSec(teamId) {
-    const v = parseInt(await this.redis.get(K.cfgDrawMinSec(sanitizeTeamId(teamId))), 10);
+  async getCoinBaseSec(teamId, gid = null) {
+    const v = parseInt(await this._cfgRaw(teamId, gid, K.gCfgCoinBase, K.cfgDrawMinSec), 10);
     return (Number.isFinite(v) && v >= 60) ? v : SECS_PER_COIN;   // 7200 = 2h
   }
-  async setCoinBaseSec(teamId, sec) {
+  async setCoinBaseSec(teamId, sec, gid = null) {
     const t = sanitizeTeamId(teamId);
     const c = CORE.config.coinBaseSec;   // 1min..100h, aus der Core-Deklaration
     const v = Math.max(c.min, Math.min(c.max, Math.round(parseFloat(sec) || 0)));
-    await this.redis.set(K.cfgDrawMinSec(t), String(v));
+    await this.redis.set(gid ? K.gCfgCoinBase(t, gid) : K.cfgDrawMinSec(t), String(v));
     return v;
   }
   // Alias: Schwelle für den Lostopf == Coin-Basis (1 Coin).
-  async getDrawMinSec(teamId) { return this.getCoinBaseSec(teamId); }
-  async setDrawMinSec(teamId, sec) { return this.setCoinBaseSec(teamId, sec); }
+  async getDrawMinSec(teamId, gid = null) { return this.getCoinBaseSec(teamId, gid); }
+  async setDrawMinSec(teamId, sec, gid = null) { return this.setCoinBaseSec(teamId, sec, gid); }
 
-  // Chat-Bonus (per-Team). Defaults = die bisherigen Konstanten.
-  async getChatConfig(teamId) {
-    const t = sanitizeTeamId(teamId);
-    const num = async (key, def, min, max) => {
-      const v = parseFloat(await this.redis.get(key(t)));
+  // Chat-Bonus. Defaults = die bisherigen Konstanten.
+  async getChatConfig(teamId, gid = null) {
+    const num = async (gKey, tKey, def, min, max) => {
+      const v = parseFloat(await this._cfgRaw(teamId, gid, gKey, tKey));
       return (Number.isFinite(v) && v >= min && v <= max) ? v : def;
     };
     const cc = CORE.config;   // Defaults + Grenzen aus der Core-Deklaration
     return {
-      bonusSec: await num(K.cfgChatBonus, cc.chatBonusSec.def, cc.chatBonusSec.min, cc.chatBonusSec.max),
-      minWords: await num(K.cfgChatWords, cc.chatMinWords.def, cc.chatMinWords.min, cc.chatMinWords.max),
-      cooldown: await num(K.cfgChatCool,  cc.chatCooldown.def, cc.chatCooldown.min, cc.chatCooldown.max),
+      bonusSec: await num(K.gCfgChatBonus, K.cfgChatBonus, cc.chatBonusSec.def, cc.chatBonusSec.min, cc.chatBonusSec.max),
+      minWords: await num(K.gCfgChatWords, K.cfgChatWords, cc.chatMinWords.def, cc.chatMinWords.min, cc.chatMinWords.max),
+      cooldown: await num(K.gCfgChatCool,  K.cfgChatCool,  cc.chatCooldown.def, cc.chatCooldown.min, cc.chatCooldown.max),
     };
   }
-  async setChatConfig(teamId, cfg = {}) {
+  async setChatConfig(teamId, cfg = {}, gid = null) {
     const t = sanitizeTeamId(teamId);
-    const put = async (key, val, min, max, round) => {
+    const put = async (gKey, tKey, val, min, max, round) => {
       if (val === undefined || val === null || val === '') return;
       let v = parseFloat(val);
       if (!Number.isFinite(v)) return;
       v = Math.max(min, Math.min(max, round ? Math.round(v) : v));
-      await this.redis.set(key(t), String(v));
+      await this.redis.set(gid ? gKey(t, gid) : tKey(t), String(v));
     };
     const cc = CORE.config;
-    await put(K.cfgChatBonus, cfg.bonusSec, cc.chatBonusSec.min, cc.chatBonusSec.max, false);
-    await put(K.cfgChatWords, cfg.minWords, cc.chatMinWords.min, cc.chatMinWords.max, true);
-    await put(K.cfgChatCool,  cfg.cooldown, cc.chatCooldown.min, cc.chatCooldown.max, true);
-    return this.getChatConfig(t);
+    await put(K.gCfgChatBonus, K.cfgChatBonus, cfg.bonusSec, cc.chatBonusSec.min, cc.chatBonusSec.max, false);
+    await put(K.gCfgChatWords, K.cfgChatWords, cfg.minWords, cc.chatMinWords.min, cc.chatMinWords.max, true);
+    await put(K.gCfgChatCool,  K.cfgChatCool,  cfg.cooldown, cc.chatCooldown.min, cc.chatCooldown.max, true);
+    return this.getChatConfig(t, gid);
+  }
+
+  // Copy-on-Open: die aktuellen Team-Vorgaben werden die EIGENEN Werte des
+  // neuen Giveaways. Danach ändert die Settings-Karte nur noch dieses
+  // Giveaway; die Vorgaben bleiben für den nächsten Start unberührt.
+  async copyCfgToInstance(teamId, gid) {
+    const t = sanitizeTeamId(teamId);
+    if (!gid) return;
+    const chat = await this.getChatConfig(t);
+    await this.redis.set(K.gCfgFollowMin(t, gid), String(await this.getFollowMin(t)));
+    await this.redis.set(K.gCfgCoinBase(t, gid),  String(await this.getCoinBaseSec(t)));
+    await this.redis.set(K.gCfgChatBonus(t, gid), String(chat.bonusSec));
+    await this.redis.set(K.gCfgChatWords(t, gid), String(chat.minWords));
+    await this.redis.set(K.gCfgChatCool(t, gid),  String(chat.cooldown));
   }
   async setMultiplier(teamId, factor, seconds, explicitGid = undefined) {
     const t = sanitizeTeamId(teamId);
@@ -397,9 +429,12 @@ class WatchtimeEngine {
         continue;   // pausiert: kein Accrual, bleibt offen
       }
       const channels = await this.getChannels(t);
-      const base = await this.getCoinBaseSec(t);
       const multByGid = new Map();   // je Giveaway einmal lesen
-      for (const g of active) multByGid.set(g.gid, await this.getMultiplier(t, g.gid));
+      const baseByGid = new Map();   // Coin-Basis ist per-Giveaway (Copy-on-Open)
+      for (const g of active) {
+        multByGid.set(g.gid, await this.getMultiplier(t, g.gid));
+        baseByGid.set(g.gid, await this.getCoinBaseSec(t, g.gid));
+      }
       for (const ch of channels) {
         // Nur Cores mit Watchtime-Accrual (Sofortverlosung: accrual 'none').
         const targets = active.filter(g => (!g.channels || g.channels.includes(ch))
@@ -417,7 +452,7 @@ class WatchtimeEngine {
             const newSec = parseFloat(await this.redis.incrbyfloat(wKey, inc));
             await this._logEvent(t, u, 'tick', inc, g.gid, ch);
             updates.push({ teamId: t, giveawayId: g.gid, primary: g.primary, username: u,
-                           channel: ch, watchSec: newSec, coins: coinsFromSec(newSec, base) });
+                           channel: ch, watchSec: newSec, coins: coinsFromSec(newSec, baseByGid.get(g.gid)) });
           }
         }
       }
@@ -499,19 +534,19 @@ class WatchtimeEngine {
 
     if (!this._followAllowed(await this.redis.get(K.chFollows(t, ch, u)))) return { channel: ch, followed: false };
 
-    const chatCfg = await this.getChatConfig(t);
-    if (!chatCfg.bonusSec) return null;                      // Bonus abgeschaltet
-
-    // Sinnhaftigkeit entscheidet der Core: KI-Urteil wenn konfiguriert,
-    // sonst (und bei jedem KI-Fehler) Wortzählung. Einmal je Nachricht.
+    // KI-Urteil einmal je Nachricht — die Chat-Regeln (Wortschwelle, Bonus,
+    // Cooldown) sind seither per-Giveaway und werden je Instanz angewandt.
     const aiVerdict = this.aiJudge ? await this.aiJudge(t, cleanMsg) : null;
-    const { meaningful, judgedBy } = CORE.chatMeaningful({
-      message: cleanMsg, minWords: chatCfg.minWords, aiVerdict });
-    if (!meaningful) return null;
 
     const now = Math.floor(Date.now() / 1000);
     let primaryResult = null;
     for (const g of accrualTargets) {
+      const chatCfg = await this.getChatConfig(t, g.gid);
+      if (!chatCfg.bonusSec) continue;                      // Bonus für dieses Giveaway abgeschaltet
+      const { meaningful, judgedBy } = CORE.chatMeaningful({
+        message: cleanMsg, minWords: chatCfg.minWords, aiVerdict });
+      if (!meaningful) continue;
+
       const chatKey = this._kChatTs(t, g.gid, ch, u);
       if (g.primary && g.gid) await this._migrateKey(chatKey, K.chChatTs(t, ch, u));   // Cooldown läuft weiter
       const lastTs = await this.redis.get(chatKey);
@@ -526,7 +561,7 @@ class WatchtimeEngine {
       await this._logEvent(t, u, 'chat_bonus', inc, g.gid, ch);
       if (g.primary) {
         primaryResult = { added: inc, channel: ch, watchSec: newSec, judgedBy,
-                          coins: coinsFromSec(newSec, await this.getCoinBaseSec(t)) };
+                          coins: coinsFromSec(newSec, await this.getCoinBaseSec(t, g.gid)) };
       }
     }
     return primaryResult;
@@ -619,8 +654,8 @@ class WatchtimeEngine {
       registered: (await rd(K.gReg(t, gid, u), K.gwRegistered(t, u))) === '1',
       banned:     await this.redis.get(K.gwBanned(t, u)) === '1',
       cfg: {
-        coinBaseSec: await this.getCoinBaseSec(t),
-        followMin:   await this.getFollowMin(t),
+        coinBaseSec: await this.getCoinBaseSec(t, gid),
+        followMin:   await this.getFollowMin(t, gid),
       },
     });
   }
@@ -721,6 +756,8 @@ class WatchtimeEngine {
     await this.redis.sadd(K.gwSet(t), sessionId);
     await this.redis.set(K.gOpen(t, sessionId), 'true');
     await this.redis.del(K.gPaused(t, sessionId));
+    // Team-Vorgaben werden die eigenen Werte dieses Giveaways (Copy-on-Open).
+    await this.copyCfgToInstance(t, sessionId);
     await this.redis.del(K.gwChannels(t)); // Kanal-Cache invalidieren
     console.log(`[WTE] [${t}] opened, keyword="${keyword}", session=${sessionId}`);
   }
@@ -760,6 +797,9 @@ class WatchtimeEngine {
     // Chat-Ansagen abschaltbar (Sofortverlosung): nur die Abweichung speichern.
     if (announce === false) await this.redis.set(K.gAnnounce(t, gid), 'false');
     if (name) await this.redis.set(K.gName(t, gid), sanitizeStr(name, 40).trim());
+    // Copy-on-Open nur für Mechaniken mit Watchtime-Accrual — die anderen
+    // lesen diese Werte nie.
+    if (getCore(core).accrual !== 'none') await this.copyCfgToInstance(t, gid);
     await this.redis.sadd(K.openTeams(), t);
     console.log(`[WTE] [${t}] instance ${gid} opened, core=${core || CORE.id}, keyword="${keyword}"`);
   }
@@ -937,9 +977,9 @@ class WatchtimeEngine {
   async availableCredit(teamId, username) {
     const t = sanitizeTeamId(teamId), u = sanitizeUsername(username);
     let avail = await this.credit.balance(t, u);
-    const base = await this.getCoinBaseSec(t);
     for (const g of await this._activeGiveaways(t)) {
       if (getCore(g.core).id !== 'CORE_TicketBuy' || !g.gid) continue;
+      const base = await this.getCoinBaseSec(t, g.gid);
       const channels = g.channels || await this.getChannels(t);
       let sec = 0;
       for (const ch of channels) sec += parseFloat(await this.redis.get(K.gWatch(t, g.gid, ch, u)) || '0');
@@ -992,7 +1032,7 @@ class WatchtimeEngine {
   // der Zustand lebt ab jetzt ausschließlich im Journal.
   async settleTicketBuyInstance(teamId, gid) {
     const t = sanitizeTeamId(teamId);
-    const base = await this.getCoinBaseSec(t);
+    const base = await this.getCoinBaseSec(t, gid);
     let channels = null;
     try { const raw = await this.redis.get(K.gChanList(t, gid)); if (raw) channels = JSON.parse(raw); } catch { /* alle */ }
     if (!Array.isArray(channels) || !channels.length) channels = await this.getChannels(t);
@@ -1146,7 +1186,9 @@ class WatchtimeEngine {
     }
     pipeline.del(K.gOpen(t, gid), K.gPaused(t, gid), K.gKw(t, gid), K.gChanList(t, gid),
                  K.gCore(t, gid), K.gWinEnd(t, gid), K.gMult(t, gid), K.gWagerCmd(t, gid),
-                 K.gMinWatch(t, gid), K.gVoteState(t, gid), K.gAnnounce(t, gid), K.gName(t, gid));
+                 K.gMinWatch(t, gid), K.gVoteState(t, gid), K.gAnnounce(t, gid), K.gName(t, gid),
+                 K.gCfgFollowMin(t, gid), K.gCfgCoinBase(t, gid),
+                 K.gCfgChatBonus(t, gid), K.gCfgChatWords(t, gid), K.gCfgChatCool(t, gid));
     pipeline.srem(K.gwSet(t), gid);
     await pipeline.exec();
     console.log(`[WTE] [${t}] instance ${gid} cleaned`);
@@ -1317,7 +1359,8 @@ class WatchtimeEngine {
     pipeline.del(K.gwKeyword(t));
     pipeline.del(K.gwSessionId(t));
     pipeline.del(K.gwMult(t));
-    if (gid) pipeline.del(K.gMult(t, gid));
+    if (gid) pipeline.del(K.gMult(t, gid), K.gCfgFollowMin(t, gid), K.gCfgCoinBase(t, gid),
+                          K.gCfgChatBonus(t, gid), K.gCfgChatWords(t, gid), K.gCfgChatCool(t, gid));
     pipeline.del(K.gwChannels(t));
     await pipeline.exec();
     console.log(`[WTE] [${t}] reset`);
