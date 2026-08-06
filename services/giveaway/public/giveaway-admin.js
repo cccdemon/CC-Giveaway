@@ -469,6 +469,7 @@ var IW_TYPES = {
 
 function openInstance() {
   iwType = null;
+  iwDraftId = null;
   document.querySelectorAll('.iw-card').forEach(function(c){ c.classList.remove('sel'); });
   document.getElementById('iw-fields').style.display = 'none';
   document.getElementById('iw-err').textContent = '';
@@ -511,11 +512,14 @@ function iwSelect(type) {
   var el = document.getElementById(first); if (el) el.focus();
 }
 
-function iwStart() {
-  if (!iwType) return;
+// Formularstand einsammeln + validieren — gemeinsame Basis für „starten"
+// und „als Entwurf speichern". null = Validierung fehlgeschlagen (Meldung
+// steht dann in #iw-err).
+function iwCollect() {
+  if (!iwType) return null;
   var t = IW_TYPES[iwType];
   var err = document.getElementById('iw-err');
-  var payload = { event: 'gw_cmd', cmd: 'gw_open_instance', keyword: '' };
+  var payload = { keyword: '' };
   if (t.core) payload.core = t.core;
 
   // Gewinn ist Pflicht — ausser beim Los-Giveaway (Preise = Gewinne).
@@ -525,7 +529,7 @@ function iwStart() {
     if (!payload.prize) {
       err.textContent = 'Bitte eintragen, was verlost wird (Gewinn).';
       document.getElementById('iw-prize').focus();
-      return;
+      return null;
     }
   }
 
@@ -534,7 +538,7 @@ function iwStart() {
     if (iwType === 'instant' && !payload.keyword) {
       err.textContent = 'Die Sofortverlosung braucht ein Keyword — ohne Anmeldung kein Teilnehmer.';
       document.getElementById('iw-keyword').focus();
-      return;
+      return null;
     }
   }
   if (t.fields.window) {
@@ -550,10 +554,89 @@ function iwStart() {
     var iName = (document.getElementById('iw-name') || {}).value || '';
     if (iName.trim()) payload.name = iName.trim();
   }
+  return payload;
+}
 
+function iwStart() {
+  var payload = iwCollect();
+  if (!payload) return;
+  payload.event = 'gw_cmd';
+  payload.cmd = 'gw_open_instance';
+  if (iwDraftId) payload.draftId = iwDraftId;   // Server räumt den Entwurf nach dem Start ab
   send(payload);
   iwClose();
   log('Instanz wird gestartet …', 'cyan');
+}
+
+// ── Entwürfe: vorbereiten ohne zu starten ────────────────
+var iwDraftId = null;   // gesetzt, wenn das Modal einen Entwurf bearbeitet
+
+function iwSaveDraft() {
+  var payload = iwCollect();
+  if (!payload) return;
+  var config = Object.assign({}, payload, { type: iwType });
+  delete config.core;
+  send({ event: 'gw_cmd', cmd: 'gw_save_draft', draftId: iwDraftId || undefined, config: config });
+  iwClose();
+}
+
+var drafts = [];
+function loadDrafts() { send({ event: 'gw_cmd', cmd: 'gw_list_drafts' }); }
+
+var DRAFT_ICON = { campaign: '📊', instant: '⚡', ticketbuy: '🎟', contest: '📸' };
+function renderDrafts() {
+  var card = document.getElementById('card-drafts');
+  var host = document.getElementById('draft-list');
+  if (!card || !host) return;
+  card.style.display = drafts.length ? '' : 'none';
+  host.innerHTML = drafts.map(function(d){
+    var c = d.config || {};
+    var label = (DRAFT_ICON[c.type] || '🎁') + ' ' + esc(c.name || c.prize || c.keyword || ('Entwurf #' + d.id));
+    return '<div class="tb-prize"><span class="t" title="' + esc((c.prize || '') + (c.sponsor ? ' — ' + c.sponsor : '')) + '">'
+      + label + '</span>'
+      + '<button class="btn btn-cyan btn-sm btn-mini" onclick="draftEdit(' + d.id + ')" title="Im Modal bearbeiten">✎</button>'
+      + '<button class="btn btn-red btn-sm btn-mini" onclick="draftDelete(' + d.id + ')" title="Entwurf löschen">✖</button>'
+      + '<button class="btn btn-solid btn-sm" onclick="draftStart(' + d.id + ')" title="Jetzt starten">▶ START</button>'
+      + '</div>';
+  }).join('') || '<div class="wsc-empty">Keine Entwürfe.</div>';
+}
+
+function draftStart(id) {
+  var d = drafts.find(function(x){ return x.id === id; });
+  if (!d) return;
+  var c = d.config || {};
+  var t = IW_TYPES[c.type] || IW_TYPES.campaign;
+  var payload = Object.assign({ event: 'gw_cmd', cmd: 'gw_open_instance', draftId: id }, c);
+  delete payload.type;
+  if (t.core) payload.core = t.core; else delete payload.core;
+  send(payload);
+  log('Entwurf wird gestartet …', 'cyan');
+}
+
+function draftEdit(id) {
+  var d = drafts.find(function(x){ return x.id === id; });
+  if (!d) return;
+  var c = d.config || {};
+  openInstance();
+  iwDraftId = id;
+  iwSelect(c.type || 'campaign');
+  var set = function(elId, v) { var el = document.getElementById(elId); if (el) el.value = v; };
+  set('iw-prize', c.prize || '');
+  set('iw-sponsor', c.sponsor || '');
+  set('iw-name', c.name || '');
+  set('iw-keyword', c.keyword || '');
+  set('iw-window', c.windowSec ? Math.round(c.windowSec / 60 * 10) / 10 : 1);
+  set('iw-wagercmd', c.wagerCmd || '');
+  set('iw-minwatch', c.minWatchSec ? Math.round(c.minWatchSec / 60) : 10);
+  var ann = document.getElementById('iw-announce'); if (ann) ann.checked = c.announce !== false;
+  Array.prototype.forEach.call(document.querySelectorAll('#iw-channels input'), function(cb){
+    cb.checked = Array.isArray(c.channels) && c.channels.indexOf(cb.value) >= 0;
+  });
+}
+
+function draftDelete(id) {
+  if (!confirm('Entwurf #' + id + ' löschen?')) return;
+  send({ event: 'gw_cmd', cmd: 'gw_delete_draft', draftId: id });
 }
 
 document.addEventListener('keydown', function(e) {
@@ -614,7 +697,7 @@ function closeInstance() {
   send({ event: 'gw_cmd', cmd: 'gw_close_instance', giveawayId: currentGiveaway });
 }
 
-function refresh() { requestData(); loadKeyword(); loadHistory(); loadAudit(); loadClaims(); loadArchiveCard(); }
+function refresh() { requestData(); loadKeyword(); loadHistory(); loadAudit(); loadClaims(); loadArchiveCard(); loadDrafts(); }
 
 // ── Vergangene Giveaways (Rail-Karte) ─────────────────────
 async function loadArchiveCard() {
@@ -779,6 +862,7 @@ function handle(msg) {
       log(`ACK: ${msg.type} -> ${msg.user || msg.keyword || msg.winner || msg.channel || ''}`, 'cyan');
       // Read-only Antworten (NIE requestData → sonst Endlosschleife)
       if (msg.type === 'giveaways')     { giveawayList = msg.giveaways || []; renderGiveawaySelect(); break; }
+      if (msg.type === 'drafts')        { drafts = msg.drafts || []; renderDrafts(); break; }
       if (msg.type === 'entries')       { renderEntries(msg); break; }
       if (msg.type === 'prizes')        { renderPrizes(msg.prizes || []); break; }
       if (msg.type === 'instant_window') { log('Anmeldefenster offen: ' + msg.windowSec + 's', 'gold'); liveRefresh(); break; }
@@ -836,9 +920,11 @@ function handle(msg) {
         var uv = (msg.unverified||[]).length ? ' | unverifiziert: ' + msg.unverified.join(',') : '';
         log('Follows geprüft: ' + (msg.verified||[]).length + ' Kanäle, ' + (msg.mismatches||0) + ' Änderungen' + uv, uv ? 'gold' : 'cyan');
       }
-      if (msg.type === 'instance_opened') log('Zusatz-Giveaway gestartet: ' + (msg.giveawayId || '?')
+      if (msg.type === 'instance_opened') { log('Zusatz-Giveaway gestartet: ' + (msg.giveawayId || '?')
             + (msg.keyword ? ' (Keyword „' + msg.keyword + '")' : '')
-            + (msg.wagerCmd ? ' (Setzen: „' + msg.wagerCmd + '")' : ''), 'gold');
+            + (msg.wagerCmd ? ' (Setzen: „' + msg.wagerCmd + '")' : ''), 'gold'); loadDrafts(); }
+      if (msg.type === 'draft_saved')   { log('Entwurf #' + msg.draftId + ' gespeichert — Start per ▶ in der Karte VORBEREITETE GIVEAWAYS', 'gold'); loadDrafts(); }
+      if (msg.type === 'draft_deleted') { log('Entwurf #' + msg.draftId + ' gelöscht', 'gold'); loadDrafts(); }
       if (msg.type === 'prize_added')   { log('Preis #' + msg.prizeId + ' angelegt: „' + (msg.title || '') + '"', 'gold'); tbHandleImageAfterSave(msg.prizeId); tbLoadPrizes(); }
       if (msg.type === 'prize_edited')  { log('Preis #' + msg.prizeId + ' korrigiert', 'gold'); tbHandleImageAfterSave(msg.prizeId); tbLoadPrizes(); }
       if (msg.type === 'prize_cancelled') { log('Preis #' + msg.prizeId + ' storniert — ' + (msg.refundedUsers || 0) + ' Einsätze zurückgebucht', 'gold'); tbLoadPrizes(); }
@@ -1184,6 +1270,48 @@ function applyPrivacy() {
   if (document.getElementById('tbl'))         renderTable();
   if (document.getElementById('ingest-list')) renderIngest();
   if (document.getElementById('audit-list'))  renderAudit();
+}
+
+// ── Hilfemodus: Erklärungen an den Bedienelementen ────────
+// Quelle der Texte sind data-help-Attribute im HTML — sie beschreiben die
+// AKTUELLE Implementation (bei Verhaltensänderungen mitpflegen!). Für
+// Zeilen-Layouts (cmdbar/actionstrip) landet die Notiz DANACH, sonst im
+// Element. Volle Doku: /admin/funktionsweise.html (öffentlich).
+var helpOn = localStorage.getItem('cc_help') === '1';
+function toggleHelp() {
+  helpOn = !helpOn;
+  localStorage.setItem('cc_help', helpOn ? '1' : '0');
+  applyHelp();
+  log(helpOn ? 'Hilfemodus AN — Erklärungen eingeblendet' : 'Hilfemodus AUS', 'gold');
+}
+function applyHelp() {
+  var badge = document.getElementById('help-badge');
+  if (badge) {
+    badge.className = 'ws-badge priv ' + (helpOn ? 'on' : 'off');
+    badge.textContent = '？ HILFE: ' + (helpOn ? 'AN' : 'AUS');
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.help-note'), function(n){ n.remove(); });
+  if (!helpOn) return;
+  Array.prototype.forEach.call(document.querySelectorAll('[data-help]'), function(el){
+    var n = document.createElement('div');
+    n.className = 'help-note';
+    n.textContent = el.getAttribute('data-help');
+    if (el.classList.contains('cmdbar') || el.classList.contains('actionstrip')) {
+      el.parentNode.insertBefore(n, el.nextSibling);
+    } else {
+      el.appendChild(n);
+    }
+  });
+  // Kopf-Hinweis mit Link zur vollen Doku.
+  var app = document.querySelector('.gw-app');
+  if (app) {
+    var top = document.createElement('div');
+    top.className = 'help-note';
+    top.innerHTML = 'Hilfemodus aktiv — Erklärungen stehen an jedem Bereich, Details je Knopf im Maus-Tooltip. '
+      + 'Die komplette Funktionsweise (alle Mechaniken, Fairness, Nachweis): '
+      + '<a href="/admin/funktionsweise.html" target="_blank" rel="noopener">So funktioniert\'s</a>.';
+    app.insertBefore(top, app.firstChild);
+  }
 }
 
 // Pseudonym bleibt gleich, egal wie sortiert/gefiltert wird: Position in der
@@ -1697,6 +1825,7 @@ function clearLog() {
 if (!window._sfUnitTests) {
   applyPrivacy();               // vor connectWS: Zustand steht, bevor Daten kommen
   updateStats();                // Kacheln sofort zeigen (Nullstand, Kampagnen-Layout)
+  applyHelp();                  // Hilfemodus-Zustand aus localStorage
   connectWS();
   log('Admin-Panel gestartet', 'cyan');
   if (privacyOn) log('Streamermodus aktiv (gespeichert)', 'gold');

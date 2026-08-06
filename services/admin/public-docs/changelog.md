@@ -21,6 +21,19 @@ außerdem das **kumulierte Kampagnen-Dossier**: Gesamtzeitraum, alle
 Ziehungen, Gewinnermeldungen und der Teilnehmerstand über alle Sitzungen
 (je Zuschauer der Endstand — keine Doppelzählung).
 
+### Giveaways vorbereiten, Hilfemodus und „So funktioniert's"
+
+Drei Neuerungen für die Bedienung: **(1) Giveaways vorbereiten** — im
+Start-Modal gibt es jetzt „Als Entwurf speichern": vor dem Stream anlegen,
+im Stream per ▶ aus der Karte „Vorbereitete Giveaways" starten. **(2)
+Hilfemodus im Dashboard** — der Schalter „？ HILFE" in der Kopfzeile
+blendet an jedem Bereich eine Erklärung ein, die die aktuelle
+Funktionsweise beschreibt. **(3) Neue öffentliche Seite
+[So funktioniert's](/admin/funktionsweise.html)** — die genaue, aber
+verständliche Erklärung des gesamten Systems und jeder einzelnen Mechanik;
+von der Startseite aus verlinkt (Klick auf eine Mechanik-Karte springt
+direkt zur passenden Erklärung).
+
 ### Dashboard: Gewinn-Abwicklung und vergangene Giveaways direkt sichtbar
 
 Zwei neue Karten in der rechten Spalte des Dashboards: **Gewinn-Abwicklung**

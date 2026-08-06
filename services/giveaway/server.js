@@ -249,7 +249,7 @@ async function memberChannel(login, teamId) {
 const AUDIT_SKIP = new Set([
   'gw_get_channels', 'gw_get_multiplier', 'gw_get_stream_settings',
   'gw_get_keyword', 'gw_get_ingest_tokens', 'gw_get_ai_settings', 'gw_list_ai_models',
-  'gw_list_giveaways', 'gw_list_prizes', 'gw_list_entries',
+  'gw_list_giveaways', 'gw_list_prizes', 'gw_list_entries', 'gw_list_drafts',
 ]);
 
 // Obergrenze gleichzeitiger Giveaways je Team (Entscheidung §10.2:
@@ -842,6 +842,65 @@ async function runAdminCmd(send, msg, meta, ctx) {
              maxParallel: MAX_PARALLEL_GIVEAWAYS });
       break;
     }
+    // ── Entwürfe: Giveaway VOR dem Stream vorbereiten, später starten.
+    // Team-weit (PG), Owner-only (nicht in MEMBER_CMDS). Der Start läuft
+    // über gw_open_instance mit draftId — der Entwurf wird dabei verbraucht.
+    case 'gw_save_draft': {
+      const cfg = (msg.config && typeof msg.config === 'object') ? msg.config : {};
+      const dType = ['campaign', 'instant', 'ticketbuy', 'contest'].includes(cfg.type) ? cfg.type : null;
+      if (!dType) {
+        Object.assign(outcome, { error: 'bad_type' });
+        send({ event: 'gw_ack', type: 'error', error: 'Unbekannter Giveaway-Typ.' });
+        break;
+      }
+      const clean = {
+        type: dType,
+        prize: sanitizeStr(cfg.prize || '', 100).trim(),
+        sponsor: sanitizeStr(cfg.sponsor || '', 100).trim(),
+        name: sanitizeStr(cfg.name || '', 40).trim(),
+        keyword: sanitizeStr(cfg.keyword || '', 100).trim(),
+        windowSec: Math.max(0, parseInt(cfg.windowSec, 10) || 0),
+        announce: cfg.announce !== false,
+        wagerCmd: sanitizeStr(cfg.wagerCmd || '', 30).trim().toLowerCase(),
+        minWatchSec: Math.max(0, parseInt(cfg.minWatchSec, 10) || 0),
+        channels: Array.isArray(cfg.channels) ? cfg.channels.map(sanitizeChannel).filter(Boolean).slice(0, 20) : [],
+      };
+      const updId = parseInt(msg.draftId, 10);
+      let draftId = null;
+      if (Number.isFinite(updId) && updId > 0) {
+        const u = await pg.query(`UPDATE giveaway_drafts SET config=$1 WHERE id=$2 AND team_id=$3 RETURNING id`,
+          [JSON.stringify(clean), updId, teamId]);
+        if (u.rowCount) draftId = u.rows[0].id;
+      }
+      if (!draftId) {
+        const ins = await pg.query(`INSERT INTO giveaway_drafts (team_id, config, created_by) VALUES ($1,$2,$3) RETURNING id`,
+          [teamId, JSON.stringify(clean), meta.authUser]);
+        draftId = ins.rows[0].id;
+      }
+      Object.assign(outcome, { draftId, draftType: dType, name: clean.name || undefined });
+      send({ event: 'gw_ack', type: 'draft_saved', draftId });
+      break;
+    }
+    case 'gw_list_drafts': {
+      const r = await pg.query(
+        `SELECT id, config, created_by, created_at FROM giveaway_drafts WHERE team_id=$1 ORDER BY id DESC LIMIT 50`, [teamId]);
+      send({ event: 'gw_ack', type: 'drafts', drafts: r.rows });
+      break;
+    }
+    case 'gw_delete_draft': {
+      const delId = parseInt(msg.draftId, 10);
+      const r = Number.isFinite(delId)
+        ? await pg.query(`DELETE FROM giveaway_drafts WHERE id=$1 AND team_id=$2 RETURNING id`, [delId, teamId])
+        : { rowCount: 0 };
+      if (!r.rowCount) {
+        Object.assign(outcome, { error: 'not_found', draftId: msg.draftId });
+        send({ event: 'gw_ack', type: 'error', error: 'Diesen Entwurf gibt es nicht.' });
+        break;
+      }
+      Object.assign(outcome, { draftId: delId });
+      send({ event: 'gw_ack', type: 'draft_deleted', draftId: delId });
+      break;
+    }
     case 'gw_open_instance': {
       // Dieselben Rechts-Gates wie gw_open — jede Instanz ist ein Gewinnspiel.
       if (!await teamActive(teamId)) {
@@ -947,6 +1006,14 @@ async function runAdminCmd(send, msg, meta, ctx) {
         : coreId === 'CORE_TicketBuy' ? coreMod.infoText({ cmd: wagerCmd, url: publicHost() + '/viewer/wager' })
         : '🎁 Zusätzliches Giveaway gestartet!' + (keyword ? ` Mitmachen: schreib "${keyword}" im Chat.` : ''))
         + prizeLine(iPrize, iSponsor));
+      // Start aus einem Entwurf: der Entwurf ist damit verbraucht.
+      const usedDraft = parseInt(msg.draftId, 10);
+      if (Number.isFinite(usedDraft) && usedDraft > 0) {
+        try {
+          await pg.query(`DELETE FROM giveaway_drafts WHERE id=$1 AND team_id=$2`, [usedDraft, teamId]);
+          Object.assign(outcome, { draftId: usedDraft });
+        } catch (e) { logErr('GW', 'draft cleanup:', e.message); }
+      }
       send({ event: 'gw_ack', type: 'instance_opened', giveawayId: gid, keyword, core: coreId,
              windowSec: windowSec || null, wagerCmd: wagerCmd || null,
              channels: channels.length ? channels : null });
@@ -2889,6 +2956,16 @@ async function ensureSchema() {
   // 'external' = Owner hat eine Meldung außerhalb der Plattform erfasst
   // (WhatsApp/Discord/live) — im Nachweis von der Selbstmeldung unterscheidbar.
   await pg.query(`ALTER TABLE draw_claims ADD COLUMN IF NOT EXISTS claim_source TEXT`);
+  // Entwürfe: Giveaway vor dem Stream vorbereiten (Team-weit, Owner-only).
+  // Kein Personenbezug — config enthält nur die Formularwerte des Modals.
+  await pg.query(`
+    CREATE TABLE IF NOT EXISTS giveaway_drafts (
+      id BIGSERIAL PRIMARY KEY,
+      team_id    TEXT NOT NULL,
+      config     JSONB NOT NULL,
+      created_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_drafts_team ON giveaway_drafts(team_id)`);
   // Chat-KI pro Team. ai_key_enc ist AES-256-GCM; Schluessel aus app_secrets.
   await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS ai_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
   await pg.query(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS ai_provider TEXT`);

@@ -33,7 +33,15 @@
       if (inCode) { out.push(esc(l)); continue; }
 
       var h = l.match(/^(#{1,4})\s+(.*)/);
-      if (h) { cl(); out.push('<h' + h[1].length + '>' + inline(h[2]) + '</h' + h[1].length + '>'); continue; }
+      if (h) {
+        cl();
+        // Anker-ID aus der Überschrift — für Direktlinks wie #sofortverlosung.
+        var hid = h[2].toLowerCase()
+          .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+          .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+        out.push('<h' + h[1].length + (hid ? ' id="' + hid + '"' : '') + '>' + inline(h[2]) + '</h' + h[1].length + '>');
+        continue;
+      }
 
       if (/^\s*(---|___|\*\*\*)\s*$/.test(l)) { cl(); out.push('<hr>'); continue; }
 
@@ -85,11 +93,16 @@
 
   function load(name, elId) {
     var el = document.getElementById(elId || 'doc');
-    if (!el) return;
-    fetch('/admin/pub/doc/' + encodeURIComponent(name))
+    if (!el) return Promise.resolve();
+    return fetch('/admin/pub/doc/' + encodeURIComponent(name))
       .then(function (r) { return r.json(); })
       .then(function (d) {
         el.innerHTML = d && d.content ? mdToHtml(d.content) : '<span class="err">Nicht verfügbar.</span>';
+        // Anker aus der URL erst NACH dem Rendern anspringen.
+        if (location.hash) {
+          var t = document.getElementById(location.hash.slice(1));
+          if (t) t.scrollIntoView();
+        }
       })
       .catch(function () { el.innerHTML = '<span class="err">Ladefehler.</span>'; });
   }

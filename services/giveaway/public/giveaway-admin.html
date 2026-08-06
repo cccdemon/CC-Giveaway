@@ -41,6 +41,12 @@
   /* Zustandsmaschine: ungültige Hauptaktionen sind sichtbar, aber gesperrt */
   .actionstrip .btn[disabled] { opacity:.35; cursor:not-allowed; filter:grayscale(1); }
   .tb-prize .btn-mini, .sc-entry .btn-mini { padding:2px 6px; font-size:11px; line-height:1; }
+  /* Hilfemodus: eingeblendete Erklärungen an den Bedienelementen */
+  .help-note { display:block; margin-top:8px; padding:7px 9px; border:1px dashed rgba(240,165,0,.45);
+               border-radius:6px; background:rgba(240,165,0,.06); color:var(--gold,#f0a500);
+               font-size:10.5px; line-height:1.55; font-weight:normal; text-transform:none; letter-spacing:0; }
+  .help-note::before { content:'？ '; }
+  .help-note a { color:var(--cyan,#00d4ff); }
 
   /* ── Instanz-Assistent (ersetzt die prompt()-Kette) ────── */
   .iw-overlay { position:fixed; inset:0; z-index:900; display:flex; align-items:center;
@@ -90,7 +96,7 @@
 <div class="gw-app">
 
   <!-- ── Command bar (immer sichtbar) ─────────────────── -->
-  <div class="cmdbar">
+  <div class="cmdbar" data-help="Kopfleiste: Team wählen · Giveaway-Auswahl (leer = Hauptkampagne; Zusatz-Instanzen mit Teilnehmerzahl und Startzeit) · ＋ startet oder plant ein Zusatz-Giveaway · ✕ schließt die gewählte Instanz. Die Kacheln zeigen Kennzahlen passend zur gewählten Mechanik.">
     <div class="cb-left">
       <select id="team-select" onchange="onTeamChange()" title="Team"><option>— lädt —</option></select>
       <select id="gw-select" onchange="onGiveawayChange()" title="Giveaway (Kampagne oder Zusatz-Instanz)"><option value="">— Kampagne —</option></select>
@@ -101,6 +107,8 @@
     <!-- Kacheln je Mechanik — updateStats() rendert passend zum Core -->
     <div class="cb-stats" id="cb-stats"></div>
     <div class="cb-right">
+      <div id="help-badge" class="ws-badge priv off" onclick="toggleHelp()"
+           title="Hilfemodus: blendet Erklärungen an den Bedienelementen ein/aus — volle Doku unter /admin/funktionsweise.html">？ HILFE: AUS</div>
       <div id="privacy-badge" class="ws-badge priv off" onclick="togglePrivacy()"
            title="Streamermodus: blendet Zuschauernamen und Tokens aus – für Screenshare / Stream">&#128065; STREAMERMODUS: AUS</div>
       <div id="ws-badge" class="ws-badge off" onclick="reconnect()">WS: OFFLINE</div>
@@ -108,7 +116,7 @@
   </div>
 
   <!-- ── Primäraktionen ───────────────────────────────── -->
-  <div class="actionstrip">
+  <div class="actionstrip" data-help="Hauptaktionen für die aktuelle Auswahl: Gewinn (Pflicht) + Sponsor gelten beim ÖFFNEN der Kampagne · FOLLOWS PRÜFEN verifiziert Follows direkt bei Twitch · ★ zieht den Gewinner (das Los-Giveaway zieht stattdessen je Preis in der Preis-Karte) · 📸 BILDER PRÜFEN öffnet die Contest-Moderation · PAUSE stoppt nur das Sammeln, SCHLIESSEN beendet das gewählte Giveaway endgültig.">
     <input type="text" id="prize-input" class="vis-campaign-only" placeholder="Gewinn (Pflicht — z.B. Steam-Key)" maxlength="100">
     <input type="text" id="sponsor-input" class="vis-campaign-only" placeholder="Sponsor / bereitgestellt von (optional)" maxlength="100">
     <button class="btn btn-gold vis-campaign-only" id="btn-verify" onclick="verifyFollows()">FOLLOWS PRÜFEN</button>
@@ -126,7 +134,7 @@
   <div class="gw-grid">
 
     <!-- Teilnehmer -->
-    <div class="gw-main">
+    <div class="gw-main" data-help="Teilnehmer der aktuellen Auswahl. Die Spalten passen sich der Mechanik an: Kampagne = Coins + Viewtime je Kanal · Sofortverlosung = Anwesend/Im Topf · Los-Giveaway = Einsatz/Guthaben · Contest = Screenshot/Punkte/Stimmen. Zeilen-Aktionen: ±1 Coin (nur Kampagne, wird auditiert) und BAN. Badges: LOSTOPF = alle Bedingungen erfüllt, VORGEMERKT = angemeldet, Bedingung fehlt noch.">
       <div class="gw-main-head">
         <span class="panel-label">TEILNEHMER <em id="list-count">0</em></span>
         <input type="text" id="search" placeholder="Suche..." oninput="renderTable()">
@@ -163,7 +171,7 @@
       <!-- Gewinn-Abwicklung: nur Owner (Server antwortet Members mit 403 →
            Karte bleibt versteckt). Bewusst OHNE Kontaktdaten — die stehen
            nur auf der Abwicklungs-Seite (Streamermodus/Screenshare). -->
-      <div class="card" id="card-claims" style="display:none">
+      <div class="card" id="card-claims" style="display:none" data-help="Gewinn-Abwicklung (nur Owner): alle offenen Gewinne mit Meldefrist (14 Tage). ✔ EXTERN erfasst eine Meldung außerhalb der Plattform (z. B. WhatsApp) — die Frist gilt damit als erfüllt. Danach ✉ kontaktiert / 📦 versendet / ✓ erledigt. Kontaktdaten stehen bewusst nur auf der verlinkten Abwicklungs-Seite (Streamermodus-sicher).">
         <div class="card-title">GEWINN-ABWICKLUNG <span class="ct-badge" id="cl-open-count">0</span></div>
         <div id="cl-card-list"><div class="wsc-empty">Lade…</div></div>
         <div class="btn-group mt-6">
@@ -172,8 +180,16 @@
         </div>
       </div>
 
+      <!-- Vorbereitete Giveaways (Entwürfe): vor dem Stream anlegen,
+           im Stream per ▶ starten. Team-weit (PG), nur Owner. -->
+      <div class="card" id="card-drafts" style="display:none" data-help="Vorbereitete Giveaways: vor dem Stream im ＋-Modal ausfüllen und ALS ENTWURF SPEICHERN — hier dann per ▶ starten (der Entwurf wird dabei verbraucht), ✎ bearbeiten oder ✖ löschen. Entwürfe sind team-weit gespeichert.">
+        <div class="card-title">VORBEREITETE GIVEAWAYS</div>
+        <div id="draft-list"><div class="wsc-empty">Keine Entwürfe.</div></div>
+        <div class="cfg-hint">Anlegen: ＋ oben → Felder ausfüllen → „ALS ENTWURF SPEICHERN".</div>
+      </div>
+
       <!-- Vergangene Giveaways: Kurzliste — Dossier/Export im Archiv -->
-      <div class="card" id="card-archive">
+      <div class="card" id="card-archive" data-help="Die letzten abgeschlossenen Giveaways (Datum, Keyword, Gewinner, Teilnehmer). Im Archiv gibt es je Sitzung das volle Dossier mit Ziehungs-Schnappschuss, die Kampagnen-Klammer über zusammengehörige Sitzungen und den tar.gz-Nachweis-Export (nur Owner).">
         <div class="card-title">VERGANGENE GIVEAWAYS</div>
         <div id="ar-card-list"><div class="wsc-empty">Lade…</div></div>
         <div class="btn-group mt-6">
@@ -182,7 +198,7 @@
       </div>
 
       <!-- Keyword (nicht bei Los-Giveaway/Contest — dort kein Keyword-Opt-in) -->
-      <div class="card" id="card-keyword">
+      <div class="card" id="card-keyword" data-help="Anmelde-Keyword der aktuellen Auswahl. Zuschauer schreiben es EINMAL im Chat — das meldet an und gilt als Zustimmung zu den Teilnahmebedingungen; die Anmeldung bleibt bestehen. DEAKTIVIEREN schaltet die Chat-Anmeldung ab.">
         <div class="card-title">KEYWORD // TEILNAHME</div>
         <div class="kw-current"><span class="kw-label">AKTUELL:</span><span class="kw-val" id="kw-current">-</span></div>
         <div class="input-row">
@@ -193,7 +209,7 @@
       </div>
 
       <!-- Sofortverlosung: Anmeldefenster (Ziehung macht der Streamer mit ★) -->
-      <div class="card" id="card-instant">
+      <div class="card" id="card-instant" data-help="Sofortverlosung: FENSTER ÖFFNEN startet die Anmeldephase (mehrfach möglich — Teilnehmer bleiben angemeldet). Im Topf ist, wer das Keyword im offenen Fenster schreibt UND gerade wirklich zuschaut (Meldung ≤ 10 min alt). Jeder zählt mit Gewicht 1. Gezogen wird NICHT automatisch: ★ drückst du selbst — Anwesenheit zählt zum Ziehungszeitpunkt.">
         <div class="card-title">SOFORTVERLOSUNG // FENSTER <span class="ct-badge" id="cv-state">ZU</span></div>
         <div class="manual-row">
           <input type="number" id="cv-window" value="1" min="0.5" max="60" step="0.5" class="in-narrow" title="Minuten (0,5 = 30 Sekunden)">
@@ -210,7 +226,7 @@
       </div>
 
       <!-- Los-Giveaway: Setz-Befehl, Preise, Ziehung je Preis -->
-      <div class="card" id="card-ticketbuy">
+      <div class="card" id="card-ticketbuy" data-help="Los-Giveaway: Zuschauzeit wird Los-Guthaben (Umrechnung in der Regeln-Karte). Preise anlegen (Titel, Sponsor, Beschreibung, Bild bis 7 MB, optionales Einsatz-Ende), ✎ korrigieren oder ✖ stornieren (Einsätze werden zurückgebucht). Gesetzt wird per Chat-Befehl oder Setz-Seite; Rücknahme bis zum Einsatz-Ende. ★ zieht je Preis, gewichtet nach Einsatz — danach sind die Einsätze ALLER Setzer dieses Preises verbraucht. SCHLIESSEN geht erst, wenn alle Preise gezogen oder storniert sind.">
         <div class="card-title">LOS-GIVEAWAY // PREISE</div>
         <div class="card-sub">SETZ-BEFEHL</div>
         <div class="input-row">
@@ -249,7 +265,7 @@
       </div>
 
       <!-- Screenshot-Contest: Voting-Steuerung + Einsendungen -->
-      <div class="card" id="card-contest">
+      <div class="card" id="card-contest" data-help="Screenshot-Contest: Einsenden dürfen Follower mit Mindest-Zuschauzeit (1 Bild/Person, PNG/JPG, 1080p–4K, max 7 MB). Jede Einsendung braucht deine Freigabe (✓) — Ablehnen (✗) sperrt nur die Anzeige, 🗑 löscht endgültig. Voting ÖFFNEN/PAUSE/BEENDEN steuert die 1–10-Bewertung (eine Stimme je Bild und Person, Re-Vote überschreibt). Nach BEENDEN: ★ — höchste Punktsumme gewinnt, Gleichstand wird ausgelost.">
         <div class="card-title">CONTEST // VOTING <span class="ct-badge" id="sc-voting-state">GESCHLOSSEN</span></div>
         <div class="btn-group">
           <button class="btn btn-green btn-sm" onclick="scVoting('open')">ÖFFNEN</button>
@@ -269,7 +285,7 @@
       <!-- Regel-Einstellungen: pro Giveaway (Copy-on-Open). Ohne laufendes
            Giveaway bearbeitet die Karte die Vorgaben für den nächsten Start.
            Sichtbar für Kampagne + Los-Giveaway (alles mit Watchtime-Accrual). -->
-      <div class="card" id="card-settings">
+      <div class="card" id="card-settings" data-help="Regeln DIESES Giveaways — läuft keines, bearbeitest du die Vorgaben für den nächsten Start (Badge zeigt den Geltungsbereich). Follow-Mindestzahl, 1 Coin = X Stunden (zugleich die Lostopf-Schwelle) und Chat-Bonus wirken sofort und NUR auf diese Auswahl. KI-Bewertung und Auto-Pause/Start bleiben team-weit.">
         <div class="card-title">REGELN // DIESES GIVEAWAY <span class="ct-badge" id="settings-scope">VORGABEN</span></div>
         <div class="cfg-hint" id="settings-scope-hint">Lade…</div>
         <div class="cfg-row"><span>Teilnahme: folge</span><input type="number" id="cfg-follow-min" min="0" max="10" value="2" class="in-narrow" onchange="saveStreamSettings()"><span>Kanälen</span></div>
@@ -295,7 +311,7 @@
       </div>
 
       <!-- Manuelle Tickets (wirken auf die Kampagne) -->
-      <div class="card vis-campaign-only" id="card-manual">
+      <div class="card vis-campaign-only" id="card-manual" data-help="Manuelle Korrektur (nur Kampagne): einem Zuschauer Coins gut- oder abschreiben — jede Änderung wird im Protokoll festgehalten.">
         <div class="card-title">MANUELL // TICKETS</div>
         <div class="input-row">
           <input type="text" id="m-name" placeholder="Username">
@@ -306,7 +322,7 @@
       </div>
 
       <!-- Viewtime-Boost (nicht bei Sofortverlosung/Contest — kein Accrual) -->
-      <div class="card" id="card-boost">
+      <div class="card" id="card-boost" data-help="Viewtime-Boost: zeitlich begrenzter Multiplier (z. B. ×2 für 15 min) auf Zuschauzeit UND Chat-Bonus — wirkt auf die aktuelle Auswahl, Ablauf wird im Chat angesagt.">
         <div class="card-title">VIEWTIME-BOOST <div id="mult-status">1× (aus)</div></div>
         <div class="manual-row">
           <input type="number" id="mult-factor" value="2" min="1" max="10" step="1" class="in-narrow" title="Faktor">
@@ -332,7 +348,7 @@
       </div>
 
       <!-- Export & Verwaltung (Backup/Reset = Kampagnen-Stand) -->
-      <div class="card vis-campaign-only" id="card-export">
+      <div class="card vis-campaign-only" id="card-export" data-help="Export/Backup der Kampagne (CSV-Teilnehmerliste, Gewinnchancen, JSON-Backup) und Wiederherstellung — Import nur für den Owner, jede Wiederherstellung wird protokolliert.">
         <div class="card-title">EXPORT &amp; VERWALTUNG</div>
         <div class="btn-group">
           <button class="btn btn-cyan" onclick="exportCSV()">CSV</button>
@@ -380,7 +396,7 @@
       <button class="iw-x" onclick="iwClose()" aria-label="Schließen" title="Schließen (Esc)">✕</button>
     </div>
 
-    <div class="iw-cards" id="iw-cards">
+    <div class="iw-cards" id="iw-cards" data-help="Mechanik wählen — danach erscheinen nur die Felder dieses Typs. GIVEAWAY STARTEN legt sofort los; ALS ENTWURF SPEICHERN merkt sich alles für später (Karte VORBEREITETE GIVEAWAYS im Dashboard). Details zu jeder Mechanik: /admin/funktionsweise.html">
       <button type="button" class="iw-card" data-type="campaign" style="--acc:#00d4ff" onclick="iwSelect('campaign')">
         <span class="ic">📈</span><span class="nm">ZUSATZ-KAMPAGNE</span>
         <span class="ds">Zuschauzeit &amp; Chat sammeln — Ziehung gewichtet nach Coins. Wie die Hauptkampagne, parallel dazu.</span>
@@ -450,6 +466,8 @@
       <div class="iw-err" id="iw-err"></div>
       <div class="iw-foot">
         <button class="btn btn-gold" onclick="iwClose()">ABBRECHEN</button>
+        <button class="btn btn-cyan" id="iw-save-draft" onclick="iwSaveDraft()"
+                title="Konfiguration speichern, ohne zu starten — Start später per ▶ aus der Karte VORBEREITETE GIVEAWAYS">ALS ENTWURF SPEICHERN</button>
         <button class="btn btn-solid" id="iw-start" onclick="iwStart()">GIVEAWAY STARTEN</button>
       </div>
     </div>
