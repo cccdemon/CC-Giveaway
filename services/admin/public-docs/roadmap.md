@@ -19,8 +19,8 @@ Woran gearbeitet wird und was als Nächstes ansteht.
 
 Die Mechaniken laufen; sichtbar werden sie noch runder: das Dashboard soll die
 Spalten je Mechanik passend anzeigen (statt der Coin-Spalten der Kampagne),
-`!los` soll bei parallelen Giveaways alle laufenden nennen, und Preise sollen
-ein Bild bekommen.
+Preise sollen ein Bild und eine Beschreibung im Formular bekommen, und die
+Giveaway-Auswahl soll Startzeit und Teilnehmerzahl zeigen.
 
 ### Vollständiger Mehrkanal-Betrieb
 
@@ -31,6 +31,15 @@ Reste werden nach und nach abgelöst.
 ---
 
 ## Als Nächstes
+
+### Teams selbst verwalten
+
+Ein Team lässt sich heute anlegen und per Einladungscode füllen — aber nicht
+wieder auflösen: Mitglieder können nicht selbst austreten, der Name ist fest,
+die Eigentümerschaft nicht übertragbar, der eigene Kanal nicht änderbar.
+Geplant: **Team verlassen, umbenennen, Eigentümerschaft übergeben, Team
+löschen/deaktivieren, eigenen Kanal ändern** — bevor weitere Streamer
+onboarden.
 
 ### Ersatzgewinner automatisch nachziehen
 
