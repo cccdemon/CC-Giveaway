@@ -68,7 +68,7 @@ async function loadStats() {
 function forbidden() {
   ['teamRows','strRows'].forEach(function(id) {
     document.getElementById(id).innerHTML =
-      '<tr><td colspan="7" style="color:#ff5468">Nur Plattform-Administratoren.</td></tr>';
+      '<tr><td colspan="7" style="color:var(--rdoc-error)">Nur Plattform-Administratoren.</td></tr>';
   });
   setMsg('statsMsg', 'Nur Plattform-Administratoren.', false);
 }

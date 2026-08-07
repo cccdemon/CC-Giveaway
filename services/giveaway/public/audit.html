@@ -3,20 +3,27 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Chaos Crew – Audit-Log</title>
-<link rel="stylesheet" href="chaos-crew-admin.css">
+<title>RDOC Giveaway: Audit-Log</title>
+<link rel="stylesheet" href="/admin/rdoc.css">
+<script src="/admin/rdoc-theme.js"></script>
+<link rel="icon" href="/admin/favicon.ico" sizes="32x32">
+<link rel="icon" href="/admin/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/admin/icons/apple-touch-icon.png">
+<link rel="manifest" href="/admin/site.webmanifest">
+<meta name="theme-color" content="#121416" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F2F0" media="(prefers-color-scheme: light)">
 <style>
   .aud-wrap { padding:14px 18px 40px; max-width:1200px; margin:0 auto; }
-  .aud-title { font-size:13px; letter-spacing:2px; color:var(--cyan); margin:8px 0 4px; }
-  .aud-note { font-size:11px; color:var(--dim); margin-bottom:14px; line-height:1.6; }
+  .aud-title { font-size:13px; letter-spacing:2px; color:var(--rdoc-text); margin:8px 0 4px; }
+  .aud-note { font-size:11px; color:var(--rdoc-text-muted); margin-bottom:14px; line-height:1.6; }
 
   .aud-kpis { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
-  .aud-kpi { border:1px solid rgba(0,212,255,.16); border-radius:8px; padding:8px 14px; min-width:104px; }
-  .aud-kpi b { display:block; font-size:19px; color:var(--text); font-weight:600; }
-  .aud-kpi label { font-size:9px; letter-spacing:1.4px; color:var(--dim); }
-  .aud-kpi.ok b     { color:#22e07a; }
-  .aud-kpi.denied b { color:var(--gold); }
-  .aud-kpi.error b  { color:var(--red); }
+  .aud-kpi { border:1px solid var(--rdoc-border); border-radius:8px; padding:8px 14px; min-width:104px; }
+  .aud-kpi b { display:block; font-size:19px; color:var(--rdoc-text); font-weight:600; }
+  .aud-kpi label { font-size:9px; letter-spacing:1.4px; color:var(--rdoc-text-muted); }
+  .aud-kpi.ok b     { color:var(--rdoc-success); }
+  .aud-kpi.denied b { color:var(--rdoc-warning); }
+  .aud-kpi.error b  { color:var(--rdoc-error); }
 
   .aud-filters { display:flex; flex-wrap:wrap; gap:7px; align-items:center; margin-bottom:10px; }
   .aud-filters input, .aud-filters select { min-width:132px; }
@@ -24,38 +31,38 @@
 
   .aud-chips { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:12px; }
   .aud-chip { font-size:10px; letter-spacing:.6px; padding:3px 9px; border-radius:20px; cursor:pointer;
-              border:1px solid rgba(0,212,255,.18); color:var(--dim); background:transparent; font-family:inherit; }
-  .aud-chip:hover  { color:var(--text); border-color:rgba(0,212,255,.4); }
-  .aud-chip.active { color:var(--cyan); border-color:var(--cyan); }
+              border:1px solid var(--rdoc-border); color:var(--rdoc-text-muted); background:transparent; font-family:inherit; }
+  .aud-chip:hover  { color:var(--rdoc-text); border-color:var(--rdoc-border-strong); }
+  .aud-chip.active { color:var(--rdoc-text); border-color:var(--rdoc-border-strong); }
   .aud-chip span   { opacity:.55; margin-left:5px; }
 
-  .aud-list { border-top:1px solid rgba(255,255,255,.06); }
+  .aud-list { border-top:1px solid var(--rdoc-border); }
   .aud-row { display:flex; gap:10px; align-items:flex-start; padding:8px 4px;
-             border-bottom:1px solid rgba(255,255,255,.05); }
-  .aud-row.denied { border-left:3px solid var(--gold); padding-left:8px; }
-  .aud-row.err    { border-left:3px solid var(--red);  padding-left:8px; }
-  .aud-when { width:132px; flex-shrink:0; font-size:10px; color:var(--dim); line-height:1.5; }
+             border-bottom:1px solid var(--rdoc-border); }
+  .aud-row.denied { border-left:3px solid var(--rdoc-warning); padding-left:8px; }
+  .aud-row.err    { border-left:3px solid var(--rdoc-error);  padding-left:8px; }
+  .aud-when { width:132px; flex-shrink:0; font-size:10px; color:var(--rdoc-text-muted); line-height:1.5; }
   .aud-main { flex:1; min-width:0; }
-  .aud-who  { font-size:12px; color:var(--text); }
-  .aud-who b { color:var(--cyan); font-weight:600; }
-  .aud-sum  { font-size:11px; color:var(--dim); margin-top:2px; word-break:break-word; }
-  .aud-meta { font-size:9px; color:var(--dim); opacity:.65; margin-top:3px; letter-spacing:.5px; }
+  .aud-who  { font-size:12px; color:var(--rdoc-text); }
+  .aud-who b { color:var(--rdoc-text); font-weight:600; }
+  .aud-sum  { font-size:11px; color:var(--rdoc-text-muted); margin-top:2px; word-break:break-word; }
+  .aud-meta { font-size:9px; color:var(--rdoc-text-muted); opacity:.65; margin-top:3px; letter-spacing:.5px; }
   .aud-side { flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
-  .aud-n    { font-size:11px; color:var(--gold); border:1px solid rgba(240,165,0,.35);
+  .aud-n    { font-size:11px; color:var(--rdoc-text-muted); border:1px solid var(--rdoc-line-on-surface);
               border-radius:20px; padding:1px 9px; white-space:nowrap; }
   .aud-res  { font-size:9px; letter-spacing:1.2px; }
-  .aud-res.denied { color:var(--gold); } .aud-res.err { color:var(--red); }
-  .aud-detail { display:none; margin-top:6px; font-size:10px; color:var(--dim);
-                background:rgba(255,255,255,.03); border-radius:6px; padding:7px 9px;
+  .aud-res.denied { color:var(--rdoc-warning); } .aud-res.err { color:var(--rdoc-error); }
+  .aud-detail { display:none; margin-top:6px; font-size:10px; color:var(--rdoc-text-muted);
+                background:var(--rdoc-surface); border-radius:6px; padding:7px 9px;
                 white-space:pre-wrap; word-break:break-all; }
   .aud-row.open .aud-detail { display:block; }
   .aud-main { cursor:pointer; }
 
   .aud-foot { display:flex; gap:9px; align-items:center; flex-wrap:wrap; margin-top:14px; }
-  .aud-info { font-size:10px; color:var(--dim); }
+  .aud-info { font-size:10px; color:var(--rdoc-text-muted); }
 </style>
 </head>
-<body>
+<body data-app>
 <script src="cc-defs.js"></script>
 <script src="giveaway-shared.js"></script>
 

@@ -1,48 +1,41 @@
 /* Gemeinsames Aussehen aller oeffentlichen Textseiten (Impressum, Datenschutz,
    Nutzungsbedingungen, Haftungsausschluss, Roadmap, Aenderungsprotokoll).
-   Bewusst eigenstaendig: diese Seiten laden ohne Login und ohne die
-   Admin-Stylesheets. */
-
-:root {
-  --cyan:#00d4ff; --bg:#04060a; --panel:#0a0e16; --txt:#c8dce8;
-  --dim:rgba(200,220,232,0.55); --line:rgba(0,212,255,0.18); --gold:#f0a500;
-}
-* { box-sizing:border-box; }
-body { margin:0; background:var(--bg); color:var(--txt);
-       font-family:system-ui,'Segoe UI',sans-serif; line-height:1.6; }
+   Farben und Fonts kommen aus /admin/rdoc.css (vorher laden) — hier liegt nur
+   noch das Layout dieser Seiten. */
 
 .wrap { max-width:760px; margin:0 auto; padding:24px 20px 80px; }
 
-.crumbs { font-size:12px; color:var(--dim); margin-bottom:14px; }
-.crumbs a { color:var(--cyan); text-decoration:none; }
+.crumbs { font-size:12px; color:var(--rdoc-text-muted); margin-bottom:14px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.crumbs a { color:var(--rdoc-text); text-decoration:none; }
 .crumbs a:hover { text-decoration:underline; }
-.crumbs a.cur { color:var(--txt); font-weight:600; text-decoration:none; cursor:default; }
+.crumbs a.cur { color:var(--rdoc-text); font-weight:600; text-decoration:none; cursor:default; }
+.crumbs .gwnav-theme { margin-left:auto; }
 
-.doc { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:28px 30px; }
-.doc h1 { font-size:22px; color:var(--cyan); margin:.2em 0 .5em; }
-.doc h2 { font-size:17px; color:var(--cyan); margin:1.5em 0 .4em; }
-.doc h3 { font-size:14px; color:var(--gold); margin:1.4em 0 .3em; }
+.doc { background:var(--rdoc-surface); border:1px solid var(--rdoc-border); border-radius:10px; padding:28px 30px; }
+.doc h1 { font-family:var(--rdoc-font-display); font-weight:400; font-size:18px; color:var(--rdoc-text); margin:.2em 0 .5em; letter-spacing:0; }
+.doc h2 { font-family:var(--rdoc-font-display); font-weight:400; font-size:15px; color:var(--rdoc-text); margin:1.5em 0 .4em; }
+.doc h3 { font-family:var(--rdoc-font-display); font-weight:400; font-size:13px; color:var(--rdoc-text-muted); margin:1.4em 0 .3em; }
 .doc h4 { font-size:13px; margin:1em 0 .3em; }
 .doc p { margin:.5em 0; }
 .doc ul { margin:.4em 0 .8em 1.2em; }
 .doc li { margin:.25em 0; }
-.doc a { color:var(--cyan); }
-.doc b { color:#e6f4fb; }
-.doc hr { border:0; border-top:1px solid var(--line); margin:1.8em 0; }
-.doc blockquote { border-left:3px solid var(--cyan); margin:.8em 0; padding:.5em 0 .5em 14px;
-                  color:var(--dim); background:rgba(0,212,255,0.04); }
-.doc code { background:#060a11; padding:1px 5px; border-radius:4px; font-size:.9em; }
-.doc pre { background:#060a11; padding:12px; border-radius:6px; overflow:auto; font-size:12px; }
+.doc a { color:var(--rdoc-text); text-decoration:underline; }
+.doc b { color:var(--rdoc-text); }
+.doc hr { border:0; border-top:1px solid var(--rdoc-line-on-surface); margin:1.8em 0; }
+.doc blockquote { border-left:3px solid var(--rdoc-border-strong); margin:.8em 0; padding:.5em 0 .5em 14px;
+                  color:var(--rdoc-text-muted); background:var(--rdoc-bg); }
+.doc code { background:var(--rdoc-bg); padding:1px 5px; border-radius:4px; font-size:.9em; font-family:var(--rdoc-font-mono); }
+.doc pre { background:var(--rdoc-bg); padding:12px; border-radius:6px; overflow:auto; font-size:12px; font-family:var(--rdoc-font-mono); }
 
 /* Breite Tabellen scrollen in sich, statt die Seite querscrollen zu lassen. */
 .doc table { border-collapse:collapse; width:100%; margin:.8em 0; font-size:13px; display:block;
              overflow-x:auto; white-space:normal; }
-.doc th, .doc td { border:1px solid var(--line); padding:7px 10px; text-align:left; vertical-align:top; }
-.doc th { color:var(--cyan); font-weight:600; background:rgba(0,212,255,0.05); }
+.doc th, .doc td { border:1px solid var(--rdoc-line-on-surface); padding:7px 10px; text-align:left; vertical-align:top; }
+.doc th { color:var(--rdoc-text); font-weight:600; background:var(--rdoc-bg); }
 
-.err { color:#ff5468; }
+.err { color:var(--rdoc-error); }
 
 @media (max-width:560px) {
   .doc { padding:20px 16px; }
-  .doc h1 { font-size:19px; }
+  .doc h1 { font-size:16px; }
 }

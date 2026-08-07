@@ -3,27 +3,34 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Team Giveaway – Betroffenenrechte</title>
-<link rel="stylesheet" href="chaos-crew-admin.css">
+<title>RDOC Giveaway: Betroffenenrechte</title>
+<link rel="stylesheet" href="/admin/rdoc.css">
+<script src="/admin/rdoc-theme.js"></script>
+<link rel="icon" href="/admin/favicon.ico" sizes="32x32">
+<link rel="icon" href="/admin/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/admin/icons/apple-touch-icon.png">
+<link rel="manifest" href="/admin/site.webmanifest">
+<meta name="theme-color" content="#121416" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F2F0" media="(prefers-color-scheme: light)">
 <style>
   .gwrap { max-width:960px; margin:24px auto; padding:0 16px; }
-  .panel { background:#0a0e16; border:1px solid rgba(0,212,255,0.2); border-radius:8px; padding:20px; margin-bottom:20px; }
-  .panel h2 { font-size:13px; letter-spacing:2px; color:#00d4ff; margin-bottom:6px; text-transform:uppercase; }
-  .panel .hint { font-size:12px; color:rgba(200,220,232,0.55); margin-bottom:14px; line-height:1.5; }
+  .panel { background:var(--rdoc-surface); border:1px solid var(--rdoc-border); border-radius:8px; padding:20px; margin-bottom:20px; }
+  .panel h2 { font-family:var(--rdoc-font-mono); font-weight:400; font-size:13px; letter-spacing:0.07em; color:var(--rdoc-text); margin-bottom:6px; text-transform:uppercase; }
+  .panel .hint { font-size:12px; color:var(--rdoc-text-muted); margin-bottom:14px; line-height:1.5; }
   .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   .sec { margin-top:18px; }
-  .sec h3 { font-size:12px; letter-spacing:1px; color:#00d4ff; text-transform:uppercase; margin-bottom:6px; }
-  .sec .empty { font-size:12px; color:rgba(200,220,232,0.4); }
+  .sec h3 { font-family:var(--rdoc-font-mono); font-weight:400; font-size:12px; letter-spacing:0.07em; color:var(--rdoc-text-muted); text-transform:uppercase; margin-bottom:6px; }
+  .sec .empty { font-size:12px; color:var(--rdoc-text-faint); }
   table.data { width:100%; border-collapse:collapse; font-size:12px; }
-  table.data th, table.data td { text-align:left; padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.06); vertical-align:top; }
-  table.data th { color:rgba(200,220,232,0.5); font-size:10px; letter-spacing:1px; text-transform:uppercase; }
-  .danger-box { border:1px solid rgba(255,77,106,0.45); background:rgba(255,77,106,0.06); border-radius:8px; padding:14px; margin-top:18px; }
-  .danger-box h3 { color:#ff4d6a; }
-  .msg { font-size:12px; margin-left:8px; } .msg.ok { color:#22e07a; } .msg.err { color:#ff4d6a; }
-  pre.out { background:#060a11; border:1px solid rgba(0,212,255,0.15); border-radius:6px; padding:10px; font-size:11px; max-height:260px; overflow:auto; }
+  table.data th, table.data td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--rdoc-border); vertical-align:top; }
+  table.data th { color:var(--rdoc-text-muted); font-size:10px; letter-spacing:1px; text-transform:uppercase; }
+  .danger-box { border:1px solid var(--rdoc-error); background:var(--rdoc-tint-error); border-radius:8px; padding:14px; margin-top:18px; }
+  .danger-box h3 { font-family:var(--rdoc-font-mono); font-weight:400; color:var(--rdoc-error); font-size:12px; letter-spacing:0.07em; text-transform:uppercase; margin-bottom:6px; }
+  .msg { font-size:12px; margin-left:8px; } .msg.ok { color:var(--rdoc-success); } .msg.err { color:var(--rdoc-error); }
+  pre.out { background:var(--rdoc-bg); border:1px solid var(--rdoc-border); border-radius:6px; padding:10px; font-size:11px; max-height:260px; overflow:auto; }
 </style>
 </head>
-<body>
+<body data-app>
 <script src="/giveaway/cc-defs.js"></script>
 <script src="admin-shared.js"></script>
 

@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════
-// CHAOS CREW – Screenshot-Contest (CORE_ScreenshotContest, Phase 6)
+// RDOC GIVEAWAY – Screenshot-Contest (CORE_ScreenshotContest, Phase 6)
 // Einsenden + Voten, nur als eingeloggter Zuschauer (Twitch-Session).
 // ════════════════════════════════════════════════════════
 

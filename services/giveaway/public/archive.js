@@ -108,7 +108,7 @@ function renderList() {
       + groups.map(function(c, i){
           var active = campFilter && campFilter.join(',') === c.sessions.join(',');
           return '<div class="ar-item' + (active ? ' active' : '') + '" data-camp="' + i + '" '
-            + 'style="border-left:3px solid var(--gold,#f0a500)">'
+            + 'style="border-left:3px solid var(--rdoc-warning)">'
             + '<h4>' + fmt(c.dataFrom || c.from, false) + ' – ' + fmt(c.dataTo || c.to, false)
             + '<span class="badge closed">' + c.sessions.length + ' SITZUNGEN</span></h4>'
             + '<div class="sub">' + num(c.participants) + ' Teilnehmer gesamt · Endstand '

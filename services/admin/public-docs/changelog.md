@@ -5,6 +5,33 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ---
 
+## 7. August 2026
+
+### Neues Erscheinungsbild: RDOC
+
+Die gesamte Oberflaeche traegt jetzt die Marke **RDOC** — Farben, Schriften,
+Zeichen und Favicons kommen aus dem RDOC-Markenhandbuch statt aus dem alten
+Chaos-Crew-Look. Sichtbar auf jeder Seite: ruhige Flaechen in Space und
+Graphite, Kupfer nur fuer die eine wichtige Handlung einer Ansicht, keine
+Neonfarben, keine Verlaeufe, kein Glimmen.
+
+Ueberschriften stehen in **Michroma**, der Schrift, die derselben quadratischen
+Konstruktion folgt wie das Zeichen selbst. Fliesstext ist IBM Plex Sans, alles
+Technische (Kennungen, Zahlen, Protokollzeilen) IBM Plex Mono. Alle Schriften
+liegen auf dem eigenen Server, es geht keine Anfrage an einen fremden Dienst.
+
+Hell und Dunkel sind getrennt gemessene Paletten, nicht die Umkehrung
+voneinander. Der Schalter oben rechts merkt sich die Wahl; ohne Wahl folgt die
+Seite der Systemeinstellung.
+
+Die letzten Seiten im alten Look sind mitgezogen: **Lose setzen**,
+**Screenshot-Contest**, **Mitmachen**, **Team beitreten** und die
+**Streamerbot-Einrichtung**. Die Anleitung „Mitmachen" nutzt jetzt dieselbe
+Textdarstellung wie Impressum und Datenschutz und bekommt damit auch
+Sprungmarken zu den Abschnitten.
+
+---
+
 ## 6. August 2026 (viertes Update)
 
 ### Plattform-Verwaltung: Moderation durch den Betreiber

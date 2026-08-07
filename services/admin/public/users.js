@@ -20,7 +20,7 @@ async function load() {
     var r = await fetch(API);
     if (r.status === 401) { window.location.href = '/admin/login.html'; return; }
     if (r.status === 403) { document.getElementById('rows').innerHTML =
-      '<tr><td colspan="5" style="color:#ff5468">Nur superadmin darf Benutzer verwalten.</td></tr>'; return; }
+      '<tr><td colspan="5" style="color:var(--rdoc-error)">Nur superadmin darf Benutzer verwalten.</td></tr>'; return; }
     var users = await r.json();
     var rows = document.getElementById('rows');
     if (!users.length) { rows.innerHTML = '<tr><td colspan="5">keine Benutzer</td></tr>'; return; }

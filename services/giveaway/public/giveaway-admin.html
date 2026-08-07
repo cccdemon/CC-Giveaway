@@ -2,8 +2,15 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Chaos Crew – Giveaway Admin</title>
-<link rel="stylesheet" href="chaos-crew-admin.css">
+<title>RDOC Giveaway: Dashboard</title>
+<link rel="stylesheet" href="/admin/rdoc.css">
+<script src="/admin/rdoc-theme.js"></script>
+<link rel="icon" href="/admin/favicon.ico" sizes="32x32">
+<link rel="icon" href="/admin/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/admin/icons/apple-touch-icon.png">
+<link rel="manifest" href="/admin/site.webmanifest">
+<meta name="theme-color" content="#121416" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F2F0" media="(prefers-color-scheme: light)">
 <style>
   /* Layout folgt dem gewählten Core: nur die Felder zeigen, die für DIESES
      Giveaway gelten. Kampagne (keine Instanz gewählt) = alles wie gehabt. */
@@ -22,61 +29,60 @@
   /* Regel-Karte: nur wo Watchtime-Accrual läuft (Kampagne, Los-Giveaway) */
   .gw-app.core-instant #card-settings, .gw-app.core-contest #card-settings { display:none !important; }
   .tb-prize { display:flex; align-items:center; gap:8px; font-size:11.5px; padding:6px 0;
-              border-bottom:1px solid rgba(255,255,255,.06); }
+              border-bottom:1px solid var(--rdoc-border); }
   .tb-prize .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .tb-prize .s { color:var(--gold,#f0a500); font-variant-numeric:tabular-nums; }
+  .tb-prize .s { color:var(--rdoc-text); font-variant-numeric:tabular-nums; }
   .sc-entry { display:flex; align-items:center; gap:8px; font-size:11.5px; padding:6px 0;
-              border-bottom:1px solid rgba(255,255,255,.06); }
+              border-bottom:1px solid var(--rdoc-border); }
   .sc-entry .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .sc-entry .st-pending { color:var(--gold,#f0a500); }
-  .sc-entry .st-approved { color:#22e07a; }
-  .sc-entry .st-rejected { color:rgba(200,220,232,.4); text-decoration:line-through; }
+  .sc-entry .st-pending { color:var(--rdoc-warning); }
+  .sc-entry .st-approved { color:var(--rdoc-success); }
+  .sc-entry .st-rejected { color:var(--rdoc-text-faint); text-decoration:line-through; }
   /* Review mit Bild-Vorschau: Thumbnail + Einsender + Status auf einen Blick */
   .sc-thumb { width:56px; height:36px; object-fit:cover; border-radius:4px; cursor:zoom-in;
-              background:#060a11; flex:none; border:1px solid rgba(255,255,255,.08); }
+              background:var(--rdoc-bg); flex:none; border:1px solid var(--rdoc-border); }
   .sc-info { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
   .sc-info .t { flex:none; }
-  .sc-by { font-size:10px; color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sc-by { font-size:10px; color:var(--rdoc-text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #cv-open-btn[disabled] { opacity:.35; cursor:not-allowed; filter:grayscale(1); }
   /* Zustandsmaschine: ungültige Hauptaktionen sind sichtbar, aber gesperrt */
   .actionstrip .btn[disabled] { opacity:.35; cursor:not-allowed; filter:grayscale(1); }
   .tb-prize .btn-mini, .sc-entry .btn-mini { padding:2px 6px; font-size:11px; line-height:1; }
   /* Hilfemodus: eingeblendete Erklärungen an den Bedienelementen */
-  .help-note { display:block; margin-top:8px; padding:7px 9px; border:1px dashed rgba(240,165,0,.45);
-               border-radius:6px; background:rgba(240,165,0,.06); color:var(--gold,#f0a500);
+  .help-note { display:block; margin-top:8px; padding:7px 9px; border:1px dashed var(--rdoc-warning);
+               border-radius:6px; background:var(--rdoc-tint-warning); color:var(--rdoc-warning);
                font-size:10.5px; line-height:1.55; font-weight:normal; text-transform:none; letter-spacing:0; }
   .help-note::before { content:'？ '; }
-  .help-note a { color:var(--cyan,#00d4ff); }
+  .help-note a { color:var(--rdoc-text); }
 
   /* ── Instanz-Assistent (ersetzt die prompt()-Kette) ────── */
   .iw-overlay { position:fixed; inset:0; z-index:900; display:flex; align-items:center;
-                justify-content:center; background:rgba(2,6,10,.74); backdrop-filter:blur(3px); }
-  .iw-modal { background:var(--panel,#0a0e16); border:1px solid rgba(0,212,255,.22);
+                justify-content:center; background:rgba(18,20,22,.74); backdrop-filter:blur(3px); }
+  .iw-modal { background:var(--rdoc-surface); border:1px solid var(--rdoc-line-on-surface);
               border-radius:12px; width:min(580px,94vw); max-height:92vh; overflow-y:auto;
-              padding:18px 20px 16px; box-shadow:0 18px 60px rgba(0,0,0,.55);
+              padding:18px 20px 16px;
               animation:iw-in .16s ease-out; }
   @media (prefers-reduced-motion: reduce) { .iw-modal { animation:none; } }
   @keyframes iw-in { from { opacity:0; transform:translateY(8px) scale(.985); } to { opacity:1; transform:none; } }
   .iw-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
-  .iw-head span { font-size:12px; letter-spacing:2.5px; color:var(--cyan,#00d4ff); font-weight:700; }
-  .iw-x { background:none; border:0; color:rgba(200,220,232,.55); font-size:15px; cursor:pointer; padding:2px 6px; }
-  .iw-x:hover { color:#fff; }
+  .iw-head span { font-size:12px; letter-spacing:2.5px; color:var(--rdoc-text); font-weight:600; }
+  .iw-x { background:none; border:0; color:var(--rdoc-text-muted); font-size:15px; cursor:pointer; padding:2px 6px; }
+  .iw-x:hover { color:var(--rdoc-text); }
   .iw-cards { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
   @media (max-width:480px) { .iw-cards { grid-template-columns:1fr; } }
-  .iw-card { --acc:var(--cyan,#00d4ff); text-align:left; cursor:pointer; border-radius:10px;
-             border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.02);
+  .iw-card { --acc:var(--rdoc-border-strong); text-align:left; cursor:pointer; border-radius:10px;
+             border:1px solid var(--rdoc-border); background:var(--rdoc-surface);
              padding:11px 13px; color:inherit; font-family:inherit; transition:border-color .12s, background .12s; }
-  .iw-card:hover { border-color:rgba(255,255,255,.25); }
-  .iw-card:focus-visible { outline:2px solid var(--acc); outline-offset:2px; }
-  .iw-card.sel { border-color:var(--acc); box-shadow:0 0 0 1px var(--acc), inset 0 0 22px rgba(0,0,0,.25);
-                 background:color-mix(in srgb, var(--acc) 7%, transparent); }
+  .iw-card:hover { border-color:var(--rdoc-border-strong); }
+  .iw-card.sel { border-color:var(--acc);
+                 background:var(--rdoc-tint-accent); }
   .iw-card .ic { font-size:17px; display:block; margin-bottom:5px; }
-  .iw-card .nm { font-size:11px; font-weight:700; letter-spacing:1.6px; color:#e6f4fb; display:block; margin-bottom:3px; }
-  .iw-card.sel .nm { color:var(--acc); }
-  .iw-card .ds { font-size:10px; color:rgba(200,220,232,.55); line-height:1.5; display:block; }
-  .iw-sec { font-size:9px; letter-spacing:1.6px; color:rgba(200,220,232,.5); text-transform:uppercase; margin:12px 0 6px; }
+  .iw-card .nm { font-size:11px; font-weight:600; letter-spacing:1.6px; color:var(--rdoc-text); display:block; margin-bottom:3px; }
+  .iw-card.sel .nm { color:var(--rdoc-text); }
+  .iw-card .ds { font-size:10px; color:var(--rdoc-text-muted); line-height:1.5; display:block; }
+  .iw-sec { font-size:9px; letter-spacing:1.6px; color:var(--rdoc-text-muted); text-transform:uppercase; margin:12px 0 6px; }
   .iw-field { margin-bottom:9px; }
-  .iw-field label { display:block; font-size:9px; letter-spacing:1.4px; color:rgba(200,220,232,.55);
+  .iw-field label { display:block; font-size:9px; letter-spacing:1.4px; color:var(--rdoc-text-muted);
                     text-transform:uppercase; margin-bottom:4px; }
   .iw-field input[type=text], .iw-field input[type=number] { width:100%; }
   /* Preis-Zeilen im Start-Modal: Titel | Sponsor | Minuten | entfernen */
@@ -85,17 +91,17 @@
   .iw-prize-row input.pr-sponsor { flex:1.4 1 0; min-width:0; }
   .iw-prize-row input.pr-min     { flex:0 0 92px; text-align:center; }
   .iw-prize-row .btn { flex:0 0 auto; padding:8px 10px; }
-  .iw-field .hint { font-size:10px; color:rgba(200,220,232,.7); margin-top:3px; line-height:1.5; }
+  .iw-field .hint { font-size:10px; color:var(--rdoc-text-muted); margin-top:3px; line-height:1.5; }
   .iw-chips { display:flex; flex-wrap:wrap; gap:6px; }
   .iw-chip { display:inline-flex; align-items:center; gap:5px; font-size:10.5px; cursor:pointer;
-             border:1px solid rgba(255,255,255,.12); border-radius:20px; padding:4px 10px; color:#c8dce8; }
-  .iw-chip input { accent-color:var(--cyan,#00d4ff); margin:0; }
-  .iw-chip:has(input:checked) { border-color:rgba(0,212,255,.55); background:rgba(0,212,255,.07); }
-  .iw-err { font-size:11px; color:var(--red,#ff4d6a); min-height:15px; margin:6px 0 2px; }
+             border:1px solid var(--rdoc-border); border-radius:20px; padding:4px 10px; color:var(--rdoc-text); }
+  .iw-chip input { accent-color:var(--rdoc-accent); margin:0; }
+  .iw-chip:has(input:checked) { border-color:var(--rdoc-border-strong); background:var(--rdoc-surface); }
+  .iw-err { font-size:11px; color:var(--rdoc-error); min-height:15px; margin:6px 0 2px; }
   .iw-foot { display:flex; justify-content:flex-end; gap:8px; margin-top:8px; }
 </style>
 </head>
-<body>
+<body data-app="dashboard">
 <script src="cc-defs.js"></script>
 <script src="giveaway-shared.js"></script>
 
@@ -415,19 +421,19 @@
     </div>
 
     <div class="iw-cards" id="iw-cards" data-help="Mechanik wählen — danach erscheinen nur die Felder dieses Typs. GIVEAWAY STARTEN legt sofort los; ALS ENTWURF SPEICHERN merkt sich alles für später (Karte VORBEREITETE GIVEAWAYS im Dashboard). Details zu jeder Mechanik: /admin/funktionsweise.html">
-      <button type="button" class="iw-card" data-type="campaign" style="--acc:#00d4ff" onclick="iwSelect('campaign')">
+      <button type="button" class="iw-card" data-type="campaign" onclick="iwSelect('campaign')">
         <span class="ic">📈</span><span class="nm">ZUSATZ-KAMPAGNE</span>
         <span class="ds">Zuschauzeit &amp; Chat sammeln — Ziehung gewichtet nach Coins. Wie die Hauptkampagne, parallel dazu.</span>
       </button>
-      <button type="button" class="iw-card" data-type="instant" style="--acc:#f0a500" onclick="iwSelect('instant')">
+      <button type="button" class="iw-card" data-type="instant" onclick="iwSelect('instant')">
         <span class="ic">⚡</span><span class="nm">SOFORTVERLOSUNG</span>
         <span class="ds">Keyword im Zeitfenster + echte Anwesenheit. Gleiche Chance für alle — gezogen wird manuell (★), auch mehrere Fenster möglich.</span>
       </button>
-      <button type="button" class="iw-card" data-type="ticketbuy" style="--acc:#22e07a" onclick="iwSelect('ticketbuy')">
+      <button type="button" class="iw-card" data-type="ticketbuy" onclick="iwSelect('ticketbuy')">
         <span class="ic">🎟</span><span class="nm">LOS-GIVEAWAY</span>
         <span class="ds">Zuschauzeit wird Los-Guthaben. Einsatz auf Preise per Chat-Befehl oder Web — Ziehung je Preis.</span>
       </button>
-      <button type="button" class="iw-card" data-type="contest" style="--acc:#c77bff" onclick="iwSelect('contest')">
+      <button type="button" class="iw-card" data-type="contest" onclick="iwSelect('contest')">
         <span class="ic">📸</span><span class="nm">SCREENSHOT-CONTEST</span>
         <span class="ds">Zuschauer senden Screenshots ein, die Community bewertet 1–10. Höchste Punktsumme gewinnt.</span>
       </button>
@@ -488,7 +494,7 @@
       <div class="iw-chips" id="iw-channels"></div>
       <div class="iw-field"><div class="hint">Auf welchen Kanälen dieses Giveaway läuft. Ohne Auswahl: alle Team-Kanäle.</div></div>
       <!-- P6: Teilnehmer-Vorschau — wie viele Zuschauer die Bedingungen JETZT erfüllen würden. -->
-      <div class="iw-field"><div class="hint" id="iw-preflight" style="color:var(--gold,#f0a500)"></div></div>
+      <div class="iw-field"><div class="hint" id="iw-preflight" style="color:var(--rdoc-warning)"></div></div>
 
       <div class="iw-err" id="iw-err"></div>
       <div class="iw-foot">

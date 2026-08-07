@@ -1,5 +1,7 @@
 // Erzeugt og-preview.png (1200x630) ohne externe Abhängigkeiten.
-// Blockschrift passend zum Terminal-Look des Panels (Share Tech Mono / Cyan auf Dunkel).
+// RDOC-Palette (Space/Copper/Off White/Steel), flache Flächen ohne Verlauf.
+// Nach Textänderung neu erzeugen:
+//   node tools/make-og-preview.js services/admin/public/og-preview.png
 const zlib = require('zlib');
 const fs = require('fs');
 
@@ -74,25 +76,15 @@ const text = (s, x, y, scale, r, g, b, gap = scale * 2) => {
   return cx;
 };
 
-// ── Hintergrund: dunkel mit leichtem Verlauf nach oben-links ──
-for (let y = 0; y < H; y++) {
-  for (let x = 0; x < W; x++) {
-    const d = Math.hypot(x - 180, y - 120) / 900;
-    const glow = Math.max(0, 1 - d) ** 2;
-    px(x, y, Math.round(4 + glow * 6), Math.round(6 + glow * 26), Math.round(10 + glow * 42));
-  }
-}
+// ── Hintergrund: flaches Space, kein Verlauf (Markenregel) ──
+const COPPER = [196, 138, 74], INK = [242, 242, 240], MUTE = [118, 130, 141], LINE = [43, 49, 53];
+rect(0, 0, W, H, 18, 20, 22);
 
-// Rasterlinien (dezent)
-for (let y = 0; y < H; y += 30) for (let x = 0; x < W; x++) { const i = (y * W + x) * 3; buf[i + 1] += 6; buf[i + 2] += 10; }
-for (let x = 0; x < W; x += 30) for (let y = 0; y < H; y++) { const i = (y * W + x) * 3; buf[i + 1] += 6; buf[i + 2] += 10; }
-
-const CYAN = [0, 212, 255], GOLD = [240, 165, 0], INK = [220, 234, 243], MUTE = [120, 150, 168];
-
-// Rahmen + Akzentkante links
-rect(0, 0, W, 4, ...CYAN);
-rect(0, H - 4, W, 4, ...GOLD);
-rect(0, 0, 6, H, ...CYAN);
+// 1px-Graphite-Rahmen + Copper-Kante links (der eine Akzent).
+rect(0, 0, W, 1, ...LINE);
+rect(0, H - 1, W, 1, ...LINE);
+rect(W - 1, 0, 1, H, ...LINE);
+rect(0, 0, 6, H, ...COPPER);
 
 // ── Inhalt ──
 const MARGIN = 92, MAXW = W - MARGIN * 2;
@@ -101,15 +93,15 @@ const fit = (s, want) => { let sc = want; while (sc > 1 && textW(s, sc, sc * 2) 
 const line = (s, y, want, col) => { text(s, MARGIN, y, fit(s, want), ...col); return 7 * fit(s, want); };
 
 let y = 120;
-y += line('TEAM GIVEAWAY', y, 12, CYAN) + 48;
+y += line('RDOC GIVEAWAY', y, 12, INK) + 48;
 y += line('LOSE FUER ECHTE ZUSCHAUZEIT', y, 6, INK) + 36;
 y += line('FUER EINEN KANAL ODER EIN GANZES', y, 4, MUTE) + 18;
 y += line('TEAM. ALLE REGELN FREI EINSTELLBAR.', y, 4, MUTE) + 18;
 y += line('ZIEHUNG GEWICHTET, NACHVOLLZIEHBAR.', y, 4, MUTE);
 
-// Fusszeile: Domain, goldener Marker davor
-rect(MARGIN, H - 96, 14, 30, ...GOLD);
-text('TEAM.RAUMDOCK.ORG', MARGIN + 30, H - 96, 5, ...GOLD);
+// Fusszeile: Domain mit Copper-Marker (gehoert zur Copper-Kante).
+rect(MARGIN, H - 96, 14, 30, ...COPPER);
+text('TEAM.RAUMDOCK.ORG', MARGIN + 30, H - 96, 5, ...COPPER);
 
 // ── PNG schreiben ─────────────────────────────────────────
 const raw = Buffer.alloc((W * 3 + 1) * H);

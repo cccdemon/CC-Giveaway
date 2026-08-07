@@ -2,28 +2,35 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Chaos Crew – Giveaway Test Console</title>
-<link rel="stylesheet" href="chaos-crew-admin.css">
+<title>RDOC Giveaway: Test-Konsole</title>
+<link rel="stylesheet" href="/admin/rdoc.css">
+<script src="/admin/rdoc-theme.js"></script>
+<link rel="icon" href="/admin/favicon.ico" sizes="32x32">
+<link rel="icon" href="/admin/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/admin/icons/apple-touch-icon.png">
+<link rel="manifest" href="/admin/site.webmanifest">
+<meta name="theme-color" content="#121416" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F2F0" media="(prefers-color-scheme: light)">
 </head>
-<body>
+<body data-app>
 <script src="/giveaway/cc-defs.js"></script>
 <script src="admin-shared.js"></script>
 
 <div class="page-header">
-  <div class="page-title">CHAOS<span> //</span> <em>TEST</em> CONSOLE</div>
+  <div class="page-title">RDOC GIVEAWAY<span> //</span> <em>TEST</em> CONSOLE</div>
   <div class="header-right">
     <select id="test-team" onchange="onTeamChange()" title="Team — ohne Team lehnt der Server jeden Befehl ab">
       <option value="">— lädt —</option>
     </select>
     <span id="status" class="badge off">OFFLINE</span>
-    <span style="font-family:'Share Tech Mono',monospace;font-size:9px;color:rgba(200,220,232,0.25);letter-spacing:1px;">/giveaway/ws</span>
+    <span style="font-family:var(--rdoc-font-mono);font-size:9px;color:var(--rdoc-text-faint);letter-spacing:1px;">/giveaway/ws</span>
     <button class="btn btn-cyan btn-sm" onclick="reconnect()">VERBINDEN</button>
     <button class="btn btn-red  btn-sm" onclick="disconnect()">TRENNEN</button>
   </div>
 </div>
 
-<div id="sim-off" style="display:none;margin:10px 14px;padding:10px 14px;border:1px solid #ff4d6a;
-     background:rgba(255,77,106,0.08);color:#ff8fa3;font-family:'Share Tech Mono',monospace;font-size:11px;line-height:1.6;">
+<div id="sim-off" style="display:none;margin:10px 14px;padding:10px 14px;border:1px solid var(--rdoc-error);
+     background:var(--rdoc-tint-error);color:var(--rdoc-error);font-family:var(--rdoc-font-mono);font-size:11px;line-height:1.6;">
   <b>SIMULATION DEAKTIVIERT</b> — dieser Server laeuft ohne <code>ALLOW_SIM=true</code>.
   Simulierte Ticks und Chatnachrichten erzeugen echte Viewtime in
   <code>watchtime_events</code> und wuerden damit in den Ziehungs-Snapshot eingehen.
@@ -59,7 +66,7 @@
     <div class="test-section">
       <div class="test-section-title">VIEWER TICK SIMULIEREN</div>
       <div class="test-section-body">
-        <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:rgba(200,220,232,0.3);letter-spacing:1px;">
+        <div style="font-family:var(--rdoc-font-mono);font-size:9px;color:var(--rdoc-text-faint);letter-spacing:1px;">
           Simuliert viewer_tick Events &rarr; +60s pro Tick
         </div>
         <div class="test-row">
@@ -78,7 +85,7 @@
     <div class="test-section">
       <div class="test-section-title">CHAT-NACHRICHT SIMULIEREN</div>
       <div class="test-section-body">
-        <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:rgba(200,220,232,0.3);letter-spacing:1px;">
+        <div style="font-family:var(--rdoc-font-mono);font-size:9px;color:var(--rdoc-text-faint);letter-spacing:1px;">
           Simuliert chat_msg &middot; min. 5 Wörter für Bonus &middot; Cooldown 10s
         </div>
         <div class="test-row">
@@ -120,11 +127,11 @@
         <div class="test-row">
           <span class="row-label">WATCHTIME</span>
           <input type="text" class="small" id="calc-sec" value="3600" placeholder="Sekunden">
-          <span style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim);">s</span>
+          <span style="font-family:var(--rdoc-font-mono);font-size:10px;color:var(--rdoc-text-muted);">s</span>
           <button class="btn btn-gold btn-sm" onclick="calcCoins()">BERECHNEN</button>
           <span id="calc-result"></span>
         </div>
-        <div id="calc-hint" style="font-family:'Share Tech Mono',monospace;font-size:9px;color:rgba(200,220,232,0.28);letter-spacing:1px;">
+        <div id="calc-hint" style="font-family:var(--rdoc-font-mono);font-size:9px;color:var(--rdoc-text-faint);letter-spacing:1px;">
           Werte kommen vom Server — je Team einstellbar.
         </div>
       </div>

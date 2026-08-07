@@ -142,8 +142,8 @@ function reactivateTeam(id) {
 
 function renderMgmt(t) {
   var owner = t.you_owner;
-  var inputStyle = 'background:#060a11;border:1px solid rgba(0,212,255,0.25);color:#c8dce8;border-radius:6px;padding:8px;font-size:12px;';
-  var html = '<div style="margin-top:12px;border-top:1px solid rgba(255,255,255,.08);padding-top:10px">'
+  var inputStyle = 'background:var(--rdoc-bg);border:1px solid var(--rdoc-line-on-surface);color:var(--rdoc-text);border-radius:6px;padding:8px;font-size:12px;';
+  var html = '<div style="margin-top:12px;border-top:1px solid var(--rdoc-border);padding-top:10px">'
     + '<div class="lk-sub">Verwaltung</div>';
   if (t.deactivated_at) {
     html += '<div class="msg err" style="margin-bottom:6px">Deaktiviert seit '
@@ -192,9 +192,9 @@ async function editImprint(id) {
       (missing ? '<div class="msg err" style="margin-bottom:6px">Pflichtangabe fehlt — ohne Impressum lässt sich kein Giveaway öffnen.</div>' : '') +
       '<div class="muted" style="font-size:12px;margin-bottom:4px">Entweder ein Link auf dein bestehendes Impressum …</div>' +
       '<input id="iu-'+id+'" value="'+esc(d.imprintUrl)+'" placeholder="https://dein-impressum.de" ' +
-      'style="width:100%;background:#060a11;border:1px solid rgba(0,212,255,0.25);color:#c8dce8;border-radius:6px;padding:8px;font-size:12px;">' +
+      'style="width:100%;background:var(--rdoc-bg);border:1px solid var(--rdoc-line-on-surface);color:var(--rdoc-text);border-radius:6px;padding:8px;font-size:12px;">' +
       '<div class="muted" style="font-size:12px;margin:8px 0 4px">… oder als Text (Markdown), der auf der Bedingungsseite erscheint:</div>' +
-      '<textarea id="im-'+id+'" style="width:100%;height:170px;background:#060a11;border:1px solid rgba(0,212,255,0.25);color:#c8dce8;border-radius:6px;padding:10px;font-family:ui-monospace,monospace;font-size:12px;">'+
+      '<textarea id="im-'+id+'" style="width:100%;height:170px;background:var(--rdoc-bg);border:1px solid var(--rdoc-line-on-surface);color:var(--rdoc-text);border-radius:6px;padding:10px;font-family:var(--rdoc-font-mono);font-size:12px;">'+
       esc(d.imprint)+'</textarea>' +
       '<div style="display:flex;gap:8px;margin-top:8px;align-items:center">' +
       '<button onclick="saveImprint(\''+id+'\')">Speichern</button>' +
@@ -230,10 +230,10 @@ async function editTerms(id) {
     box.innerHTML =
       '<div style="margin-top:10px">' +
       (d.isDefault ? '<div style="font-size:12px;opacity:.55;margin-bottom:6px">Noch keine eigenen Bedingungen — Standard-Vorlage als Entwurf geladen.</div>' : '') +
-      '<textarea id="ta-'+id+'" style="width:100%;height:280px;background:#060a11;border:1px solid rgba(0,212,255,0.25);color:#c8dce8;border-radius:6px;padding:10px;font-family:ui-monospace,monospace;font-size:12px;">'+
+      '<textarea id="ta-'+id+'" style="width:100%;height:280px;background:var(--rdoc-bg);border:1px solid var(--rdoc-line-on-surface);color:var(--rdoc-text);border-radius:6px;padding:10px;font-family:var(--rdoc-font-mono);font-size:12px;">'+
       esc(d.terms)+'</textarea>' +
       '<input id="tnote-'+id+'" placeholder="Was hast du geändert? (erscheint öffentlich im Änderungsverlauf)" ' +
-      'style="width:100%;margin-top:8px;background:#060a11;border:1px solid rgba(0,212,255,0.25);color:#c8dce8;border-radius:6px;padding:8px;font-size:12px;">' +
+      'style="width:100%;margin-top:8px;background:var(--rdoc-bg);border:1px solid var(--rdoc-line-on-surface);color:var(--rdoc-text);border-radius:6px;padding:8px;font-size:12px;">' +
       '<div style="display:flex;gap:8px;margin-top:8px;align-items:center">' +
       '<button onclick="saveTerms(\''+id+'\')">Speichern</button>' +
       '<button class="ghost" onclick="editTerms(\''+id+'\')">Schließen</button>' +
@@ -258,7 +258,7 @@ async function loadTermsHistory(id) {
     box.innerHTML = '<div class="muted" style="font-size:12px;margin-bottom:4px">Aenderungsverlauf (oeffentlich sichtbar)</div>'
       + d.history.map(function(h) {
           var secs = (h.sections || []).map(function(x) { return esc(x.section) + ' (' + esc(x.kind) + ')'; }).join(', ');
-          return '<div style="font-size:12px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.06)">'
+          return '<div style="font-size:12px;padding:4px 0;border-bottom:1px solid var(--rdoc-border)">'
                + '<b>Fassung ' + esc(String(h.version)) + '</b> - ' + esc(new Date(h.created_at).toLocaleString('de-DE'))
                + ' - <span class="muted">' + esc(h.changed_by) + '</span>'
                + (h.note ? '<br>' + esc(h.note) : '')
@@ -331,7 +331,7 @@ function renderTeam(t) {
     + '</div><div id="terms-'+t.id+'"></div><div id="imprint-'+t.id+'"></div>';
   return '<div class="team"><div class="team-head"><span class="team-name">'+esc(t.name)+'</span>'
     + (owner?'<span class="badge">OWNER</span>':'')
-    + (t.deactivated_at?'<span class="badge" style="background:#5a1f1f;color:#ff9c9c">DEAKTIVIERT</span>':'') + '</div>'
+    + (t.deactivated_at?'<span class="badge" style="background:var(--rdoc-tint-error);color:var(--rdoc-error)">DEAKTIVIERT</span>':'') + '</div>'
     + '<div class="members">'+members+'</div>'
     + (t.deactivated_at ? '' : invite + overlay) + terms
     + renderMgmt(t)

@@ -2,7 +2,7 @@
   'use strict';
 
   // ════════════════════════════════════════════════════════
-  // CHAOS CREW – Browser Unit Tests
+  // RDOC GIVEAWAY – Browser Unit Tests
   // Testet client-seitige Logik OHNE echte Daten zu verändern:
   //   • CC.validate (admin-shared.js) – Sanitizing/Validation
   //   • Giveaway-Admin (giveaway-admin.js) – WS-Payloads, State, Rendering-Mathe

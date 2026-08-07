@@ -4,36 +4,52 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Chaos Crew – Screenshot-Contest</title>
-<link rel="stylesheet" href="chaos-crew-admin.css">
+<title>RDOC Giveaway: Screenshot-Contest</title>
+<link rel="stylesheet" href="/admin/rdoc.css">
+<script src="/admin/rdoc-theme.js"></script>
+<link rel="icon" href="/admin/favicon.ico" sizes="32x32">
+<link rel="icon" href="/admin/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/admin/icons/apple-touch-icon.png">
+<link rel="manifest" href="/admin/site.webmanifest">
+<meta name="theme-color" content="#121416" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F2F0" media="(prefers-color-scheme: light)">
 <style>
   .sc-wrap { padding:16px 18px 50px; max-width:860px; margin:0 auto; }
-  .sc-title { font-size:14px; letter-spacing:2px; color:var(--gold); margin:10px 0 6px; }
-  .sc-note { font-size:11px; color:var(--dim); line-height:1.65; margin-bottom:18px; }
-  .sc-team { border:1px solid rgba(0,212,255,.2); border-radius:10px; padding:14px 16px; margin-bottom:18px; }
-  .sc-team h2 { margin:0 0 6px; font-size:13px; letter-spacing:1.5px; color:var(--cyan); text-transform:uppercase; }
-  .sc-state { font-size:11px; color:var(--gold); margin-bottom:10px; }
-  .sc-submit { border:1px dashed rgba(240,165,0,.35); border-radius:8px; padding:11px 13px; margin-bottom:14px; }
-  .sc-submit h3 { margin:0 0 6px; font-size:12px; color:var(--text); }
+  .sc-title { font-family:var(--rdoc-font-mono); font-size:14px; letter-spacing:0.07em;
+              color:var(--rdoc-text); margin:10px 0 6px; }
+  .sc-note { font-size:11px; color:var(--rdoc-text-muted); line-height:1.65; margin-bottom:18px; }
+  .sc-team { border:1px solid var(--rdoc-border); border-radius:10px; padding:14px 16px; margin-bottom:18px; }
+  .sc-team h2 { font-family:var(--rdoc-font-mono); font-weight:400; margin:0 0 6px; font-size:13px;
+                letter-spacing:0.07em; color:var(--rdoc-text); text-transform:uppercase; }
+  .sc-state { font-size:11px; color:var(--rdoc-text-muted); margin-bottom:10px; }
+  .sc-submit { border:1px dashed var(--rdoc-line-on-surface); border-radius:8px; padding:11px 13px; margin-bottom:14px; }
+  .sc-submit h3 { font-family:var(--rdoc-font-text); font-weight:600; margin:0 0 6px; font-size:12px; color:var(--rdoc-text); }
   .sc-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px; }
   .sc-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px; }
-  .sc-card { border:1px solid rgba(0,212,255,.18); border-radius:8px; overflow:hidden; }
-  .sc-card.own { border-color:rgba(240,165,0,.4); }
-  .sc-card img { width:100%; height:150px; object-fit:cover; display:block; background:#060a11; cursor:pointer; }
+  .sc-card { border:1px solid var(--rdoc-border); border-radius:8px; overflow:hidden; }
+  /* Eigene Einsendung: Kante statt Farbfläche, damit die Karte ruhig bleibt. */
+  .sc-card.own { border-color:var(--rdoc-border-strong); }
+  .sc-card img { width:100%; height:150px; object-fit:cover; display:block; background:var(--rdoc-bg); cursor:pointer; }
   .sc-body { padding:8px 10px; }
-  .sc-card h4 { margin:0 0 2px; font-size:12px; color:var(--text); }
-  .sc-meta { font-size:10px; color:var(--dim); margin-bottom:6px; }
+  .sc-card h4 { font-family:var(--rdoc-font-text); font-weight:600; margin:0 0 2px; font-size:12px; color:var(--rdoc-text); }
+  .sc-meta { font-size:10px; color:var(--rdoc-text-muted); margin-bottom:6px; }
   .sc-votes { display:flex; flex-wrap:wrap; gap:3px; }
-  .sc-votes button { min-width:24px; padding:3px 0; font-size:11px; border-radius:4px; border:1px solid rgba(0,212,255,.3);
-                     background:transparent; color:var(--cyan); cursor:pointer; }
-  .sc-votes button.sel { background:var(--gold); border-color:var(--gold); color:#1a1200; font-weight:700; }
-  .sc-msg { font-size:10.5px; margin-top:6px; }
-  .sc-msg.err { color:var(--red); } .sc-msg.ok { color:#22e07a; }
-  .sc-empty { font-size:12px; color:var(--dim); }
-  .sc-warn { font-size:10.5px; color:var(--red); margin-top:6px; }
+  .sc-votes button { min-width:24px; padding:3px 0; font-family:var(--rdoc-font-mono); font-size:11px;
+                     border-radius:4px; border:1px solid var(--rdoc-line-on-surface);
+                     background:transparent; color:var(--rdoc-text-muted); cursor:pointer; }
+  .sc-votes button:hover { color:var(--rdoc-text); border-color:var(--rdoc-border-strong); }
+  /* Copper markiert die primaere Handlung dieser Seite: die eigene Wertung. */
+  .sc-votes button.sel { background:var(--rdoc-accent); border-color:var(--rdoc-accent); color:var(--rdoc-on-accent); }
+  .sc-msg { font-size:10.5px; margin-top:6px; color:var(--rdoc-text-muted); }
+  .sc-msg.err { color:var(--rdoc-error); } .sc-msg.ok { color:var(--rdoc-success); }
+  .sc-empty { font-size:12px; color:var(--rdoc-text-muted); }
+  .sc-warn { font-size:10.5px; color:var(--rdoc-error); margin-top:6px; }
+  .sc-consent { display:flex; gap:8px; align-items:flex-start; font-size:11px;
+                color:var(--rdoc-text-muted); line-height:1.55; margin:10px 0 0; }
+  .sc-consent input { margin-top:2px; flex-shrink:0; }
 </style>
 </head>
-<body>
+<body data-app>
 <script src="cc-defs.js"></script>
 <script src="giveaway-shared.js"></script>
 

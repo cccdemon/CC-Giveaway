@@ -1,5 +1,5 @@
 /**
- * Chaos Crew – Microservice Shared Lib
+ * RDOC Giveaway – Microservice Shared Lib
  * CC.validate + Navigation + Debug Console
  * Used by all admin pages across all services.
  */
@@ -284,43 +284,7 @@
   var cur = window.location.pathname.replace(/^\/+/, '');
   function isCur(h){ return cur === h.split('?')[0].replace(/^\//,''); }
 
-  var css = [
-    '.gwnav{--gc:#00d4ff;--gg:#f0a500;--gr:#ff4d6a;--gv:#9146ff;--gink:#cfe0ec;--gmut:rgba(200,220,232,.75);--gfai:rgba(200,220,232,.5);--gbg:#0a0e16;--gedge:rgba(0,212,255,.14);--gedge2:rgba(0,212,255,.3);display:flex;align-items:center;height:44px;padding:0 12px;gap:3px;position:sticky;top:0;z-index:900;background:linear-gradient(180deg,rgba(255,255,255,.015),transparent),var(--gbg);border-bottom:1px solid var(--gedge2);font-family:"Share Tech Mono",monospace;}',
-    '.gwnav *{box-sizing:border-box;}',
-    '.gwnav-brand{display:flex;align-items:center;gap:8px;font-size:12px;letter-spacing:2px;color:var(--gc);text-decoration:none;padding:0 12px 0 4px;margin-right:6px;white-space:nowrap;}',
-    '.gwnav-brand b{color:var(--gink);font-weight:400;}.gwnav-brand:hover{color:#fff;}',
-    '.gwnav-primary{display:flex;align-items:stretch;height:100%;gap:2px;}',
-    '.gwnav-item{display:flex;align-items:center;gap:7px;height:100%;padding:0 14px;text-decoration:none;font-size:11px;letter-spacing:1.2px;color:var(--gfai);border:0;border-bottom:2px solid transparent;cursor:pointer;white-space:nowrap;background:transparent;font-family:inherit;transition:color .14s,border-color .14s,background .14s;}',
-    '.gwnav-item svg{width:14px;height:14px;opacity:.8;}',
-    '.gwnav-item:hover{color:var(--gink);background:rgba(0,212,255,.04);}',
-    '.gwnav-item.active{color:var(--gc);border-bottom-color:var(--gc);}',
-    '.gwnav-caret{font-size:8px;opacity:.6;}',
-    '.gwnav-sep{width:1px;height:20px;background:var(--gedge);margin:0 5px;align-self:center;}',
-    '.gwnav-spacer{flex:1;}',
-    '.gwnav-drop{position:relative;height:100%;}',
-    '.gwnav-menu{position:absolute;top:calc(100% + 1px);left:0;min-width:214px;background:var(--gbg);border:1px solid var(--gedge2);border-radius:0 0 8px 8px;box-shadow:0 18px 40px -18px rgba(0,0,0,.9);padding:6px;display:none;flex-direction:column;gap:1px;z-index:60;}',
-    '.gwnav-drop.open .gwnav-menu{display:flex;}',
-    '.gwnav-drop.open>.gwnav-item{color:var(--gc);background:rgba(0,212,255,.06);}',
-    '.gwnav-di{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:6px;text-decoration:none;color:var(--gmut);font-size:11px;letter-spacing:.6px;cursor:pointer;}',
-    '.gwnav-di:hover{background:rgba(0,212,255,.08);color:var(--gink);}',
-    '.gwnav-di .ic{width:15px;text-align:center;opacity:.75;flex-shrink:0;}',
-    '.gwnav-di .sub{margin-left:auto;font-size:8px;letter-spacing:1px;color:var(--gfai);border:1px solid var(--gedge);border-radius:20px;padding:1px 7px;}',
-    '.gwnav-head{font-size:8px;letter-spacing:2px;color:var(--gfai);text-transform:uppercase;padding:7px 11px 4px;}',
-    '.gwnav-obs{display:flex;align-items:center;gap:8px;padding:7px 11px;border-radius:6px;}',
-    '.gwnav-obs:hover{background:rgba(0,212,255,.06);}',
-    '.gwnav-obs a{text-decoration:none;color:var(--gmut);font-size:11px;letter-spacing:.6px;display:flex;align-items:center;gap:9px;flex:1;}',
-    '.gwnav-obs:hover a{color:var(--gink);}',
-    '.gwnav-cpy{font-size:9px;color:var(--gfai);border:1px solid var(--gedge);border-radius:5px;padding:3px 8px;letter-spacing:1px;cursor:pointer;background:transparent;font-family:inherit;}',
-    '.gwnav-cpy:hover{color:var(--gc);border-color:var(--gedge2);}.gwnav-cpy.ok{color:#22e07a;border-color:#22e07a;}',
-    '.gwnav-right{display:flex;align-items:center;gap:9px;height:100%;}',
-    '.gwnav-user{display:flex;align-items:center;gap:8px;padding:3px 6px 3px 3px;border-radius:20px;border:1px solid var(--gedge);}',
-    '.gwnav-av{width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,var(--gv),var(--gc));display:grid;place-items:center;font-family:"Rajdhani",sans-serif;font-weight:700;font-size:12px;color:#fff;}',
-    '.gwnav-uname{font-size:11px;color:var(--gink);letter-spacing:.5px;}',
-    '.gwnav-logout{display:grid;place-items:center;width:32px;height:32px;border-radius:8px;border:1px solid rgba(255,77,106,.3);color:var(--gr);cursor:pointer;background:transparent;}',
-    '.gwnav-logout:hover{background:rgba(255,77,106,.1);}.gwnav-logout svg{width:15px;height:15px;}',
-    '@media(max-width:680px){.gwnav-item .lbl{display:none;}.gwnav-uname{display:none;}.gwnav-brand b{display:none;}}'
-  ].join('');
-  var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
+  // Styles der Nav liegen zentral in /admin/rdoc.css (.gwnav*) — hier nur Markup.
 
   var prim = PRIMARY.map(function(p){
     return '<a class="gwnav-item'+(isCur(p.href)?' active':'')+'" href="'+p.href+'">'+p.icon+'<span class="lbl">'+e(p.label)+'</span></a>';
@@ -339,7 +303,8 @@
   var nav = document.createElement('nav');
   nav.className = 'gwnav';
   nav.innerHTML =
-    '<a class="gwnav-brand" href="/admin/"><svg width="14" height="14" viewBox="0 0 12 12" fill="none"><path d="M6 1L11 5.5V11H8V8H4V11H1V5.5L6 1Z" stroke="currentColor" stroke-width="1.2"/></svg>CHAOS<b>CREW</b></a>' +
+    // RDOC-Signet (Micro-Cut, Minimum 24 px) + typografischer Projektname.
+    '<a class="gwnav-brand" href="/admin/" aria-label="RDOC Giveaway"><svg width="24" height="24" viewBox="0 0 200 200" fill="none" role="img" aria-label="RDOC"><g transform="translate(-60 -60) scale(0.3125)"><path fill="var(--rdoc-accent,#C48A4A)" d="M528.748,192.439 A320 320 0 0 1 779.563,336.473 L679.227,402.295 A200 200 0 0 0 522.467,312.274 Z M796.445,365.402 A320 320 0 0 1 805.202,640.19 L695.251,592.119 A200 200 0 0 0 689.778,420.376 Z M790.196,670.136 A320 320 0 0 1 667.139,791.878 L608.962,686.924 A200 200 0 0 0 685.872,610.835 Z M444.124,680 L579.876,680 L631.874,808.699 A320 320 0 0 1 586.703,823.158 L575.497,776.485 A272 272 0 0 0 589.252,772.799 L573.612,720 L450.388,720 L434.748,772.799 A272 272 0 0 0 448.503,776.485 L437.297,823.158 A320 320 0 0 1 392.126,808.699 Z M356.861,791.878 A320 320 0 0 1 233.804,670.136 L338.128,610.835 A200 200 0 0 0 415.038,686.924 Z M218.798,640.19 A320 320 0 0 1 227.555,365.402 L334.222,420.376 A200 200 0 0 0 328.749,592.119 Z M244.437,336.473 A320 320 0 0 1 495.252,192.439 L501.533,312.274 A200 200 0 0 0 344.773,402.295 Z"/></g></svg><span class="brand-name">RDOC</span><b>GIVEAWAY</b></a>' +
     '<div class="gwnav-primary">' + prim +
       '<div class="gwnav-sep"></div>' +
       '<div class="gwnav-drop" data-drop="tools"><div class="gwnav-item">'+ICON.tools+'<span class="lbl">TOOLS</span><span class="gwnav-caret">▾</span></div><div class="gwnav-menu">'+menu(TOOLS,false)+'</div></div>' +
@@ -373,6 +338,13 @@
     fetch('/admin/auth/logout', { method:'POST' }).catch(function(){}).then(function(){ window.location.href='/admin/login.html'; });
   });
 
+  // Theme-Umschalter (rdoc-theme.js muss im <head> geladen sein).
+  if (window.RDOC && RDOC.mountToggle) {
+    var navRight = nav.querySelector('.gwnav-right');
+    var tbtn = RDOC.mountToggle(navRight);
+    if (tbtn) navRight.insertBefore(tbtn, nav.querySelector('#gwnav-logout'));
+  }
+
   var body = document.body || document.getElementsByTagName('body')[0];
   if (body) body.insertBefore(nav, body.firstChild);
   else document.addEventListener('DOMContentLoaded', function(){ document.body.insertBefore(nav, document.body.firstChild); });
@@ -400,38 +372,7 @@
   var filterText  = '';
   var consoleOpen = false;
 
-  var style = document.createElement('style');
-  style.textContent = [
-    '.cc-dbg-bar{position:fixed;bottom:0;left:0;right:0;z-index:9999;font-family:"Share Tech Mono",monospace;font-size:11px;}',
-    '.cc-dbg-handle{background:#04060a;border-top:1px solid rgba(0,212,255,0.2);height:28px;display:flex;align-items:center;padding:0 12px;gap:10px;cursor:pointer;user-select:none;}',
-    '.cc-dbg-handle:hover{background:#080e14;}',
-    '.cc-dbg-label{color:rgba(0,212,255,0.6);letter-spacing:1.5px;font-size:10px;}',
-    '.cc-dbg-dot{width:6px;height:6px;border-radius:50%;background:#333;flex-shrink:0;transition:background 0.2s;}',
-    '.cc-dbg-dot.send{background:#00d4ff;} .cc-dbg-dot.recv{background:#00ff88;} .cc-dbg-dot.err{background:#ff4444;}',
-    '.cc-dbg-count{color:rgba(200,220,232,0.3);font-size:9px;margin-left:auto;}',
-    '.cc-dbg-btns{display:flex;gap:6px;margin-left:8px;}',
-    '.cc-dbg-btn{background:transparent;border:1px solid rgba(0,212,255,0.2);color:rgba(200,220,232,0.5);font-family:"Share Tech Mono",monospace;font-size:9px;letter-spacing:1px;padding:2px 8px;cursor:pointer;transition:all 0.15s;}',
-    '.cc-dbg-btn:hover{border-color:rgba(0,212,255,0.5);color:rgba(200,220,232,0.9);}',
-    '.cc-dbg-btn.active{border-color:#ff4444;color:#ff4444;}',
-    '.cc-dbg-panel{background:#04060a;border-top:1px solid rgba(0,212,255,0.15);height:240px;display:none;flex-direction:column;}',
-    '.cc-dbg-panel.open{display:flex;}',
-    '.cc-dbg-toolbar{display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid rgba(0,212,255,0.08);flex-shrink:0;}',
-    '.cc-dbg-filter{background:rgba(255,255,255,0.04);border:1px solid rgba(0,212,255,0.15);color:rgba(200,220,232,0.8);font-family:"Share Tech Mono",monospace;font-size:10px;padding:3px 8px;width:180px;outline:none;}',
-    '.cc-dbg-filter:focus{border-color:rgba(0,212,255,0.4);}',
-    '.cc-dbg-filter::placeholder{color:rgba(200,220,232,0.2);}',
-    '.cc-dbg-log{flex:1;overflow-y:auto;padding:4px 0;}',
-    '.cc-dbg-log::-webkit-scrollbar{width:3px;} .cc-dbg-log::-webkit-scrollbar-track{background:#04060a;} .cc-dbg-log::-webkit-scrollbar-thumb{background:rgba(0,212,255,0.2);}',
-    '.cc-dbg-entry{display:flex;align-items:baseline;gap:8px;padding:2px 10px;border-bottom:1px solid rgba(255,255,255,0.02);cursor:pointer;}',
-    '.cc-dbg-entry:hover{background:rgba(0,212,255,0.04);}',
-    '.cc-dbg-entry.expanded .cc-dbg-body{white-space:pre;overflow-x:auto;}',
-    '.cc-dbg-ts{color:rgba(200,220,232,0.25);font-size:9px;flex-shrink:0;min-width:65px;}',
-    '.cc-dbg-dir{font-size:10px;flex-shrink:0;min-width:14px;}',
-    '.cc-dbg-dir.send{color:rgba(0,212,255,0.7);} .cc-dbg-dir.recv{color:rgba(0,255,136,0.7);} .cc-dbg-dir.err{color:rgba(255,68,68,0.8);} .cc-dbg-dir.info{color:rgba(240,165,0,0.6);}',
-    '.cc-dbg-evt{color:rgba(0,212,255,0.5);flex-shrink:0;min-width:120px;}',
-    '.cc-dbg-body{color:rgba(200,220,232,0.55);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;}',
-    '.cc-dbg-body.send-color{color:rgba(0,212,255,0.55);} .cc-dbg-body.recv-color{color:rgba(0,255,136,0.55);} .cc-dbg-body.err-color{color:rgba(255,68,68,0.7);}',
-  ].join('');
-  document.head.appendChild(style);
+  // Styles: .cc-dbg-* in /admin/rdoc.css
 
   var bar = document.createElement('div');
   bar.className = 'cc-dbg-bar';
@@ -454,7 +395,7 @@
   panel.innerHTML =
     '<div class="cc-dbg-toolbar">' +
       '<input class="cc-dbg-filter" id="cc-dbg-filter" placeholder="Filter (event, cmd, user...)" type="text">' +
-      '<span style="color:rgba(200,220,232,0.2);font-size:9px;margin-left:auto;">Klick auf Zeile = Details</span>' +
+      '<span>Klick auf Zeile = Details</span>' +
     '</div>' +
     '<div class="cc-dbg-log" id="cc-dbg-log"></div>';
   bar.appendChild(panel);

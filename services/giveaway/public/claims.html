@@ -3,39 +3,46 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Chaos Crew – Gewinn-Abwicklung</title>
-<link rel="stylesheet" href="chaos-crew-admin.css">
+<title>RDOC Giveaway: Gewinn-Abwicklung</title>
+<link rel="stylesheet" href="/admin/rdoc.css">
+<script src="/admin/rdoc-theme.js"></script>
+<link rel="icon" href="/admin/favicon.ico" sizes="32x32">
+<link rel="icon" href="/admin/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/admin/icons/apple-touch-icon.png">
+<link rel="manifest" href="/admin/site.webmanifest">
+<meta name="theme-color" content="#121416" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F2F0" media="(prefers-color-scheme: light)">
 <style>
   .cl-wrap { padding:14px 18px 40px; max-width:1240px; margin:0 auto; }
-  .cl-title { font-size:13px; letter-spacing:2px; color:var(--cyan); margin:8px 0 4px; }
-  .cl-note { font-size:11px; color:var(--dim); margin-bottom:14px; line-height:1.6; }
+  .cl-title { font-size:13px; letter-spacing:2px; color:var(--rdoc-text); margin:8px 0 4px; }
+  .cl-note { font-size:11px; color:var(--rdoc-text-muted); margin-bottom:14px; line-height:1.6; }
 
   .cl-filters { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
-  .cl-filter { font-size:10px; letter-spacing:1px; border:1px solid rgba(0,212,255,.18);
-               border-radius:20px; padding:4px 12px; cursor:pointer; color:var(--dim); background:transparent; }
-  .cl-filter.active { color:var(--cyan); border-color:var(--cyan); }
+  .cl-filter { font-size:10px; letter-spacing:1px; border:1px solid var(--rdoc-border);
+               border-radius:20px; padding:4px 12px; cursor:pointer; color:var(--rdoc-text-muted); background:transparent; }
+  .cl-filter.active { color:var(--rdoc-text); border-color:var(--rdoc-border-strong); }
   .cl-filter .n { opacity:.6; margin-left:4px; }
 
-  .cl-item { border:1px solid rgba(0,212,255,.12); border-radius:10px; padding:12px 14px; margin-bottom:10px; }
-  .cl-item.overdue { border-color:rgba(255,77,106,.4); }
+  .cl-item { border:1px solid var(--rdoc-border); border-radius:10px; padding:12px 14px; margin-bottom:10px; }
+  .cl-item.overdue { border-color:var(--rdoc-error); }
   .cl-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-  .cl-head .win { font-size:13px; color:var(--text); font-weight:600; }
-  .cl-head .prize { font-size:11px; color:var(--gold); }
+  .cl-head .win { font-size:13px; color:var(--rdoc-text); font-weight:600; }
+  .cl-head .prize { font-size:11px; color:var(--rdoc-text-muted); }
   .cl-badge { font-size:9px; letter-spacing:1px; border:1px solid currentColor; border-radius:20px; padding:1px 8px; }
-  .cl-badge.pending  { color:var(--gold); }
-  .cl-badge.claimed  { color:#22e07a; }
-  .cl-badge.expired  { color:var(--red,#ff4d6a); }
-  .cl-badge.h        { color:var(--cyan); }
-  .cl-badge.purged   { color:var(--dim); }
-  .cl-sub { font-size:10px; color:var(--dim); margin-top:4px; line-height:1.6; }
-  .cl-contact { border:1px solid rgba(240,165,0,.3); border-radius:8px; padding:8px 11px; margin-top:8px;
-                font-size:11px; color:var(--text); line-height:1.7; }
-  .cl-contact .warn { font-size:9px; letter-spacing:1px; color:var(--gold); display:block; margin-bottom:3px; }
+  .cl-badge.pending  { color:var(--rdoc-warning); }
+  .cl-badge.claimed  { color:var(--rdoc-success); }
+  .cl-badge.expired  { color:var(--rdoc-error); }
+  .cl-badge.h        { color:var(--rdoc-info); }
+  .cl-badge.purged   { color:var(--rdoc-text-muted); }
+  .cl-sub { font-size:10px; color:var(--rdoc-text-muted); margin-top:4px; line-height:1.6; }
+  .cl-contact { border:1px solid var(--rdoc-warning); border-radius:8px; padding:8px 11px; margin-top:8px;
+                font-size:11px; color:var(--rdoc-text); line-height:1.7; }
+  .cl-contact .warn { font-size:9px; letter-spacing:1px; color:var(--rdoc-warning); display:block; margin-bottom:3px; }
   .cl-actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:9px; }
-  .cl-hint-red { font-size:10px; color:var(--red,#ff4d6a); margin-top:6px; }
+  .cl-hint-red { font-size:10px; color:var(--rdoc-error); margin-top:6px; }
 </style>
 </head>
-<body>
+<body data-app>
 <script src="cc-defs.js"></script>
 <script src="giveaway-shared.js"></script>
 

@@ -3,34 +3,41 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Chaos Crew – Gewinn melden</title>
-<link rel="stylesheet" href="chaos-crew-admin.css">
+<title>RDOC Giveaway: Gewinn melden</title>
+<link rel="stylesheet" href="/admin/rdoc.css">
+<script src="/admin/rdoc-theme.js"></script>
+<link rel="icon" href="/admin/favicon.ico" sizes="32x32">
+<link rel="icon" href="/admin/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/admin/icons/apple-touch-icon.png">
+<link rel="manifest" href="/admin/site.webmanifest">
+<meta name="theme-color" content="#121416" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F2F0" media="(prefers-color-scheme: light)">
 <style>
   .cl-wrap { padding:16px 18px 50px; max-width:720px; margin:0 auto; }
-  .cl-title { font-size:14px; letter-spacing:2px; color:var(--gold); margin:10px 0 6px; }
-  .cl-note { font-size:11px; color:var(--dim); line-height:1.65; margin-bottom:18px; }
-  .cl-card { border:1px solid rgba(240,165,0,.25); border-radius:10px; padding:14px 16px; margin-bottom:16px; }
-  .cl-card.done { border-color:rgba(34,224,122,.3); }
-  .cl-card.expired { border-color:rgba(255,77,106,.3); opacity:.75; }
-  .cl-card h3 { margin:0 0 4px; font-size:13px; color:var(--text); font-weight:600; }
-  .cl-meta { font-size:10px; color:var(--dim); margin-bottom:10px; letter-spacing:.5px; }
-  .cl-deadline { color:var(--gold); }
-  .cl-deadline.over { color:var(--red); }
+  .cl-title { font-size:14px; letter-spacing:2px; color:var(--rdoc-text); margin:10px 0 6px; }
+  .cl-note { font-size:11px; color:var(--rdoc-text-muted); line-height:1.65; margin-bottom:18px; }
+  .cl-card { border:1px solid var(--rdoc-warning); border-radius:10px; padding:14px 16px; margin-bottom:16px; }
+  .cl-card.done { border-color:var(--rdoc-success); }
+  .cl-card.expired { border-color:var(--rdoc-error); opacity:.75; }
+  .cl-card h3 { margin:0 0 4px; font-family:var(--rdoc-font-text); font-size:13px; color:var(--rdoc-text); font-weight:600; }
+  .cl-meta { font-size:10px; color:var(--rdoc-text-muted); margin-bottom:10px; letter-spacing:.5px; }
+  .cl-deadline { color:var(--rdoc-warning); }
+  .cl-deadline.over { color:var(--rdoc-error); }
   .cl-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:9px; margin-bottom:10px; }
   .cl-field { display:flex; flex-direction:column; gap:3px; }
-  .cl-field label { font-size:9px; letter-spacing:1.2px; color:var(--dim); }
+  .cl-field label { font-size:9px; letter-spacing:1.2px; color:var(--rdoc-text-muted); }
   .cl-field.wide { grid-column:1 / -1; }
   .cl-field textarea { min-height:60px; resize:vertical; font-family:inherit; }
   .cl-consent { display:flex; gap:8px; align-items:flex-start; font-size:11px;
-                color:var(--dim); line-height:1.55; margin:10px 0; }
+                color:var(--rdoc-text-muted); line-height:1.55; margin:10px 0; }
   .cl-consent input { margin-top:2px; flex-shrink:0; }
   .cl-msg { font-size:11px; margin-top:9px; }
-  .cl-msg.err { color:var(--red); } .cl-msg.ok { color:#22e07a; }
-  .cl-priv { font-size:10px; color:var(--dim); line-height:1.6; margin-top:14px;
-             border-top:1px solid rgba(255,255,255,.06); padding-top:12px; }
+  .cl-msg.err { color:var(--rdoc-error); } .cl-msg.ok { color:var(--rdoc-success); }
+  .cl-priv { font-size:10px; color:var(--rdoc-text-muted); line-height:1.6; margin-top:14px;
+             border-top:1px solid var(--rdoc-border); padding-top:12px; }
 </style>
 </head>
-<body>
+<body data-app>
 <script src="cc-defs.js"></script>
 <script src="giveaway-shared.js"></script>
 

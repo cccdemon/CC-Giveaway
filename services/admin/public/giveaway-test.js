@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════
-// CHAOS CREW v6 – Test Console JS
+// RDOC Giveaway: Test Console JS
 // Verbindet auf /giveaway/ws (via Caddy)
 // Simuliert viewer_tick + chat_msg Events
 // ════════════════════════════════════════════════════════

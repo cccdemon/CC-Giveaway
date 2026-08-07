@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════
-// CHAOS CREW – Giveaway Admin JS (microservice)
+// RDOC GIVEAWAY – Giveaway Admin JS (microservice)
 // WS: /giveaway/ws  API: /api/...
 // ════════════════════════════════════════════════════════
 
@@ -1105,15 +1105,15 @@ function updateMultiplierUI(factor, secondsLeft) {
   if (_multTimer) { clearInterval(_multTimer); _multTimer = null; }
   if (factor <= 1 || secondsLeft <= 0) {
     el.textContent = '1× (aus)';
-    el.style.color = 'var(--dim)';
+    el.style.color = 'var(--rdoc-text-muted)';
     return;
   }
-  el.style.color = 'var(--cyan)';
+  el.style.color = 'var(--rdoc-text)';
   let left = secondsLeft;
   const render = () => {
     const m = Math.floor(left / 60), s = left % 60;
     el.textContent = `${factor}× · ${m}:${String(s).padStart(2, '0')}`;
-    if (left <= 0) { clearInterval(_multTimer); _multTimer = null; el.textContent = '1× (aus)'; el.style.color = 'var(--dim)'; }
+    if (left <= 0) { clearInterval(_multTimer); _multTimer = null; el.textContent = '1× (aus)'; el.style.color = 'var(--rdoc-text-muted)'; }
     left--;
   };
   render();
@@ -1520,7 +1520,7 @@ function renderTable(hlKey=null) {
     document.getElementById('tbl').innerHTML = entries.map(([key,p],i) => `
       <tr class="${p.banned?'banned':''} ${p.eligible?'eligible':''} ${key===hlKey?'winner-row':''}">
         <td class="rank">${i+1}</td>
-        <td class="name">${esc(maskName(key, p.display||key))}${p.banned?' <span style="color:var(--red);font-size:10px;">[BAN]</span>':''}</td>
+        <td class="name">${esc(maskName(key, p.display||key))}${p.banned?' <span style="color:var(--rdoc-error);font-size:10px;">[BAN]</span>':''}</td>
         ${gwDisplayCols.map(c => `<td class="tickets">${fmtColVal(p[c.key])}</td>`).join('')}
         <td style="display:flex;gap:4px;justify-content:flex-end;">
           <button class="mini-btn ban" onclick="toggleBan('${esc(key)}')">${p.banned?'UN':'BAN'}</button>
@@ -1531,7 +1531,7 @@ function renderTable(hlKey=null) {
   document.getElementById('tbl').innerHTML = entries.map(([key,p],i) => `
     <tr class="${p.banned?'banned':''} ${p.eligible?'eligible':(isPending(p)?'pending':'')} ${key===hlKey?'winner-row':''}">
       <td class="rank">${i+1}</td>
-      <td class="name">${esc(maskName(key, p.display||key))}${statusBadge(p)}${p.banned?' <span style="color:var(--red);font-size:10px;">[BAN]</span>':''}${(p.flags&&p.flags.length)?` <span title="${esc(p.flags.map(f=>f.reason+' x'+f.count).join(', '))}" style="color:var(--gold);font-size:11px;cursor:help;">&#9888;${p.flags.length}</span>`:''}</td>
+      <td class="name">${esc(maskName(key, p.display||key))}${statusBadge(p)}${p.banned?' <span style="color:var(--rdoc-error);font-size:10px;">[BAN]</span>':''}${(p.flags&&p.flags.length)?` <span title="${esc(p.flags.map(f=>f.reason+' x'+f.count).join(', '))}" style="color:var(--rdoc-warning);font-size:11px;cursor:help;">&#9888;${p.flags.length}</span>`:''}</td>
       <td class="tickets">${parseDec(p.coins).toFixed(2)}</td>
       ${gwChannels.map(ch => `<td class="watchtime pc">${fmtTime((p.perChannel && p.perChannel[ch] && p.perChannel[ch].watchSec) || 0)}</td>`).join('')}
       <td class="watchtime total">${fmtTime(p.watchSec)}</td>
@@ -1641,8 +1641,8 @@ function applyAiSettings(msg) {
   if (key) key.placeholder = msg.hasKey ? '******** (hinterlegt - leer lassen zum Behalten, "-" zum Loeschen)' : 'API-Key eintragen';
   var st = document.getElementById('ai-state');
   if (st) {
-    if (msg.enabled && msg.hasKey) { st.textContent = 'AKTIV'; st.style.color = 'var(--green)'; }
-    else if (msg.enabled) { st.textContent = 'KEIN KEY'; st.style.color = 'var(--red)'; }
+    if (msg.enabled && msg.hasKey) { st.textContent = 'AKTIV'; st.style.color = 'var(--rdoc-success)'; }
+    else if (msg.enabled) { st.textContent = 'KEIN KEY'; st.style.color = 'var(--rdoc-error)'; }
     else { st.textContent = 'AUS'; st.style.color = ''; }
   }
 }
@@ -1693,7 +1693,7 @@ function applyAiModels(msg) {
     hint.textContent = msg.source === 'live'
       ? aiModels.length + ' Modelle beim Anbieter abgefragt'
       : 'Anbieterliste nicht abrufbar (' + (msg.error || '?') + ') - zeige bekannte Modelle';
-    hint.style.color = msg.source === 'live' ? 'var(--green)' : 'var(--gold)';
+    hint.style.color = msg.source === 'live' ? 'var(--rdoc-success)' : 'var(--rdoc-warning)';
   }
 }
 
@@ -1830,7 +1830,7 @@ function renderAudit() {
     const tgt  = e.target ? ' → ' + esc(privacyOn ? 'Zuschauer' : e.target) : '';
     const cls  = e.result === 'ok' ? '' : (e.result === 'denied' ? 'denied' : 'err');
     // Der Server fasst direkt aufeinanderfolgende identische Eintraege zusammen.
-    const rep  = e.n > 1 ? ' <span style="color:var(--gold)">×' + e.n + '</span>' : '';
+    const rep  = e.n > 1 ? ' <span style="color:var(--rdoc-warning)">×' + e.n + '</span>' : '';
     return '<div class="audit-row ' + cls + '">'
       + '<div class="audit-head"><b>' + who + '</b>' + tgt + rep
       + '<span class="audit-ts">' + when + '</span></div>'
@@ -1871,15 +1871,15 @@ function renderHistory() {
   if (!rows.length) { el.innerHTML = '<div class="wsc-empty">Noch keine Ziehungen</div>'; return; }
   el.innerHTML = rows.map(function(d) {
     const when  = fmtDrawDate(d.drawn_at);
-    const prize = d.prize ? '🎁 ' + esc(d.prize) : '<span style="color:var(--dim)">— kein Preis —</span>';
-    const test  = d.is_test ? ' <span style="color:var(--gold);font-size:9px;">TEST</span>' : '';
+    const prize = d.prize ? '🎁 ' + esc(d.prize) : '<span style="color:var(--rdoc-text-muted)">— kein Preis —</span>';
+    const test  = d.is_test ? ' <span style="color:var(--rdoc-warning);font-size:9px;">TEST</span>' : '';
     return '<div class="hist-row" style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">' +
       '<div style="display:flex;justify-content:space-between;gap:8px;">' +
         '<strong>' + esc(d.winner) + test + '</strong>' +
-        '<span style="color:var(--dim);font-size:10px;white-space:nowrap;">' + when + '</span>' +
+        '<span style="color:var(--rdoc-text-muted);font-size:10px;white-space:nowrap;">' + when + '</span>' +
       '</div>' +
       '<div style="font-size:12px;">' + prize + '</div>' +
-      '<div style="color:var(--dim);font-size:10px;">' + histStatLine(d) + '</div>' +
+      '<div style="color:var(--rdoc-text-muted);font-size:10px;">' + histStatLine(d) + '</div>' +
     '</div>';
   }).join('');
 }
@@ -1926,7 +1926,7 @@ function exportChances() {
   if (!active.length) { log('Keine zugelassenen Teilnehmer', 'red'); return; }
   const total = active.reduce((s,p) => s + p.coins, 0);
   const sep = '-'.repeat(48);
-  let txt = 'CHAOS CREW - GIVEAWAY GEWINNCHANCEN\n';
+  let txt = 'RDOC GIVEAWAY - GEWINNCHANCEN\n';
   txt += 'Stand: ' + new Date().toLocaleString('de-DE') + '\n';
   txt += 'Gesamt-Tickets: ' + total + '\n' + sep + '\n';
   txt += 'Platz '.padEnd(6) + 'Username'.padEnd(22) + 'Tickets'.padEnd(10) + 'Chance\n' + sep + '\n';

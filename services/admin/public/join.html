@@ -4,16 +4,41 @@
 <meta charset="UTF-8">
 <meta name="robots" content="noindex, nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Team beitreten</title>
+<title>RDOC Giveaway: Team beitreten</title>
+<link rel="stylesheet" href="/admin/rdoc.css">
+<script src="/admin/rdoc-theme.js"></script>
+<link rel="icon" href="/admin/favicon.ico" sizes="32x32">
+<link rel="icon" href="/admin/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/admin/icons/apple-touch-icon.png">
+<link rel="manifest" href="/admin/site.webmanifest">
+<meta name="theme-color" content="#121416" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F2F0" media="(prefers-color-scheme: light)">
 <style>
-  body { background:#04060a; color:#c8dce8; font-family:system-ui,sans-serif; min-height:100vh; display:flex; align-items:center; justify-content:center; text-align:center; }
-  .box { max-width:420px; padding:30px; }
-  a.btn { display:inline-block; background:#9146FF; color:#fff; padding:12px 20px; border-radius:6px; font-weight:700; text-decoration:none; margin-top:14px; }
-  .err { color:#ff5468; }
+  body { min-height:100vh; display:flex; align-items:center; justify-content:center; }
+  .card { width:min(92vw,420px); background:var(--rdoc-surface); border:1px solid var(--rdoc-line-on-surface);
+          border-radius:10px; padding:34px 30px; text-align:center; }
+  .logo { font-family:var(--rdoc-font-display); font-weight:400; font-size:17px; margin-bottom:4px; }
+  .logo b { color:var(--rdoc-text-muted); font-weight:400; }
+  .sub { font-family:var(--rdoc-font-mono); font-size:11px; letter-spacing:0.07em;
+         color:var(--rdoc-text-muted); margin-bottom:24px; text-transform:uppercase; }
+  #box { font-size:14px; line-height:1.6; }
+  a.btn { display:inline-block; background:var(--rdoc-twitch); color:var(--rdoc-offwhite);
+          padding:12px 20px; border-radius:6px; font-weight:600; text-decoration:none; margin-top:14px; }
+  a.btn:hover { opacity:.88; }
+  .err { color:var(--rdoc-error); }
+  .back { display:block; text-align:center; margin-top:14px; font-size:12px;
+          color:var(--rdoc-text-muted); text-decoration:none; }
 </style>
 </head>
 <body>
-  <div class="box" id="box"><div>Trete Team bei…</div></div>
+  <div>
+    <div class="card">
+      <div class="logo">RDOC <b>//</b> GIVEAWAY</div>
+      <div class="sub">Team beitreten</div>
+      <div id="box">Trete Team bei…</div>
+    </div>
+    <a class="back" href="/">← Startseite</a>
+  </div>
 <script>
   var code = new URLSearchParams(location.search).get('code') || '';
   var box = document.getElementById('box');

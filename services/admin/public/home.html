@@ -3,145 +3,144 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Team Giveaway: Community-Giveaway nach Zuschauzeit für Twitch</title>
+<title>RDOC Giveaway: Community-Giveaway nach Zuschauzeit für Twitch</title>
 <meta name="description" content="Giveaways für Twitch, bei denen Zuschauzeit zählt. Vier Mechaniken: Kampagne, Sofortverlosung, Los-Giveaway und Screenshot-Contest. Für einzelne Kanäle und Teams. Alle Regeln selbst einstellbar, jede Ziehung nachvollziehbar.">
 <link rel="canonical" href="https://team.raumdock.org/">
 
 <!-- Link-Vorschau (Discord, WhatsApp, X, Slack …) -->
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Team Giveaway">
+<meta property="og:site_name" content="RDOC Giveaway">
 <meta property="og:locale" content="de_DE">
 <meta property="og:url" content="https://team.raumdock.org/">
-<meta property="og:title" content="Team Giveaway: Lose für echte Zuschauzeit">
+<meta property="og:title" content="RDOC Giveaway: Lose für echte Zuschauzeit">
 <meta property="og:description" content="Wer zuschaut, sammelt Lose. Anmeldung per Keyword im Chat. Für einzelne Kanäle und Teams. Alle Regeln selbst einstellbar, jede Ziehung nachvollziehbar.">
 <meta property="og:image" content="https://team.raumdock.org/admin/og-preview.png">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Team Giveaway: Community-Giveaway nach Zuschauzeit für Twitch">
+<meta property="og:image:alt" content="RDOC Giveaway: Community-Giveaway nach Zuschauzeit für Twitch">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Team Giveaway: Lose für echte Zuschauzeit">
+<meta name="twitter:title" content="RDOC Giveaway: Lose für echte Zuschauzeit">
 <meta name="twitter:description" content="Wer zuschaut, sammelt Lose. Für einzelne Kanäle und Teams. Alle Regeln selbst einstellbar, jede Ziehung nachvollziehbar.">
 <meta name="twitter:image" content="https://team.raumdock.org/admin/og-preview.png">
-<meta name="theme-color" content="#00d4ff">
+<link rel="stylesheet" href="/admin/rdoc.css">
+<script src="/admin/rdoc-theme.js"></script>
+<link rel="icon" href="/admin/favicon.ico" sizes="32x32">
+<link rel="icon" href="/admin/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/admin/icons/apple-touch-icon.png">
+<link rel="manifest" href="/admin/site.webmanifest">
+<meta name="theme-color" content="#121416" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F2F0" media="(prefers-color-scheme: light)">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap');
-  :root{
-    --void:#04060a; --panel:#0a0e16; --sunk:#05080e;
-    --edge:rgba(0,212,255,.14); --edge2:rgba(0,212,255,.32);
-    --cyan:#00d4ff; --gold:#f0a500; --green:#22e07a; --violet:#9146ff;
-    --ink:#dceaf3; --mute:rgba(200,220,232,.56); --faint:rgba(200,220,232,.3);
-    --mono:'Share Tech Mono',ui-monospace,Consolas,monospace;
-    --disp:'Rajdhani','Segoe UI Semibold',system-ui,sans-serif;
-    --body:'Segoe UI',system-ui,sans-serif;
-  }
-  *{box-sizing:border-box;margin:0;padding:0}
   html{scroll-behavior:smooth}
-  body{background:var(--void);color:var(--ink);font-family:var(--body);line-height:1.6;overflow-x:hidden}
+  body{font-size:15px;line-height:1.6;overflow-x:hidden}
   a{color:inherit;text-decoration:none}
-  :focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
 
   .top{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:14px;padding:12px 22px;
-    background:rgba(4,6,10,.78);backdrop-filter:blur(10px);border-bottom:1px solid var(--edge)}
-  .logo{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:13px;letter-spacing:2px;color:var(--cyan)}
-  .logo b{color:var(--ink);font-weight:400}
+    background:var(--rdoc-bg);border-bottom:1px solid var(--rdoc-border)}
+  .logo{display:flex;align-items:center;gap:9px}
+  .logo .brand-name{font-family:var(--rdoc-font-display);font-weight:400;font-size:12px;color:var(--rdoc-text);letter-spacing:0}
+  .logo b{font-family:var(--rdoc-font-mono);font-weight:400;font-size:11px;letter-spacing:0.07em;color:var(--rdoc-text-muted)}
   .top .sp{flex:1}
-  .top a.ghost{font-family:var(--mono);font-size:11px;letter-spacing:1px;color:var(--mute);padding:8px 12px}
-  .top a.ghost:hover{color:var(--ink)}
-  .tw{display:inline-flex;align-items:center;gap:8px;background:var(--violet);color:#fff;font-weight:700;font-size:13px;padding:9px 16px;border-radius:8px;font-family:var(--body)}
-  .tw:hover{background:#a05cff}
+  .top a.ghost{font-family:var(--rdoc-font-mono);font-size:11px;letter-spacing:0.07em;color:var(--rdoc-text-muted);padding:8px 12px}
+  .top a.ghost:hover{color:var(--rdoc-text)}
+  .tw{display:inline-flex;align-items:center;gap:8px;background:var(--rdoc-twitch);color:#fff;font-weight:600;font-size:13px;padding:9px 16px;border-radius:8px}
+  .tw:hover{opacity:.88}
 
   .wrap{max-width:1080px;margin:0 auto;padding:0 22px}
 
   .hero{display:grid;grid-template-columns:1.05fr .95fr;gap:40px;align-items:center;padding:64px 0 40px}
-  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:3px;text-transform:uppercase;display:inline-flex;align-items:center;gap:9px;color:var(--cyan);opacity:.85}
-  .eyebrow::before{content:'';width:22px;height:1px;background:var(--cyan)}
-  h1{font-family:var(--disp);font-weight:700;font-size:clamp(38px,6vw,62px);line-height:.98;letter-spacing:-.5px;margin:16px 0 14px;text-wrap:balance}
-  h1 .g{color:var(--gold)} h1 .c{color:var(--cyan)}
-  .lede{font-size:17px;color:var(--mute);max-width:30em;margin-bottom:26px}
+  .eyebrow{font-family:var(--rdoc-font-mono);font-size:11px;letter-spacing:0.07em;text-transform:uppercase;display:inline-flex;align-items:center;gap:9px;color:var(--rdoc-text-muted)}
+  .eyebrow::before{content:'';width:22px;height:1px;background:var(--rdoc-border-strong)}
+  h1{font-family:var(--rdoc-font-display);font-weight:400;font-size:clamp(30px,6vw,45px);line-height:1.02;letter-spacing:0;margin:16px 0 14px;text-wrap:balance;color:var(--rdoc-text)}
+  .lede{font-size:17px;color:var(--rdoc-text-muted);max-width:30em;margin-bottom:26px}
+  .lede b{color:var(--rdoc-text)}
   .cta{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
-  .btn{display:inline-flex;align-items:center;gap:9px;font-weight:700;font-size:14px;padding:13px 20px;border-radius:9px;cursor:pointer;font-family:var(--body)}
-  .btn.tw{background:var(--violet);color:#fff;box-shadow:0 14px 34px -16px rgba(145,70,255,.75)}
-  .btn.tw:hover{background:#a05cff}
-  .btn.ghost{background:transparent;color:var(--cyan);border:1px solid var(--edge2)}
-  .btn.ghost:hover{background:rgba(0,212,255,.08)}
-  .micro{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:14px;letter-spacing:.5px}
+  .btn{display:inline-flex;align-items:center;gap:9px;font-weight:600;font-size:14px;padding:13px 20px;border-radius:9px;cursor:pointer}
+  .btn.tw{background:var(--rdoc-twitch);color:#fff}
+  .btn.tw:hover{opacity:.88}
+  .btn.ghost{background:transparent;color:var(--rdoc-text);border:1px solid var(--rdoc-border-strong)}
+  .btn.ghost:hover{background:var(--rdoc-surface)}
+  .micro{font-family:var(--rdoc-font-mono);font-size:11px;color:var(--rdoc-text-faint);margin-top:14px;letter-spacing:.3px}
 
-  .viz{background:linear-gradient(180deg,rgba(255,255,255,.015),transparent),var(--panel);border:1px solid var(--edge);border-radius:16px;padding:20px;position:relative;overflow:hidden}
-  .viz::before{content:'';position:absolute;inset:0;background:radial-gradient(400px 200px at 70% 0,rgba(0,212,255,.08),transparent 60%);pointer-events:none}
-  .viz-h{display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:9px;letter-spacing:2px;color:var(--faint);text-transform:uppercase;margin-bottom:16px}
+  .viz{background:var(--rdoc-surface);border:1px solid var(--rdoc-border);border-radius:16px;padding:20px;position:relative;overflow:hidden}
+  .viz-h{display:flex;justify-content:space-between;align-items:center;font-family:var(--rdoc-font-mono);font-size:9px;letter-spacing:0.07em;color:var(--rdoc-text-muted);text-transform:uppercase;margin-bottom:16px}
   .chan{margin:11px 0}
-  .chan-top{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;margin-bottom:5px}
-  .chan-top .nm{color:var(--ink)} .chan-top .vt{color:var(--cyan);font-variant-numeric:tabular-nums}
-  .bar{height:7px;border-radius:5px;background:var(--sunk);overflow:hidden;border:1px solid var(--edge)}
-  .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--cyan),#7fe9ff);border-radius:5px}
-  .pool{margin-top:20px;border-top:1px dashed var(--edge);padding-top:16px;display:flex;align-items:center;gap:16px}
-  .pool .lose{font-family:var(--disp);font-weight:700;font-size:46px;color:var(--gold);line-height:1;font-variant-numeric:tabular-nums;text-shadow:0 0 24px rgba(240,165,0,.35)}
-  .pool .lbl{font-family:var(--mono);font-size:10px;letter-spacing:1.5px;color:var(--mute);text-transform:uppercase}
-  .pool .conv{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--faint);text-align:right;line-height:1.5}
-  .spark{position:absolute;width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 10px var(--gold);opacity:0;pointer-events:none}
+  .chan-top{display:flex;justify-content:space-between;font-family:var(--rdoc-font-mono);font-size:11px;margin-bottom:5px}
+  .chan-top .nm{color:var(--rdoc-text)} .chan-top .vt{color:var(--rdoc-text-muted);font-variant-numeric:tabular-nums}
+  .bar{height:7px;border-radius:5px;background:var(--rdoc-bg);overflow:hidden;border:1px solid var(--rdoc-line-on-surface)}
+  .bar i{display:block;height:100%;width:0;background:var(--rdoc-border-strong);border-radius:5px}
+  .pool{margin-top:20px;border-top:1px dashed var(--rdoc-line-on-surface);padding-top:16px;display:flex;align-items:center;gap:16px}
+  /* Der eine Copper-Akzent dieser Ansicht: der Lostopf-Zähler. */
+  .pool .lose{font-family:var(--rdoc-font-display);font-weight:400;font-size:36px;color:var(--rdoc-accent);line-height:1;font-variant-numeric:tabular-nums}
+  .pool .lbl{font-family:var(--rdoc-font-mono);font-size:10px;letter-spacing:0.07em;color:var(--rdoc-text-muted);text-transform:uppercase}
+  .pool .conv{margin-left:auto;font-family:var(--rdoc-font-mono);font-size:10px;color:var(--rdoc-text-faint);text-align:right;line-height:1.5}
+  .spark{position:absolute;width:6px;height:6px;border-radius:1px;background:var(--rdoc-accent);opacity:0;pointer-events:none}
 
   section{padding:46px 0}
-  .sec-label{font-family:var(--mono);font-size:10px;letter-spacing:3px;color:var(--cyan);text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:9px}
-  .sec-label::before{content:'';width:18px;height:1px;background:var(--cyan);opacity:.6}
-  h2{font-family:var(--disp);font-weight:700;font-size:clamp(26px,3.4vw,36px);letter-spacing:-.3px;margin-bottom:6px;text-wrap:balance}
-  .sec-sub{color:var(--mute);max-width:44em;margin-bottom:26px}
+  .sec-label{font-family:var(--rdoc-font-mono);font-size:10px;letter-spacing:0.07em;color:var(--rdoc-text-muted);text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:9px}
+  .sec-label::before{content:'';width:18px;height:1px;background:var(--rdoc-border-strong)}
+  h2{font-family:var(--rdoc-font-display);font-weight:400;font-size:clamp(20px,3.4vw,27px);letter-spacing:0;margin-bottom:6px;text-wrap:balance;color:var(--rdoc-text)}
+  .sec-sub{color:var(--rdoc-text-muted);max-width:44em;margin-bottom:26px}
+  .sec-sub b{color:var(--rdoc-text)}
 
-  .forwho{background:linear-gradient(180deg,var(--panel),transparent);border-top:1px solid var(--edge);border-bottom:1px solid var(--edge)}
-  .forwho p{font-family:var(--disp);font-weight:600;font-size:clamp(20px,2.6vw,27px);color:var(--ink);max-width:24em;line-height:1.3}
-  .forwho p b{color:var(--cyan)} .forwho p em{color:var(--gold);font-style:normal}
+  .forwho{background:var(--rdoc-surface);border-top:1px solid var(--rdoc-border);border-bottom:1px solid var(--rdoc-border)}
+  .forwho p{font-family:var(--rdoc-font-display);font-weight:400;font-size:clamp(16px,2.6vw,20px);color:var(--rdoc-text);max-width:24em;line-height:1.3}
+  .forwho p b{color:var(--rdoc-text);font-weight:700} .forwho p em{color:var(--rdoc-text);font-style:normal;font-weight:700}
 
   .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
-  .step{background:var(--panel);border:1px solid var(--edge);border-radius:12px;padding:18px 16px;position:relative}
-  .step .no{font-family:var(--mono);font-size:11px;color:var(--gold);letter-spacing:1px}
-  .step h3{font-family:var(--disp);font-weight:600;font-size:19px;margin:8px 0 6px}
-  .step p{font-size:13.5px;color:var(--mute)}
+  .step{background:var(--rdoc-surface);border:1px solid var(--rdoc-border);border-radius:12px;padding:18px 16px;position:relative}
+  .step .no{font-family:var(--rdoc-font-mono);font-size:11px;color:var(--rdoc-text-muted);letter-spacing:0.07em}
+  .step h3{font-family:var(--rdoc-font-display);font-weight:400;font-size:15px;margin:8px 0 6px}
+  .step p{font-size:13.5px;color:var(--rdoc-text-muted)}
   /* Hinweis, welche Werte in diesem Schritt frei einstellbar sind */
-  .cfg{display:block;margin-top:10px;padding-top:9px;border-top:1px dashed var(--edge2);
-    font-size:12px;line-height:1.45;color:var(--faint)}
-  .cfg::before{content:'⚙ ';color:var(--gold)}
-  .cfg i{font-style:normal;color:var(--mute)}
-  .step::after{content:'→';position:absolute;right:-11px;top:50%;transform:translateY(-50%);color:var(--faint);font-size:15px;z-index:2}
+  .cfg{display:block;margin-top:10px;padding-top:9px;border-top:1px dashed var(--rdoc-line-on-surface);
+    font-size:12px;line-height:1.45;color:var(--rdoc-text-faint)}
+  .cfg::before{content:'⚙ ';color:var(--rdoc-text-muted)}
+  .cfg i{font-style:normal;color:var(--rdoc-text-muted)}
+  .step::after{content:'→';position:absolute;right:-11px;top:50%;transform:translateY(-50%);color:var(--rdoc-text-faint);font-size:15px;z-index:2}
   .step:last-child::after{display:none}
 
   .feat{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-  .f{background:var(--panel);border:1px solid var(--edge);border-radius:12px;padding:18px 17px;transition:border-color .15s,transform .15s}
-  .f:hover{border-color:var(--edge2);transform:translateY(-2px)}
+  .f{background:var(--rdoc-surface);border:1px solid var(--rdoc-border);border-radius:12px;padding:18px 17px;transition:border-color .15s,transform .15s}
+  .f:hover{border-color:var(--rdoc-border-strong);transform:translateY(-2px)}
   .f .ic{font-size:19px;margin-bottom:9px;display:block}
-  .f h3{font-family:var(--disp);font-weight:600;font-size:18px;margin-bottom:5px}
-  .f p{font-size:13px;color:var(--mute)}
-  .f .tag{font-family:var(--mono);font-size:9px;letter-spacing:1px;color:var(--gold);border:1px solid rgba(240,165,0,.3);border-radius:20px;padding:1px 8px;float:right}
+  .f h3{font-family:var(--rdoc-font-display);font-weight:400;font-size:14px;margin-bottom:5px}
+  .f p{font-size:13px;color:var(--rdoc-text-muted)}
+  .f .tag{font-family:var(--rdoc-font-mono);font-size:9px;letter-spacing:0.07em;color:var(--rdoc-text-muted);border:1px solid var(--rdoc-line-on-surface);border-radius:20px;padding:1px 8px;float:right}
 
-  .req{display:grid;grid-template-columns:1.2fr 1fr;gap:30px;align-items:start;background:linear-gradient(180deg,rgba(0,212,255,.03),transparent);border:1px solid var(--edge);border-radius:16px;padding:28px}
+  .req{display:grid;grid-template-columns:1.2fr 1fr;gap:30px;align-items:start;background:var(--rdoc-surface);border:1px solid var(--rdoc-border);border-radius:16px;padding:28px}
   .req ul{list-style:none;display:flex;flex-direction:column;gap:14px}
   .req li{display:flex;gap:12px;align-items:flex-start}
-  .req .rc{flex:0 0 28px;height:28px;border-radius:8px;display:grid;place-items:center;font-size:14px;background:var(--sunk);border:1px solid var(--edge2)}
-  .req .rt b{display:block;font-family:var(--disp);font-weight:600;font-size:16px;color:var(--ink)}
-  .req .rt span{font-size:13px;color:var(--mute)}
-  .req .aside{background:var(--sunk);border:1px solid var(--edge);border-radius:12px;padding:18px;font-size:13px;color:var(--mute)}
-  .req .aside b{color:var(--cyan);font-family:var(--mono);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;display:block;margin-bottom:8px}
-  .req .aside code{background:var(--void);border:1px solid var(--edge);border-radius:3px;padding:1px 5px;color:var(--cyan);font-family:var(--mono);font-size:11px}
-  .req .aside a{color:var(--cyan)}
+  .req .rc{flex:0 0 28px;height:28px;border-radius:8px;display:grid;place-items:center;font-size:14px;background:var(--rdoc-bg);border:1px solid var(--rdoc-line-on-surface)}
+  .req .rt b{display:block;font-family:var(--rdoc-font-display);font-weight:400;font-size:12px;color:var(--rdoc-text)}
+  .req .rt span{font-size:13px;color:var(--rdoc-text-muted)}
+  .req .aside{background:var(--rdoc-bg);border:1px solid var(--rdoc-line-on-surface);border-radius:12px;padding:18px;font-size:13px;color:var(--rdoc-text-muted)}
+  .req .aside b{color:var(--rdoc-text);font-family:var(--rdoc-font-mono);font-size:10px;letter-spacing:0.07em;text-transform:uppercase;display:block;margin-bottom:8px}
+  .req .aside code{background:var(--rdoc-surface);border:1px solid var(--rdoc-line-on-surface);border-radius:3px;padding:1px 5px;color:var(--rdoc-text);font-family:var(--rdoc-font-mono);font-size:11px}
+  .req .aside a{color:var(--rdoc-text);text-decoration:underline}
 
-  .final{text-align:center;background:radial-gradient(600px 260px at 50% 0,rgba(145,70,255,.12),transparent 60%);border-top:1px solid var(--edge)}
+  .final{text-align:center;border-top:1px solid var(--rdoc-border)}
   .final h2{margin-bottom:10px}
-  .final p{color:var(--mute);margin-bottom:22px}
+  .final p{color:var(--rdoc-text-muted);margin-bottom:22px}
 
-  footer{border-top:1px solid var(--edge);padding:22px;text-align:center;font-family:var(--mono);font-size:10px;letter-spacing:1px;color:var(--faint)}
-  footer a{color:var(--mute)} footer a:hover{color:var(--cyan)}
+  footer{border-top:1px solid var(--rdoc-border);padding:22px;text-align:center;font-family:var(--rdoc-font-mono);font-size:10px;letter-spacing:.5px;color:var(--rdoc-text-faint);background:transparent;display:block}
+  footer a{color:var(--rdoc-text-muted)} footer a:hover{color:var(--rdoc-text)}
 
-  /* Vier Mechaniken — je Karte eine Akzentfarbe (wie im Admin-Panel) */
+  /* Vier Mechaniken: einheitliche Karten, Unterscheidung über Icon + Titel */
   .modes{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
-  .mode{--acc:var(--cyan);background:var(--panel);border:1px solid var(--edge);border-radius:12px;
+  .mode{background:var(--rdoc-surface);border:1px solid var(--rdoc-border);border-radius:12px;
     padding:18px 16px;position:relative;overflow:hidden;transition:border-color .15s,transform .15s}
-  .mode::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--acc);opacity:.85}
-  .mode:hover{border-color:var(--acc);transform:translateY(-2px)}
+  .mode::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--rdoc-border-strong)}
+  .mode:hover{border-color:var(--rdoc-border-strong);transform:translateY(-2px)}
   .mode .ic{font-size:20px;display:block;margin-bottom:9px}
-  .mode h3{font-family:var(--disp);font-weight:600;font-size:18px;margin-bottom:5px;color:var(--acc)}
-  .mode p{font-size:13px;color:var(--mute)}
-  .mode .who{display:block;margin-top:10px;padding-top:9px;border-top:1px dashed var(--edge2);
-    font-family:var(--mono);font-size:10px;letter-spacing:.8px;color:var(--faint)}
-  .mode .who::before{content:'▸ ';color:var(--acc)}
+  .mode h3{font-family:var(--rdoc-font-display);font-weight:400;font-size:14px;margin-bottom:5px;color:var(--rdoc-text)}
+  .mode p{font-size:13px;color:var(--rdoc-text-muted)}
+  .mode .who{display:block;margin-top:10px;padding-top:9px;border-top:1px dashed var(--rdoc-line-on-surface);
+    font-family:var(--rdoc-font-mono);font-size:10px;letter-spacing:.5px;color:var(--rdoc-text-faint)}
+  .mode .who::before{content:'▸ ';color:var(--rdoc-text-muted)}
+
+  .detail-link{color:var(--rdoc-text);text-decoration:underline}
 
   @media(max-width:820px){
     .hero{grid-template-columns:1fr;gap:26px}
@@ -152,18 +151,18 @@
     .top a.ghost{display:none}
   }
   @media(max-width:480px){.modes{grid-template-columns:1fr}}
-  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
 
 <div class="top">
-  <a class="logo" href="/"><svg width="15" height="15" viewBox="0 0 12 12" fill="none"><path d="M6 1L11 5.5V11H8V8H4V11H1V5.5L6 1Z" stroke="#00d4ff" stroke-width="1.2"/></svg>CHAOS<b>CREW</b></a>
+  <a class="logo" href="/" aria-label="RDOC Giveaway"><svg width="24" height="24" viewBox="0 0 200 200" fill="none" role="img" aria-label="RDOC"><g transform="translate(-60 -60) scale(0.3125)"><path fill="var(--rdoc-accent,#C48A4A)" d="M528.748,192.439 A320 320 0 0 1 779.563,336.473 L679.227,402.295 A200 200 0 0 0 522.467,312.274 Z M796.445,365.402 A320 320 0 0 1 805.202,640.19 L695.251,592.119 A200 200 0 0 0 689.778,420.376 Z M790.196,670.136 A320 320 0 0 1 667.139,791.878 L608.962,686.924 A200 200 0 0 0 685.872,610.835 Z M444.124,680 L579.876,680 L631.874,808.699 A320 320 0 0 1 586.703,823.158 L575.497,776.485 A272 272 0 0 0 589.252,772.799 L573.612,720 L450.388,720 L434.748,772.799 A272 272 0 0 0 448.503,776.485 L437.297,823.158 A320 320 0 0 1 392.126,808.699 Z M356.861,791.878 A320 320 0 0 1 233.804,670.136 L338.128,610.835 A200 200 0 0 0 415.038,686.924 Z M218.798,640.19 A320 320 0 0 1 227.555,365.402 L334.222,420.376 A200 200 0 0 0 328.749,592.119 Z M244.437,336.473 A320 320 0 0 1 495.252,192.439 L501.533,312.274 A200 200 0 0 0 344.773,402.295 Z"/></g></svg><span class="brand-name">RDOC</span><b>GIVEAWAY</b></a>
   <div class="sp"></div>
   <a class="ghost" href="#modes">Mechaniken</a>
   <a class="ghost" href="#how">Ablauf</a>
   <a class="ghost" href="/admin/funktionsweise.html">So funktioniert es im Detail</a>
   <a class="ghost" href="#req">Voraussetzungen</a>
+  <span id="theme-slot" style="display:flex;align-items:center"></span>
   <a class="tw" id="nav-cta" href="/admin/auth/twitch?next=/admin/">▶ Mit Twitch starten</a>
 </div>
 
@@ -171,7 +170,7 @@
   <div class="hero">
     <div>
       <span class="eyebrow">Multi-Channel Community-Giveaway</span>
-      <h1>Zuschauzeit wird zum <span class="g">Los</span>.<br>Auf einem Kanal oder <span class="c">im ganzen Team</span>.</h1>
+      <h1>Zuschauzeit wird zum Los.<br>Auf einem Kanal oder im ganzen Team.</h1>
       <p class="lede">Lose entstehen aus echter Zuschauzeit, nicht aus einem Klick zur richtigen Sekunde. Wer länger zuschaut, hat mehr Lose. Das funktioniert auf einem <b>einzelnen Kanal</b> genauso wie im Team, wo mehrere Kanäle auf ein gemeinsames Konto einzahlen. <b>Vier Mechaniken</b> stehen zur Wahl, auf Wunsch parallel. Die Regeln legst du fest, und jede Ziehung lässt sich jederzeit belegen.</p>
       <div class="cta">
         <a class="btn tw" id="hero-cta" href="/admin/auth/twitch?next=/admin/">▶ Kostenlos mit Twitch registrieren</a>
@@ -222,28 +221,28 @@
     <h2>Für jeden Anlass die passende Mechanik</h2>
     <p class="sec-sub">Ob wochenlanges Community-Event oder schnelle Verlosung zwischen zwei Runden: Du wählst die Mechanik, <b>auch mehrere gleichzeitig</b>. Eingesetzt wird immer nur Zuschauzeit, nie Geld.</p>
     <div class="modes">
-      <a class="mode" style="--acc:var(--cyan)" href="/admin/funktionsweise.html#kampagne" title="Wie die Kampagne genau funktioniert">
+      <a class="mode" href="/admin/funktionsweise.html#kampagne" title="Wie die Kampagne genau funktioniert">
         <span class="ic">📈</span><h3>Kampagne</h3>
         <p>Das Langzeit-Giveaway. Zuschauzeit und Chat werden zu Losen, am Ende entscheidet die gewichtete Ziehung.</p>
         <span class="who">Wochen-Event über alle Kanäle. Details →</span>
       </a>
-      <a class="mode" style="--acc:var(--gold)" href="/admin/funktionsweise.html#sofortverlosung" title="Wie die Sofortverlosung genau funktioniert">
+      <a class="mode" href="/admin/funktionsweise.html#sofortverlosung" title="Wie die Sofortverlosung genau funktioniert">
         <span class="ic">⚡</span><h3>Sofortverlosung</h3>
         <p>Keyword im Anmeldefenster schreiben und wirklich zuschauen, mehr nicht. Alle haben die gleiche Chance, gezogen wird live. Kein Sammeln, keine Vorleistung.</p>
         <span class="who">Spontan, live, in 60 Sekunden. Details →</span>
       </a>
-      <a class="mode" style="--acc:var(--green)" href="/admin/funktionsweise.html#los-giveaway" title="Wie das Los-Giveaway genau funktioniert">
+      <a class="mode" href="/admin/funktionsweise.html#los-giveaway" title="Wie das Los-Giveaway genau funktioniert">
         <span class="ic">🎟</span><h3>Los-Giveaway</h3>
         <p>Zuschauzeit wird zu Guthaben, das erhalten bleibt. Damit setzen Zuschauer gezielt auf Preise, per Chat-Befehl oder im Browser. Gezogen wird je Preis, gewichtet nach Einsatz.</p>
         <span class="who">Mehrere Preise, echte Taktik. Details →</span>
       </a>
-      <a class="mode" style="--acc:var(--violet)" href="/admin/funktionsweise.html#screenshot-contest" title="Wie der Screenshot-Contest genau funktioniert">
+      <a class="mode" href="/admin/funktionsweise.html#screenshot-contest" title="Wie der Screenshot-Contest genau funktioniert">
         <span class="ic">📸</span><h3>Screenshot-Contest</h3>
         <p>Die Community reicht Screenshots ein und vergibt 1 bis 10 Punkte. Die höchste Punktsumme gewinnt. Der Streamer gibt jede Einsendung frei, bevor sie sichtbar wird.</p>
         <span class="who">Können statt Glück. Details →</span>
       </a>
     </div>
-    <p class="sec-sub" style="margin-top:16px"><a href="/admin/funktionsweise.html" style="color:var(--cyan)">→ Die komplette Funktionsweise im Detail</a>: Messung, Fairness-Regeln, Ziehung, Nachweis.</p>
+    <p class="sec-sub" style="margin-top:16px"><a href="/admin/funktionsweise.html" class="detail-link">→ Die komplette Funktionsweise im Detail</a>: Messung, Fairness-Regeln, Ziehung, Nachweis.</p>
   </div>
 </section>
 
@@ -295,9 +294,12 @@
   </div>
 </section>
 
-<footer>CHAOS CREW · TEAM GIVEAWAY · <a href="/admin/funktionsweise.html">So funktioniert es</a> · <a href="/admin/setup.html">Setup</a> · <a href="/viewer/help">Anleitung</a> · <a href="/viewer/status">Mein Status</a> · <a href="/admin/meine-daten.html">Meine Daten</a> · <a href="/admin/changelog.html">Änderungen</a> · <a href="/admin/roadmap.html">Roadmap</a> · <a href="/admin/impressum.html">Impressum</a> · <a href="/admin/datenschutz.html">Datenschutz</a> · <a href="/admin/nutzungsbedingungen.html">Nutzungsbedingungen</a> · <a href="/admin/haftungsausschluss.html">Haftungsausschluss</a><br><span style="opacity:.7">Giveaways werden von den jeweiligen Streamern veranstaltet, nicht vom Betreiber dieser Seite.</span></footer>
+<footer>RDOC GIVEAWAY · <a href="/admin/funktionsweise.html">So funktioniert es</a> · <a href="/admin/setup.html">Setup</a> · <a href="/viewer/help">Anleitung</a> · <a href="/viewer/status">Mein Status</a> · <a href="/admin/meine-daten.html">Meine Daten</a> · <a href="/admin/changelog.html">Änderungen</a> · <a href="/admin/roadmap.html">Roadmap</a> · <a href="/admin/impressum.html">Impressum</a> · <a href="/admin/datenschutz.html">Datenschutz</a> · <a href="/admin/nutzungsbedingungen.html">Nutzungsbedingungen</a> · <a href="/admin/haftungsausschluss.html">Haftungsausschluss</a><br><span style="opacity:.7">Giveaways werden von den jeweiligen Streamern veranstaltet, nicht vom Betreiber dieser Seite.</span></footer>
 
 <script>
+  // Theme-Umschalter in der Topbar.
+  if (window.RDOC && RDOC.mountToggle) RDOC.mountToggle(document.getElementById('theme-slot'));
+
   // Progressive: if already logged in, point CTAs at the dashboard.
   fetch('/admin/auth/me').then(function(r){ return r.ok ? r.json() : null; }).then(function(u){
     if(!u) return;

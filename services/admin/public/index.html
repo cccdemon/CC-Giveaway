@@ -2,8 +2,15 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Team Giveaway – Control Center</title>
-<link rel="stylesheet" href="chaos-crew-admin.css">
+<title>RDOC Giveaway: Control Center</title>
+<link rel="stylesheet" href="/admin/rdoc.css">
+<script src="/admin/rdoc-theme.js"></script>
+<link rel="icon" href="/admin/favicon.ico" sizes="32x32">
+<link rel="icon" href="/admin/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/admin/icons/apple-touch-icon.png">
+<link rel="manifest" href="/admin/site.webmanifest">
+<meta name="theme-color" content="#121416" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F2F0" media="(prefers-color-scheme: light)">
 <style>
   /* Superadmin-only Bereiche: standardmaessig aus, damit sie nicht kurz
      aufblitzen, bevor /auth/me antwortet. admin-shared.js setzt data-role. */
@@ -12,16 +19,15 @@
   html[data-role="superadmin"] .health-bar.sa-only { display: flex; }
 </style>
 </head>
-<body>
+<body data-app>
 <script src="/giveaway/cc-defs.js"></script>
 <script src="admin-shared.js"></script>
-<div class="scanlines"></div>
 
 <div class="index-header">
   <div class="index-logo">
-    <span class="logo-cc">TEAM</span>
+    <span class="logo-cc">RDOC</span>
     <span class="logo-sep">//</span>
-    <span class="logo-crew">GIVEAWAY</span>
+    <span class="logo-crew">Giveaway Control</span>
   </div>
   <span class="logo-sub">CONTROL CENTER</span>
   <div class="header-time" id="clock"></div>
@@ -118,7 +124,7 @@
 </div>
 
 <footer>
-  <span class="footer-text">TEAM GIVEAWAY &nbsp;//&nbsp; o7</span>
+  <span class="footer-text">RDOC GIVEAWAY &nbsp;//&nbsp; o7</span>
   <span class="footer-ver">MICROSERVICES // POSTGRESQL + REDIS</span>
 </footer>
 

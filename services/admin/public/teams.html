@@ -3,44 +3,51 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Team Giveaway – Meine Teams</title>
-<link rel="stylesheet" href="chaos-crew-admin.css">
+<title>RDOC Giveaway: Teams</title>
+<link rel="stylesheet" href="/admin/rdoc.css">
+<script src="/admin/rdoc-theme.js"></script>
+<link rel="icon" href="/admin/favicon.ico" sizes="32x32">
+<link rel="icon" href="/admin/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/admin/icons/apple-touch-icon.png">
+<link rel="manifest" href="/admin/site.webmanifest">
+<meta name="theme-color" content="#121416" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F2F0" media="(prefers-color-scheme: light)">
 <style>
   .tw { max-width: 860px; margin: 24px auto; padding: 0 16px; }
-  .panel { background:#0a0e16; border:1px solid rgba(0,212,255,0.2); border-radius:8px; padding:20px; margin-bottom:18px; }
-  .panel h2 { font-size:13px; letter-spacing:2px; color:#00d4ff; margin-bottom:14px; text-transform:uppercase; }
+  .panel { background:var(--rdoc-surface); border:1px solid var(--rdoc-border); border-radius:8px; padding:20px; margin-bottom:18px; }
+  .panel h2 { font-family:var(--rdoc-font-mono); font-weight:400; font-size:13px; letter-spacing:0.07em; color:var(--rdoc-text); margin-bottom:14px; text-transform:uppercase; }
   .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-  input { background:#060a11; border:1px solid rgba(0,212,255,0.25); color:#c8dce8; padding:9px 10px; border-radius:6px; font-size:13px; outline:none; }
-  button { background:#00d4ff; color:#02121a; border:none; padding:9px 15px; border-radius:6px; font-weight:700; cursor:pointer; letter-spacing:.5px; }
-  button.ghost { background:transparent; border:1px solid rgba(0,212,255,0.4); color:#00d4ff; }
-  button.danger { background:transparent; border:1px solid #ff5468; color:#ff5468; padding:4px 10px; font-size:12px; }
-  .team { border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:14px; margin:12px 0; }
+  input { background:var(--rdoc-bg); border:1px solid var(--rdoc-line-on-surface); color:var(--rdoc-text); padding:9px 10px; border-radius:6px; font-size:13px; outline:none; }
+  button { background:var(--rdoc-accent); color:var(--rdoc-on-accent); border:none; padding:9px 15px; border-radius:6px; font-weight:600; cursor:pointer; letter-spacing:.5px; }
+  button.ghost { background:transparent; border:1px solid var(--rdoc-border-strong); color:var(--rdoc-text); }
+  button.danger { background:transparent; border:1px solid var(--rdoc-error); color:var(--rdoc-error); padding:4px 10px; font-size:12px; }
+  .team { border:1px solid var(--rdoc-border); border-radius:8px; padding:14px; margin:12px 0; }
   .team-head { display:flex; justify-content:space-between; align-items:center; gap:10px; }
-  .team-name { font-size:15px; font-weight:700; }
-  .badge { font-size:10px; padding:2px 7px; border-radius:4px; background:rgba(240,165,0,0.15); color:#f0a500; letter-spacing:1px; }
+  .team-name { font-size:15px; font-weight:600; }
+  .badge { font-size:10px; padding:2px 7px; border-radius:4px; background:var(--rdoc-tint-warning); color:var(--rdoc-warning); letter-spacing:0.07em; }
   .members { margin-top:10px; }
-  .member { display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px solid rgba(255,255,255,0.05); font-size:13px; }
+  .member { display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px solid var(--rdoc-border); font-size:13px; }
   .invite { display:flex; gap:8px; margin-top:10px; align-items:center; }
   .invite input { flex:1; min-width:0; font-size:11px; }
   .msg { font-size:12px; min-height:15px; margin-top:8px; }
-  .msg.ok { color:#4ee39a; } .msg.err { color:#ff5468; }
+  .msg.ok { color:var(--rdoc-success); } .msg.err { color:var(--rdoc-error); }
   .muted { opacity:.55; }
-  .links { margin-top:16px; padding-top:14px; border-top:1px solid rgba(0,212,255,0.15); }
-  .lk-head { font-size:11px; letter-spacing:2px; color:#00d4ff; text-transform:uppercase; margin-bottom:10px; }
-  .lk-sub { font-size:10px; letter-spacing:1.5px; color:rgba(200,220,232,0.45); text-transform:uppercase; margin:12px 0 6px; }
+  .links { margin-top:16px; padding-top:14px; border-top:1px solid var(--rdoc-border); }
+  .lk-head { font-size:11px; letter-spacing:0.07em; color:var(--rdoc-text); text-transform:uppercase; margin-bottom:10px; }
+  .lk-sub { font-size:10px; letter-spacing:0.07em; color:var(--rdoc-text-faint); text-transform:uppercase; margin:12px 0 6px; }
   .lk-row { display:grid; grid-template-columns:minmax(150px,auto) 1fr auto; gap:8px; align-items:center; margin-bottom:6px; }
-  .lk-name { color:#c8dce8; font-size:12.5px; text-decoration:none; border-bottom:1px dotted rgba(0,212,255,0.4); justify-self:start; }
-  .lk-name:hover { color:#00d4ff; }
+  .lk-name { color:var(--rdoc-text); font-size:12.5px; text-decoration:none; border-bottom:1px dotted var(--rdoc-line-on-surface); justify-self:start; }
+  .lk-name:hover { color:var(--rdoc-text); }
   .lk-url { font-size:11px; padding:6px 8px; min-width:0; width:100%; opacity:.75; }
   .lk-cp { padding:6px 11px; font-size:11px; font-weight:400; }
-  .lk-hint { grid-column:1/-1; font-size:11px; color:rgba(200,220,232,0.45); margin:-2px 0 6px; }
-  .lk-warn { border:1px solid rgba(240,165,0,0.45); background:rgba(240,165,0,0.07); color:#f0a500;
+  .lk-hint { grid-column:1/-1; font-size:11px; color:var(--rdoc-text-faint); margin:-2px 0 6px; }
+  .lk-warn { border:1px solid var(--rdoc-warning); background:var(--rdoc-tint-warning); color:var(--rdoc-warning);
              border-radius:6px; padding:9px 11px; font-size:12px; margin-bottom:10px; }
   .lk-all { margin-top:12px; font-size:11px; padding:7px 12px; font-weight:400; }
   @media (max-width:620px) { .lk-row { grid-template-columns:1fr; } .lk-name { justify-self:stretch; } }
 </style>
 </head>
-<body>
+<body data-app>
 <script src="/giveaway/cc-defs.js"></script>
 <script src="admin-shared.js"></script>
 <div class="tw">

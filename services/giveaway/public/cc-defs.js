@@ -1,5 +1,5 @@
 /**
- * Chaos Crew – gemeinsame Protokoll-Definitionen (einzige Quelle im Repo).
+ * RDOC Giveaway – gemeinsame Protokoll-Definitionen (einzige Quelle im Repo).
  *
  * WS-Event- und gw_cmd-Whitelists für die Browser-Seiten. Wird von
  * giveaway-shared.js UND admin-shared.js gelesen (CC.defs) — die Datei liegt

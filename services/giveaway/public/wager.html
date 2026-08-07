@@ -4,33 +4,47 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Chaos Crew – Lose setzen</title>
-<link rel="stylesheet" href="chaos-crew-admin.css">
+<title>RDOC Giveaway: Lose setzen</title>
+<link rel="stylesheet" href="/admin/rdoc.css">
+<script src="/admin/rdoc-theme.js"></script>
+<link rel="icon" href="/admin/favicon.ico" sizes="32x32">
+<link rel="icon" href="/admin/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/admin/icons/apple-touch-icon.png">
+<link rel="manifest" href="/admin/site.webmanifest">
+<meta name="theme-color" content="#121416" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F2F0" media="(prefers-color-scheme: light)">
 <style>
   .wg-wrap { padding:16px 18px 50px; max-width:720px; margin:0 auto; }
-  .wg-title { font-size:14px; letter-spacing:2px; color:var(--gold); margin:10px 0 6px; }
-  .wg-note { font-size:11px; color:var(--dim); line-height:1.65; margin-bottom:18px; }
-  .wg-team { border:1px solid rgba(0,212,255,.2); border-radius:10px; padding:14px 16px; margin-bottom:18px; }
-  .wg-team h2 { margin:0 0 4px; font-size:13px; letter-spacing:1.5px; color:var(--cyan); text-transform:uppercase; }
-  .wg-balance { font-size:12px; color:var(--gold); margin-bottom:12px; }
-  .wg-cmd { font-size:10.5px; color:var(--dim); margin-bottom:12px; }
-  .wg-prize { border:1px solid rgba(240,165,0,.25); border-radius:8px; padding:11px 13px; margin-bottom:10px; }
-  .wg-prize.drawn { opacity:.6; border-color:rgba(255,255,255,.12); }
-  .wg-prize h3 { margin:0 0 3px; font-size:13px; font-weight:600; color:var(--text); }
-  .wg-meta { font-size:10px; color:var(--dim); margin-bottom:8px; letter-spacing:.4px; }
+  .wg-title { font-family:var(--rdoc-font-mono); font-size:14px; letter-spacing:0.07em;
+              color:var(--rdoc-text); margin:10px 0 6px; }
+  .wg-note { font-size:11px; color:var(--rdoc-text-muted); line-height:1.65; margin-bottom:18px; }
+  .wg-team { border:1px solid var(--rdoc-border); border-radius:10px; padding:14px 16px; margin-bottom:18px; }
+  .wg-team h2 { font-family:var(--rdoc-font-mono); font-weight:400; margin:0 0 4px; font-size:13px;
+                letter-spacing:0.07em; color:var(--rdoc-text); text-transform:uppercase; }
+  /* Der Guthabenstand ist die eine Zahl, um die es auf dieser Seite geht. */
+  .wg-balance { font-family:var(--rdoc-font-mono); font-size:12px; color:var(--rdoc-accent);
+                margin-bottom:12px; font-variant-numeric:tabular-nums; }
+  .wg-cmd { font-size:10.5px; color:var(--rdoc-text-muted); margin-bottom:12px; }
+  .wg-prize { border:1px solid var(--rdoc-border-strong); border-radius:8px; padding:11px 13px; margin-bottom:10px; }
+  .wg-prize.drawn { opacity:.6; }
+  .wg-prize h3 { font-family:var(--rdoc-font-text); margin:0 0 3px; font-size:13px; font-weight:600; color:var(--rdoc-text); }
+  .wg-meta { font-size:10px; color:var(--rdoc-text-muted); margin-bottom:8px; letter-spacing:.4px; }
   .wg-img { display:block; max-width:100%; max-height:220px; border-radius:6px;
             margin:4px 0 8px; cursor:zoom-in; }
-  .wg-meta .own { color:var(--gold); }
+  .wg-meta .own { color:var(--rdoc-text); }
   .wg-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   .wg-row input { width:70px; }
-  .wg-msg { font-size:11px; margin-top:8px; }
-  .wg-msg.err { color:var(--red); } .wg-msg.ok { color:#22e07a; }
-  .wg-empty { font-size:12px; color:var(--dim); }
-  .wg-legal { font-size:10px; color:var(--dim); line-height:1.6; margin-top:16px;
-              border-top:1px solid rgba(255,255,255,.06); padding-top:12px; }
+  .wg-msg { font-size:11px; margin-top:8px; color:var(--rdoc-text-muted); }
+  .wg-msg.err { color:var(--rdoc-error); } .wg-msg.ok { color:var(--rdoc-success); }
+  .wg-empty { font-size:12px; color:var(--rdoc-text-muted); }
+  .wg-consent { display:flex; gap:8px; align-items:flex-start; font-size:11px;
+                color:var(--rdoc-text-muted); line-height:1.55; margin:10px 0 0; }
+  .wg-consent input { margin-top:2px; flex-shrink:0; }
+  .wg-legal { font-size:10px; color:var(--rdoc-text-muted); line-height:1.6; margin-top:16px;
+              border-top:1px solid var(--rdoc-border); padding-top:12px; }
 </style>
 </head>
-<body>
+<body data-app>
 <script src="cc-defs.js"></script>
 <script src="giveaway-shared.js"></script>
 

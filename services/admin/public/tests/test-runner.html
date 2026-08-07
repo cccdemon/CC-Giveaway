@@ -2,34 +2,41 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Chaos Crew – Test Suite</title>
-<link rel="stylesheet" href="/admin/chaos-crew-admin.css">
+<title>RDOC Giveaway: Test Suite</title>
+<link rel="stylesheet" href="/admin/rdoc.css">
+<script src="/admin/rdoc-theme.js"></script>
+<link rel="icon" href="/admin/favicon.ico" sizes="32x32">
+<link rel="icon" href="/admin/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/admin/icons/apple-touch-icon.png">
+<link rel="manifest" href="/admin/site.webmanifest">
+<meta name="theme-color" content="#121416" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F2F0" media="(prefers-color-scheme: light)">
 <style>
-  body { background:#04060a; color:#c8dce8; font-family:'Rajdhani',sans-serif; padding:24px; }
+  body { background:var(--rdoc-bg); color:var(--rdoc-text); font-family:var(--rdoc-font-text); padding:24px; }
   h1 { font-size:22px; letter-spacing:2px; margin-bottom:12px; }
-  .subtitle { color:rgba(200,220,232,0.6); margin-bottom:24px; }
+  .subtitle { color:var(--rdoc-text-muted); margin-bottom:24px; }
   .summary { padding:12px 16px; margin-bottom:18px; border-radius:6px; display:inline-flex; gap:12px; align-items:center; }
-  .summary.pass { background:rgba(0,255,136,0.08); border:1px solid rgba(0,255,136,0.2); color:#a8ffa8; }
-  .summary.fail { background:rgba(255,68,68,0.08); border:1px solid rgba(255,68,68,0.2); color:#ffb2b2; }
+  .summary.pass { background:var(--rdoc-tint-success); border:1px solid var(--rdoc-success); color:var(--rdoc-success); }
+  .summary.fail { background:var(--rdoc-tint-error); border:1px solid var(--rdoc-error); color:var(--rdoc-error); }
   #test-results { max-width:1000px; }
-  .test-case { border:1px solid rgba(255,255,255,0.08); margin-bottom:10px; border-radius:6px; overflow:hidden; }
-  .test-case.pass { border-color:rgba(0,255,136,0.2); background:rgba(0,255,136,0.03); }
-  .test-case.fail { border-color:rgba(255,68,68,0.2); background:rgba(255,68,68,0.03); }
-  .test-header { display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:rgba(255,255,255,0.04); }
-  .test-name { font-weight:700; }
-  .test-status { font-family:'Share Tech Mono',monospace; font-size:12px; }
-  .test-body { padding:10px 14px; font-family:'Share Tech Mono',monospace; font-size:13px; white-space:pre-wrap; }
+  .test-case { border:1px solid var(--rdoc-border); margin-bottom:10px; border-radius:6px; overflow:hidden; }
+  .test-case.pass { border-color:var(--rdoc-success); background:var(--rdoc-tint-success); }
+  .test-case.fail { border-color:var(--rdoc-error); background:var(--rdoc-tint-error); }
+  .test-header { display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:var(--rdoc-surface); }
+  .test-name { font-weight:600; }
+  .test-status { font-family:var(--rdoc-font-mono); font-size:12px; }
+  .test-body { padding:10px 14px; font-family:var(--rdoc-font-mono); font-size:13px; white-space:pre-wrap; }
 </style>
 </head>
-<body>
+<body data-app>
 <script src="/giveaway/cc-defs.js"></script>
 <script src="/admin/admin-shared.js"></script>
 <script src="/giveaway/giveaway-admin.js"></script>
 <header>
-  <h1>CHAOS CREW // <span>Test Suite</span></h1>
+  <h1>RDOC GIVEAWAY // <span>Test Suite</span></h1>
   <div class="subtitle">Browser-Unit-Tests für Shared Utilities und Navigation</div>
 </header>
-<div class="subtitle" style="margin-bottom:24px; color:rgba(200,220,232,0.45);">
+<div class="subtitle" style="margin-bottom:24px; color:var(--rdoc-text-faint);">
   Diese Suite testet ausschließlich Client-seitige Utility-Funktionen. Es werden keine echten Giveaway- oder Streamer.bot-Daten verändert.
 </div>
 <div id="summary" class="summary pass">Tests werden ausgeführt...</div>

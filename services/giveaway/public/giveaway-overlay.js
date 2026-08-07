@@ -89,7 +89,7 @@ function loop() {
     s.x += s.vx; s.y += s.vy; s.vy += 0.12 * devicePixelRatio; s.vx *= 0.985; s.life -= 0.016;
     if (s.life <= 0) { sparks.splice(j, 1); continue; }
     ctx.globalAlpha = Math.max(0, s.life);
-    ctx.fillStyle = s.g ? '#f0a500' : '#ffe6a8';
+    ctx.fillStyle = s.g ? '#C48A4A' : '#F2F2F0';
     var r = 2.4 * devicePixelRatio * s.life;
     ctx.fillRect(s.x, s.y, r, r);
   }

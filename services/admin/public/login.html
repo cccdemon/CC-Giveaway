@@ -4,36 +4,44 @@
 <meta charset="UTF-8">
 <meta name="robots" content="noindex, nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Team Giveaway – Login</title>
+<title>RDOC Giveaway: Login</title>
+<link rel="stylesheet" href="/admin/rdoc.css">
+<script src="/admin/rdoc-theme.js"></script>
+<link rel="icon" href="/admin/favicon.ico" sizes="32x32">
+<link rel="icon" href="/admin/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/admin/icons/apple-touch-icon.png">
+<link rel="manifest" href="/admin/site.webmanifest">
+<meta name="theme-color" content="#121416" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F2F0" media="(prefers-color-scheme: light)">
 <style>
-  :root { --cyan:#00d4ff; --bg:#04060a; --panel:#0a0e16; --line:rgba(0,212,255,0.25); --txt:#c8dce8; --dim:rgba(200,220,232,0.4); --red:#ff5468; }
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:var(--bg); color:var(--txt); font-family:'Segoe UI',system-ui,sans-serif;
-         min-height:100vh; display:flex; align-items:center; justify-content:center;
-         background-image:radial-gradient(circle at 50% 0%, rgba(0,212,255,0.06), transparent 60%); }
-  .card { width:min(92vw,380px); background:var(--panel); border:1px solid var(--line);
-          border-radius:10px; padding:34px 30px; box-shadow:0 0 40px rgba(0,212,255,0.08); }
-  .logo { font-family:'Share Tech Mono',monospace; font-size:22px; letter-spacing:2px; text-align:center; margin-bottom:4px; }
-  .logo b { color:var(--cyan); }
-  .sub { text-align:center; font-size:11px; letter-spacing:2px; color:var(--dim); margin-bottom:26px; text-transform:uppercase; }
-  label { display:block; font-size:11px; letter-spacing:1px; color:var(--dim); margin:14px 0 6px; text-transform:uppercase; }
-  input { width:100%; background:#060a11; border:1px solid var(--line); color:var(--txt);
+  body { min-height:100vh; display:flex; align-items:center; justify-content:center; }
+  .card { width:min(92vw,380px); background:var(--rdoc-surface); border:1px solid var(--rdoc-line-on-surface);
+          border-radius:10px; padding:34px 30px; }
+  .logo { font-family:var(--rdoc-font-display); font-weight:400; font-size:17px; letter-spacing:0; text-align:center; margin-bottom:4px; }
+  .logo b { color:var(--rdoc-text-muted); font-weight:700; }
+  .sub { text-align:center; font-family:var(--rdoc-font-mono); font-size:11px; letter-spacing:2px; color:var(--rdoc-text-muted); margin-bottom:26px; text-transform:uppercase; }
+  label { display:block; font-family:var(--rdoc-font-mono); font-size:11px; letter-spacing:1px; color:var(--rdoc-text-muted); margin:14px 0 6px; text-transform:uppercase; }
+  input { width:100%; background:var(--rdoc-bg); border:1px solid var(--rdoc-line-on-surface); color:var(--rdoc-text);
           padding:11px 12px; border-radius:6px; font-size:14px; outline:none; }
-  input:focus { border-color:var(--cyan); box-shadow:0 0 0 2px rgba(0,212,255,0.15); }
-  button { width:100%; margin-top:22px; background:var(--cyan); color:#02121a; border:none;
-           padding:12px; border-radius:6px; font-weight:700; letter-spacing:1px; cursor:pointer; font-size:14px; }
+  input:focus { border-color:var(--rdoc-border-strong); }
+  button { width:100%; margin-top:22px; background:transparent; color:var(--rdoc-text); border:1px solid var(--rdoc-border-strong);
+           padding:12px; border-radius:6px; font-weight:600; letter-spacing:1px; cursor:pointer; font-size:14px; font-family:inherit; }
+  button:hover { background:var(--rdoc-bg); }
   button:disabled { opacity:.5; cursor:default; }
-  .err { margin-top:14px; color:var(--red); font-size:12px; text-align:center; min-height:16px; }
+  #tw-login { display:block; text-align:center; background:var(--rdoc-twitch); color:var(--rdoc-offwhite);
+              padding:12px; border-radius:6px; font-weight:600; letter-spacing:.5px; text-decoration:none; margin-bottom:6px; }
+  #tw-login:hover { opacity:.88; }
+  .err { margin-top:14px; color:var(--rdoc-error); font-size:12px; text-align:center; min-height:16px; }
 </style>
 </head>
 <body>
   <form class="card" id="loginForm" autocomplete="on">
-    <div class="logo">TEAM <b>//</b> GIVEAWAY</div>
+    <div class="logo">RDOC <b>//</b> GIVEAWAY</div>
     <div class="sub">Control Center · Login</div>
 
-    <a id="tw-login" href="/admin/auth/twitch" style="display:block;text-align:center;background:#9146FF;color:#fff;padding:12px;border-radius:6px;font-weight:700;letter-spacing:.5px;text-decoration:none;margin-bottom:6px;">Mit Twitch anmelden oder registrieren</a>
-    <div style="text-align:center;font-size:11px;color:var(--dim);margin:4px 0 0;line-height:1.5;">Noch kein Konto? Der erste Login legt alles an.</div>
-    <div style="text-align:center;font-size:11px;color:var(--dim);margin:10px 0;">— oder —</div>
+    <a id="tw-login" href="/admin/auth/twitch">Mit Twitch anmelden oder registrieren</a>
+    <div style="text-align:center;font-size:11px;color:var(--rdoc-text-muted);margin:4px 0 0;line-height:1.5;">Noch kein Konto? Der erste Login legt alles an.</div>
+    <div style="text-align:center;font-size:11px;color:var(--rdoc-text-muted);margin:10px 0;">— oder —</div>
 
     <label for="u">Benutzername</label>
     <input id="u" name="username" autocomplete="username" autofocus required>
@@ -42,7 +50,7 @@
     <button id="btn" type="submit">ANMELDEN</button>
     <div class="err" id="err"></div>
   </form>
-  <a href="/" style="display:block;text-align:center;margin-top:14px;font-size:12px;color:var(--dim);text-decoration:none;letter-spacing:1px;">← Startseite</a>
+  <a href="/" style="display:block;text-align:center;margin-top:14px;font-size:12px;color:var(--rdoc-text-muted);text-decoration:none;letter-spacing:1px;">← Startseite</a>
 <script>
   var f = document.getElementById('loginForm');
   var err = document.getElementById('err');

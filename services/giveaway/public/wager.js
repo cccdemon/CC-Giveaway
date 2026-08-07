@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════
-// CHAOS CREW – Lose setzen (CORE_TicketBuy, Phase 4c)
+// RDOC GIVEAWAY – Lose setzen (CORE_TicketBuy, Phase 4c)
 // Nur der eingeloggte Zuschauer selbst — Identität aus der Twitch-Session.
 // ════════════════════════════════════════════════════════
 

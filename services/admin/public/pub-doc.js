@@ -107,5 +107,13 @@
       .catch(function () { el.innerHTML = '<span class="err">Ladefehler.</span>'; });
   }
 
+  // Theme-Umschalter rechts in der Krümelnavigation (rdoc-theme.js liefert RDOC).
+  function mountTheme() {
+    var crumbs = document.querySelector('.crumbs');
+    if (crumbs && global.RDOC && global.RDOC.mountToggle) global.RDOC.mountToggle(crumbs);
+  }
+  if (document.body) mountTheme();
+  else document.addEventListener('DOMContentLoaded', mountTheme);
+
   global.CCDoc = { load: load, mdToHtml: mdToHtml };
 })(window);
