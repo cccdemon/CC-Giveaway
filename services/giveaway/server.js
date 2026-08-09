@@ -435,22 +435,56 @@ async function snapshotCoreConfig(teamId) {
 // Startprüfung — klar getrennt in BLOCKER (Start bricht ab) und WARNUNGEN
 // (Start läuft, Panel zeigt den Hinweis). Harte Gates davor bleiben:
 // TOS, Impressum, Gewinn, eingefrorene Bedingungen-Fassung.
-// Blocker terms_placeholders: eigene Bedingungen mit unausgefüllten
-// Platzhaltern wie "[Datum]" dürfen nicht als Fassung eingefroren werden.
-// Markdown-Links "[Text](url)" sind ausgenommen; die Standard-Vorlage ist
-// seit der Platzhalter-Bereinigung platzhalterfrei und blockiert nie.
-const TERMS_PLACEHOLDER_RE = /\[[^\]\n]{2,60}\](?!\()/;
+// Platzhalter-Erkennung in zwei Stufen, weil eckige Klammern in eigenen
+// Bedingungen auch schlicht Auszeichnung sein können ("**Stand:** [19.07.2026]"):
+//   BLOCKER  = Vorlagen-Syntax "{{ … }}" — die ist nie ein gewollter Wert.
+//   WARNUNG  = "[ … ]" mit typischem Platzhalter-Wort ("[Haupt-Kanal]",
+//              "[Datum]", "[Dein Name]", "[TBD]", "[…]"). Start läuft weiter,
+//              das Panel nennt die Fundstellen.
+// Markdown-Links "[Text](url)" sind in beiden Stufen ausgenommen.
+const TERMS_MUSTACHE_RE = /\{\{\s*[^}\n]{1,60}?\s*\}\}/g;
+const TERMS_BRACKET_RE  = /\[([^\]\n]{1,60})\](?!\()/g;
+// Wortliste = was in Vorlagen üblicherweise auszufüllen ist. Bewusst eng:
+// lieber eine Warnung zu wenig als ein Fehlalarm auf einem echten Wert.
+const PLACEHOLDER_WORDS = /^(?:[.…x]{1,6}|tbd|todo|(?:haupt-?)?kanal(?:name)?|kanäle|datum|uhrzeit|zeitraum|beginn|ende|name|vorname|nachname|dein[a-zä]*\b.*|ihr[a-zä]*\b.*|hier\b.*|veranstalter|betreiber|streamer|sponsor|preis|gewinn|adresse|anschrift|ort|e-?mail|link|url|website|platzhalter)$/i;
+function findTermsPlaceholders(terms) {
+  const out = { blocking: [], suspect: [] };
+  if (!terms) return out;
+  for (const m of terms.matchAll(TERMS_MUSTACHE_RE)) {
+    if (!out.blocking.includes(m[0])) out.blocking.push(m[0]);
+  }
+  for (const m of terms.matchAll(TERMS_BRACKET_RE)) {
+    const inner = m[1].trim();
+    if (!PLACEHOLDER_WORDS.test(inner)) continue;
+    if (!out.suspect.includes(m[0])) out.suspect.push(m[0]);
+  }
+  return out;
+}
 async function startChecks(teamId) {
-  const out = { blockers: [], warnings: [] };
+  const out = { blockers: [], warnings: [], placeholders: [] };
   try {
     const tr = await pg.query('SELECT terms FROM teams WHERE id=$1', [teamId]);
     const terms = tr.rowCount ? tr.rows[0].terms : null;
-    if (terms && TERMS_PLACEHOLDER_RE.test(terms)) out.blockers.push('terms_placeholders');
+    const ph = findTermsPlaceholders(terms);
+    if (ph.blocking.length) {
+      out.blockers.push('terms_placeholders');
+      out.placeholders = ph.blocking;
+    } else if (ph.suspect.length) {
+      out.warnings.push('Mögliche Platzhalter in den Teilnahmebedingungen: '
+        + ph.suspect.slice(0, 5).join(', ')
+        + (ph.suspect.length > 5 ? ' …' : ''));
+      out.placeholders = ph.suspect;
+    }
   } catch (e) { logErr('GW', 'startChecks:', e.message); }
   return out;
 }
-const PLACEHOLDER_BLOCK_MSG = 'Deine Teilnahmebedingungen enthalten noch unausgefüllte Platzhalter '
-  + '[ … ] — bitte in der Team-Verwaltung vervollständigen, dann starten.';
+function placeholderBlockMsg(found) {
+  const list = Array.isArray(found) && found.length
+    ? ' (' + found.slice(0, 5).join(', ') + (found.length > 5 ? ' …' : '') + ')'
+    : '';
+  return 'Deine Teilnahmebedingungen enthalten noch unausgefüllte Vorlagen-Platzhalter'
+    + list + '. Bitte in der Team-Verwaltung vervollständigen, dann starten.';
+}
 
 // Geltende Teilnahmebedingungen je Session festhalten (sessions.terms_version).
 // HARTES START-GATE: liefert immer eine Fassung > 0 oder wirft
@@ -537,9 +571,11 @@ async function handleStreamOnline(teamId, channel) {
     if (aChecks.blockers.length) {
       log('Auto', `[${teamId}] stream online (${ch}) -> NICHT geoeffnet: Platzhalter in den Bedingungen`);
       await audit({ teamId, actor: 'system', action: 'auto_open', target: ch,
-                    result: 'denied', detail: { reason: aChecks.blockers[0] } });
+                    result: 'denied', detail: { reason: aChecks.blockers[0], placeholders: aChecks.placeholders } });
       return;
     }
+    // Warnungen blockieren den Auto-Start nicht, landen aber im Log.
+    if (aChecks.warnings.length) log('Auto', `[${teamId}] ${aChecks.warnings.join(' | ')}`);
     const kw = await redis.get(K.gwKeyword(teamId)) || '';
     let newSid;
     try {
@@ -860,9 +896,10 @@ async function runAdminCmd(send, msg, meta, ctx) {
       const oChecks = await startChecks(teamId);
       if (oChecks.blockers.length) {
         Object.assign(outcome, { blocked: oChecks.blockers[0] });
-        send({ event: 'gw_ack', type: 'open_blocked', error: PLACEHOLDER_BLOCK_MSG });
+        send({ event: 'gw_ack', type: 'open_blocked', error: placeholderBlockMsg(oChecks.placeholders) });
         break;
       }
+      if (oChecks.warnings.length) send({ event: 'gw_ack', type: 'open_warnings', warnings: oChecks.warnings });
       Object.assign(outcome, { prize: oPrize, sponsor: oSponsor || undefined });
       try {
         outcome.sessionOpened = await openGiveaway(teamId, sanitizeStr(msg.keyword || '', 100), oPrize, oSponsor);
@@ -1029,9 +1066,10 @@ async function runAdminCmd(send, msg, meta, ctx) {
       const iChecks = await startChecks(teamId);
       if (iChecks.blockers.length) {
         Object.assign(outcome, { blocked: iChecks.blockers[0] });
-        send({ event: 'gw_ack', type: 'open_blocked', error: PLACEHOLDER_BLOCK_MSG });
+        send({ event: 'gw_ack', type: 'open_blocked', error: placeholderBlockMsg(iChecks.placeholders) });
         break;
       }
+      if (iChecks.warnings.length) send({ event: 'gw_ack', type: 'open_warnings', warnings: iChecks.warnings });
       const running = await wte.listGiveaways(teamId);
       if (running.length >= MAX_PARALLEL_GIVEAWAYS) {
         Object.assign(outcome, { blocked: 'limit', running: running.length });

@@ -961,8 +961,9 @@ function handle(msg) {
 
     case 'gw_ack': {
       log(`ACK: ${msg.type} -> ${msg.user || msg.keyword || msg.winner || msg.channel || ''}`, 'cyan');
-      // Startwarnungen (blockieren nicht — Platzhalter in eigenen Bedingungen
-      // sind seit der Bereinigung ein BLOCKER und kommen als open_blocked).
+      // Startwarnungen blockieren nicht (z. B. verdaechtige "[ ... ]" in den
+      // eigenen Bedingungen). Echte Vorlagen-Platzhalter "{{ ... }}" kommen
+      // weiterhin als open_blocked.
       if (msg.warnings && msg.warnings.length) {
         msg.warnings.forEach(function(w){ log('Startwarnung: ' + w, 'gold'); });
       }
@@ -1002,6 +1003,7 @@ function handle(msg) {
       if (msg.type === 'ai_settings') { applyAiSettings(msg); break; }
       if (msg.type === 'ai_models')   { applyAiModels(msg); break; }
       if (msg.type === 'ai_error')    { log('KI: ' + (msg.error || '?'), 'red'); break; }
+      if (msg.type === 'open_warnings') break;   // schon oben protokolliert
       if (msg.type === 'open_blocked') { log(msg.error || 'Öffnen blockiert', 'red'); alert(msg.error || 'Öffnen blockiert'); break; }
       if (msg.type === 'ai_rotated')  { log('Master-Schlüssel rotiert: ' + msg.reencrypted + ' Keys neu verschlüsselt'
                                             + (msg.unreadable ? ', ' + msg.unreadable + ' unlesbar' : ''), 'gold'); break; }

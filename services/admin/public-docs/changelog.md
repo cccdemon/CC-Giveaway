@@ -5,6 +5,23 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ---
 
+## 9. August 2026
+
+### Eckige Klammern in eigenen Bedingungen blockieren den Start nicht mehr
+
+Bisher galt jeder Text in eckigen Klammern als unausgefuellter Platzhalter, auch
+wenn dort laengst ein echter Wert stand: „**Stand:** [19.07.2026]" oder
+„live auf [MeinKanal]" haben den Start abgebrochen. Das ist behoben.
+
+Jetzt gilt: den Start blockiert nur noch die Vorlagen-Schreibweise
+`{{ ... }}`, und die Meldung nennt die gefundenen Stellen beim Namen. Eckige
+Klammern mit typischem Platzhalter-Wort (`[Datum]`, `[Haupt-Kanal]`,
+`[Dein Name]`, `[TBD]`) ergeben nur noch eine **Warnung** im Panel, der Start
+laeuft weiter. Markdown-Links wie `[Datenschutz](...)` waren schon immer
+ausgenommen.
+
+---
+
 ## 7. August 2026
 
 ### Neues Erscheinungsbild: RDOC
@@ -61,7 +78,8 @@ nicht erreichbar), bricht der Start mit verständlicher Meldung ab, ohne
 halb geöffnete Sitzung. Die Standard-Vorlage ist jetzt **komplett ohne
 auszufüllende Platzhalter** formuliert (inkl. konkretem Hinweis zum
 Drittlandtransfer bei der optionalen KI-Chatbewertung); eigene Bedingungen
-mit unausgefüllten Platzhaltern `[ … ]` blockieren den Start.
+mit unausgefüllten Platzhaltern blockierten damals den Start schon bei eckigen
+Klammern (seit 9.8.2026 nur noch bei `{{ … }}`).
 
 ### Ersatzziehung kann keinen abgewickelten Gewinn duplizieren
 
