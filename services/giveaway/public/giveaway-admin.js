@@ -26,6 +26,7 @@ let gwPaused     = false;
 // (CORE.display.columns); null = Standard-Layout der Kampagne.
 let gwCore        = null;
 let gwCoreMeta    = null;   // P5: Anzeige-Vertrag des gewählten Cores (unit, drawKind, …)
+let gwSession     = null;   // Session-ID der Kampagne (auch nach dem Schließen)
 let gwDisplayCols = null;
 // Streamermodus: Zuschauernamen + Ingest-Tokens werden maskiert, damit das Panel
 // live gezeigt werden kann. Nur Anzeige — COPY kopiert weiterhin den echten Wert.
@@ -134,14 +135,93 @@ function onTeamChange() {
 function onGiveawayChange() {
   var sel = document.getElementById('gw-select');
   if (!sel) return;
-  currentGiveaway = sel.value || null;
+  campaignDrill = sel.value === '__campaign__';
+  currentGiveaway = (sel.value && !campaignDrill) ? sel.value : null;
   participants = {};
   var btn = document.getElementById('gw-close-inst');
   if (btn) btn.style.display = currentGiveaway ? '' : 'none';
   updateTicketBuyButtons();
-  log(currentGiveaway ? 'Instanz gewählt: ' + currentGiveaway : 'Kampagne gewählt', 'cyan');
+  log(currentGiveaway ? 'Instanz gewählt: ' + currentGiveaway
+                     : (campaignDrill ? 'Kampagne gewählt' : 'Übersicht'), 'cyan');
+  updateMainView();
   requestData();
   loadKeyword();   // Keyword-Box zeigt das Keyword der Auswahl
+}
+
+// Übersicht statt Teilnehmertabelle: ohne gewählte Instanz zeigt die
+// Hauptfläche die laufenden Giveaways als Kacheln. Klick wählt aus; die
+// Kampagne selbst öffnet ihre Teilnehmerliste (campaignDrill).
+var campaignDrill = false;
+
+function updateMainView() {
+  var ov  = document.getElementById('gw-overview');
+  var tbl = document.getElementById('gw-table-wrap') || document.querySelector('.gw-table-wrap');
+  var back = document.getElementById('ov-back');
+  var srch = document.getElementById('search');
+  var lbl  = document.getElementById('main-label');
+  var showOverview = !currentGiveaway && !campaignDrill;
+  if (ov)  ov.style.display  = showOverview ? '' : 'none';
+  if (tbl) tbl.style.display = showOverview ? 'none' : '';
+  if (back) back.style.display = (!currentGiveaway && campaignDrill) ? '' : 'none';
+  if (srch) srch.style.display = showOverview ? 'none' : '';
+  if (lbl) lbl.innerHTML = showOverview
+    ? 'LAUFENDE GIVEAWAYS'
+    : 'TEILNEHMER <em id="list-count">' + (Object.keys(participants).length) + '</em>';
+  if (showOverview) renderOverview();
+  updateTicketBuyButtons();   // setzt ov-mode/Core-Klassen + Aktionsknoepfe
+}
+
+function gwShowOverview() {
+  campaignDrill = false;
+  currentGiveaway = null;
+  var sel = document.getElementById('gw-select'); if (sel) sel.value = '';
+  updateMainView();
+  requestData();
+}
+
+function gwPickGiveaway(gid) {
+  var sel = document.getElementById('gw-select');
+  if (sel) sel.value = gid || '__campaign__';   // leer = Kampagne (Primary)
+  onGiveawayChange();
+}
+
+function ovStateOf(g) {
+  if (g.closed) return { cls: 'closed', txt: 'GESCHLOSSEN · ZIEHEN' };
+  if (g.paused) return { cls: 'pause',  txt: 'PAUSIERT' };
+  return { cls: 'run', txt: 'LÄUFT' };
+}
+
+function renderOverview() {
+  var host = document.getElementById('gw-overview');
+  if (!host) return;
+  var list = giveawayList.slice();
+  if (!list.length) {
+    host.innerHTML = '<div class="ov-empty">Kein Giveaway aktiv. Mit ＋ oben startest du eins '
+      + '(Kampagne, Sofortverlosung, Los-Giveaway oder Screenshot-Contest).</div>';
+    return;
+  }
+  host.innerHTML = list.map(function(g) {
+    var st = ovStateOf(g);
+    var icon = g.coreIcon || (g.primary ? '📈' : '🎁');
+    var title = g.primary ? 'Kampagne'
+              : (g.name || (g.keyword ? '„' + g.keyword + '"' : (g.coreLabel || 'Giveaway')));
+    var sub = [];
+    if (!g.primary && g.coreLabel) sub.push(g.coreLabel);
+    if (g.keyword && !g.primary && g.name) sub.push('„' + g.keyword + '"');
+    if (g.primary && g.keyword) sub.push('Keyword „' + g.keyword + '"');
+    if (Array.isArray(g.channels) && g.channels.length) sub.push(g.channels.map(maskName).join(', '));
+    var start = fmtGwStart(g.startedAt);
+    if (start) sub.push('seit ' + start);
+    return '<div class="ov-card" onclick="gwPickGiveaway(\'' + esc(g.primary ? '' : g.gid) + '\')">'
+      + '<div class="ov-top"><span class="ov-ic">' + esc(icon) + '</span>' + esc(title) + '</div>'
+      + '<div class="ov-num">' + (g.participants !== undefined && g.participants !== null ? g.participants : '–')
+      + ' <span class="ov-sub">Teilnehmer</span></div>'
+      + (g.prize ? '<div class="ov-sub">🎁 ' + esc(g.prize)
+                   + (g.sponsor ? ' · ' + esc(g.sponsor) : '') + '</div>' : '')
+      + (sub.length ? '<div class="ov-sub">' + esc(sub.join(' · ')) + '</div>' : '')
+      + '<div class="ov-state ' + st.cls + '">' + st.txt + '</div>'
+      + '</div>';
+  }).join('');
 }
 
 // Typ-spezifische Buttons nur bei passender Instanz-Auswahl zeigen —
@@ -174,8 +254,11 @@ function updateTicketBuyButtons() {
   var g = selectedGiveaway();
   var app = document.querySelector('.gw-app');
   if (app) {
+    // ov-mode = Uebersicht (kein Giveaway gewaehlt): Rail und Aktionsleiste
+    // bleiben leer, es gibt nichts zu steuern.
     app.className = 'gw-app' + (currentGiveaway
-      ? ' core-inst ' + ((g && g.coreCss) || CORE_CSS[core] || '') : '');
+      ? ' core-inst ' + ((g && g.coreCss) || CORE_CSS[core] || '') : '')
+      + ((!currentGiveaway && !campaignDrill) ? ' ov-mode' : '');
   }
   // Typ-Karte in der Rail mit Daten füllen (panelCard aus dem Core-Vertrag)
   var card = g && g.corePanelCard !== undefined ? g.corePanelCard : PANEL_CARD_FALLBACK[core];
@@ -197,9 +280,41 @@ function instanceLabel(gid) {
 }
 
 // SCHLIESSEN wirkt auf die Auswahl: Kampagne oder gewählte Zusatz-Instanz.
+// Ingest-Puls: ohne viewer_tick meldet Streamerbot keine Zuschauer, damit
+// ist bei der Sofortverlosung NIEMAND anwesend und die Ziehung liefe leer.
+// Genau das ist am 9.8.26 live passiert — darum steht die Warnung oben,
+// nicht im Event-Log.
+function renderIngestWarn(pulse) {
+  var el = document.getElementById('ingest-warn');
+  if (!el) return;
+  if (!Array.isArray(pulse) || !pulse.length) { el.style.display = 'none'; return; }
+  var dead = pulse.filter(function(p){ return p.stale; });
+  if (!dead.length) { el.style.display = 'none'; return; }
+  var names = dead.map(function(p){
+    return maskName(p.channel) + (p.lastTickAgo === null ? ' (nie)' : ' (' + fmtDurShort(p.lastTickAgo) + ' still)');
+  }).join(', ');
+  el.innerHTML = '⚠ Keine Zuschauer-Meldungen von: ' + names
+    + ' — Streamerbot-Aktion <b>GW_ViewerTick</b> prüfen. Ohne diese Meldungen ist niemand „anwesend": '
+    + 'die Sofortverlosung zieht ins Leere, Zuschauzeit zählt nicht.';
+  el.style.display = '';
+}
+
 function gwCloseSmart() {
   if (!currentGiveaway) { gwClose(); return; }
-  if (!confirm(instanceLabel(currentGiveaway) + ' wirklich schließen?')) return;
+  // Zwei Schritte: SCHLIESSEN beendet nur Sammeln/Anmelden — der Topf bleibt,
+  // damit danach gezogen werden kann. AUFRÄUMEN wirft ihn weg.
+  var g = selectedGiveaway();
+  if (g && g.closed) {
+    var reg = Object.keys(participants).filter(function(k){ return participants[k].registered; }).length;
+    var warn = (reg && !lastWinner)
+      ? '\n\nACHTUNG: ' + reg + ' Teilnehmer im Topf und noch kein Gewinner gezogen.'
+        + ' Nach dem Aufräumen ist der Topf weg (der Nachweis bleibt im Archiv).'
+      : '';
+    if (!confirm(instanceLabel(currentGiveaway) + ' aufräumen und aus der Liste entfernen?' + warn)) return;
+  } else if (!confirm(instanceLabel(currentGiveaway)
+      + ' schließen? Sammeln/Anmelden endet, der Topf bleibt — danach ziehen (★).')) {
+    return;
+  }
   send({ event: 'gw_cmd', cmd: 'gw_close_instance', giveawayId: currentGiveaway });
 }
 
@@ -311,6 +426,7 @@ function tbEditPrize(prizeId) {
   document.getElementById('tb-prize-form-title').textContent = 'PREIS #' + prizeId + ' KORRIGIEREN';
   document.getElementById('tb-prize-save').textContent = 'SPEICHERN';
   document.getElementById('tb-prize-cancel-edit').style.display = '';
+  tbUpdatePrizeForm();          // Korrektur darf tippen, auch bei offenem Preis
   document.getElementById('tb-prize-title').focus();
 }
 
@@ -328,6 +444,7 @@ function tbCancelEdit(opts) {
   document.getElementById('tb-prize-form-title').textContent = 'NEUER PREIS';
   document.getElementById('tb-prize-save').textContent = 'ANLEGEN';
   document.getElementById('tb-prize-cancel-edit').style.display = 'none';
+  tbUpdatePrizeForm();
 }
 
 function tbCancelPrize(prizeId) {
@@ -335,14 +452,33 @@ function tbCancelPrize(prizeId) {
   send({ event: 'gw_cmd', cmd: 'gw_cancel_prize', giveawayId: currentGiveaway, prizeId: prizeId });
 }
 
-function tbLoadPrizes() { send({ event: 'gw_cmd', cmd: 'gw_list_prizes' }); }
+function tbLoadPrizes() { send({ event: 'gw_cmd', cmd: 'gw_list_prizes', giveawayId: currentGiveaway }); }
+
+// Ein Los-Giveaway verlost genau EINEN Preis. Solange einer offen ist,
+// ist das Formular zu — fuer einen weiteren Preis startet man ein zweites
+// Los-Giveaway (der Server lehnt den zweiten Preis ohnehin ab).
+function tbUpdatePrizeForm() {
+  var openCount = tbPrizes.filter(function(p){ return p.status === 'open'; }).length;
+  var blocked = openCount > 0 && !tbEditPrizeId;
+  var save = document.getElementById('tb-prize-save');
+  if (save) {
+    save.disabled = blocked;
+    save.title = blocked ? 'Dieses Los-Giveaway hat schon einen Preis — fuer einen weiteren ein zweites Los-Giveaway starten (＋ oben).' : '';
+  }
+  ['tb-prize-title','tb-prize-sponsor','tb-prize-desc','tb-prize-end','tb-prize-image'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.disabled = blocked;
+  });
+  var t = document.getElementById('tb-prize-form-title');
+  if (t && !tbEditPrizeId) t.textContent = blocked ? 'PREIS VERGEBEN — WEITERER PREIS = WEITERES LOS-GIVEAWAY' : 'NEUER PREIS';
+}
 
 var TB_STATUS_LABEL = { drawn: 'gezogen', cancelled: 'storniert' };
 function renderPrizes(prizes) {
   tbPrizes = prizes || [];
   var host = document.getElementById('tb-prizes');
   if (!host) return;
-  if (!prizes || !prizes.length) { host.innerHTML = '<div class="wsc-empty">Noch keine Preise.</div>'; return; }
+  tbUpdatePrizeForm();
+  if (!prizes || !prizes.length) { host.innerHTML = '<div class="wsc-empty">Noch kein Preis eingetragen.</div>'; return; }
   host.innerHTML = prizes.map(function(p) {
     return '<div class="tb-prize"><span class="t" title="' + esc(p.sponsor ? 'bereitgestellt von ' + p.sponsor : '') + '">#'
       + p.id + ' ' + esc(p.title)
@@ -445,7 +581,18 @@ function fmtGwStart(ts) {
 function renderGiveawaySelect() {
   var sel = document.getElementById('gw-select');
   if (!sel) return;
-  var opts = ['<option value="">— Kampagne —</option>'];
+  // Leere Auswahl = Übersicht (Kacheln, leere Rail). Eine laufende Kampagne
+  // ist ein eigener Eintrag — nur dann gibt es auch Kampagnen-Bedienung.
+  var opts = ['<option value="">— ÜBERSICHT —</option>'];
+  var prim = giveawayList.find(function(x){ return x.primary; });
+  if (prim) {
+    var pmeta = [];
+    if (prim.participants !== undefined && prim.participants !== null) pmeta.push(prim.participants + ' TN');
+    if (prim.keyword) pmeta.push('„' + prim.keyword + '"');
+    opts.push('<option value="__campaign__">📈 Kampagne'
+      + (pmeta.length ? ' (' + esc(pmeta.join(' · ')) + ')' : '')
+      + (prim.paused ? ' ⏸' : '') + '</option>');
+  }
   var CORE_ICON = { CORE_CurrentViewers: '⚡ ', CORE_TicketBuy: '🎟 ', CORE_ScreenshotContest: '📸 ' };
   giveawayList.forEach(function(g) {
     if (g.primary) return;   // Kampagne ist die leere Auswahl
@@ -457,7 +604,7 @@ function renderGiveawaySelect() {
               + (g.name ? g.name + ' ' : (g.keyword ? '„' + g.keyword + '" ' : ''))
               + g.gid.replace(/^sess_/, '#')
               + (meta.length ? ' (' + meta.join(' · ') + ')' : '')
-              + (g.paused ? ' ⏸' : '');
+              + (g.closed ? ' — GESCHLOSSEN, ziehen!' : (g.paused ? ' ⏸' : ''));
     opts.push('<option value="' + esc(g.gid) + '">' + esc(label) + '</option>');
   });
   sel.innerHTML = opts.join('');
@@ -466,14 +613,17 @@ function renderGiveawaySelect() {
   var rvBtn = document.getElementById('btn-contest-review');
   if (rvBtn) rvBtn.style.display =
     giveawayList.some(function(g){ return !g.primary && g.core === 'CORE_ScreenshotContest'; }) ? '' : 'none';
-  // Auswahl halten; verschwundene Instanz (geschlossen) → zurück zur Kampagne.
+  // Auswahl halten; aufgeraeumte Instanz → zurueck in die Übersicht.
   if (currentGiveaway && !giveawayList.some(function(g){ return g.gid === currentGiveaway && !g.primary; })) {
     currentGiveaway = null;
+    campaignDrill = false;
     var btn = document.getElementById('gw-close-inst');
     if (btn) btn.style.display = 'none';
     requestData();
   }
-  sel.value = currentGiveaway || '';
+  // Kampagne geschlossen/zurueckgesetzt → der Eintrag ist weg, ab in die Übersicht.
+  if (campaignDrill && !prim) campaignDrill = false;
+  sel.value = currentGiveaway || (campaignDrill ? '__campaign__' : '');
   updateTicketBuyButtons();
 }
 
@@ -482,7 +632,7 @@ function renderGiveawaySelect() {
 var iwType = null;
 var IW_TYPES = {
   campaign:  { core: null,                      fields: { keyword: true } },
-  instant:   { core: 'CORE_CurrentViewers',     fields: { keyword: true, window: true } },
+  instant:   { core: 'CORE_CurrentViewers',     fields: { keyword: true, window: true, minwatch: true } },
   ticketbuy: { core: 'CORE_TicketBuy',          fields: { wagercmd: true } },
   contest:   { core: 'CORE_ScreenshotContest',  fields: { minwatch: true } },
 };
@@ -524,6 +674,10 @@ function iwSelect(type) {
   document.getElementById('iw-f-announce').style.display = f.window   ? '' : 'none';   // nur Sofortverlosung
   document.getElementById('iw-f-wagercmd').style.display = f.wagercmd ? '' : 'none';
   document.getElementById('iw-f-minwatch').style.display = f.minwatch ? '' : 'none';
+  var mwh = document.getElementById('iw-minwatch-hint');
+  if (mwh) mwh.textContent = type === 'instant'
+    ? 'Schwelle zum Mitmachen, zusätzlich zu Keyword und Follow. Gezählt wird die Zuschauzeit aus der Kampagne dieses Teams — läuft keine Kampagne, hier 0 eintragen.'
+    : 'Für Einsenden und Bewerten. 0 = aus — hält Vote-Bots draußen.';
   var fp = document.getElementById('iw-f-prizes');
   if (fp) fp.style.display = type === 'ticketbuy' ? '' : 'none';   // P6: Preise im Entwurf
   // Los-Giveaway frisch gewählt: eine leere Preis-Zeile als Einstieg.
@@ -559,7 +713,7 @@ function renderPreflight(msg) {
   var el = document.getElementById('iw-preflight');
   if (!el || document.getElementById('iw-overlay').style.display === 'none') return;
   var n = msg.count || 0;
-  var txt = { present:  n + ' Zuschauer sind gerade anwesend und könnten sich anmelden.',
+  var txt = { present:  n + ' Zuschauer erfüllen Follow + Mindest-Zuschauzeit und könnten sich per Keyword anmelden.',
               credit:   n + ' Zuschauer haben Los-Guthaben (> 0) und könnten sofort setzen.',
               contest:  n + ' Zuschauer erfüllen Follow + Mindest-Zuschauzeit fürs Einsenden schon jetzt.',
               campaign: n + ' Zuschauer erfüllen Follows (≥' + (msg.followMin != null ? msg.followMin : '?')
@@ -588,11 +742,12 @@ function iwAddPrizeRow(vals) {
   host.appendChild(row);
   if (!vals) row.querySelector('.pr-title').focus();
 }
+// Ein Giveaway = ein Preis: genau eine Zeile, immer vorhanden.
 function iwSetPrizeRows(prizes) {
   var host = document.getElementById('iw-prize-list');
   if (!host) return;
   host.innerHTML = '';
-  (prizes || []).forEach(function(p){ iwAddPrizeRow(p); });
+  iwAddPrizeRow((prizes || [])[0] || null);
 }
 function iwCollectPrizeRows() {
   var out = [];
@@ -603,7 +758,7 @@ function iwCollectPrizeRows() {
                sponsor: row.querySelector('.pr-sponsor').value.trim().slice(0, 100),
                wagerEndMinutes: Math.max(0, parseInt(row.querySelector('.pr-min').value, 10) || 0) });
   });
-  return out.slice(0, 20);
+  return out.slice(0, 1);   // ein Giveaway verlost genau einen Preis
 }
 
 // Formularstand einsammeln + validieren — gemeinsame Basis für „starten"
@@ -797,27 +952,7 @@ function closeInstance() {
   send({ event: 'gw_cmd', cmd: 'gw_close_instance', giveawayId: currentGiveaway });
 }
 
-function refresh() { requestData(); loadKeyword(); loadHistory(); loadAudit(); loadClaims(); loadArchiveCard(); loadDrafts(); }
-
-// ── Vergangene Giveaways (Rail-Karte) ─────────────────────
-async function loadArchiveCard() {
-  var host = document.getElementById('ar-card-list');
-  if (!host || !currentTeam) return;
-  try {
-    var d = await (await fetch('/giveaway/api/archive?team=' + encodeURIComponent(currentTeam))).json();
-    if (d.error) throw new Error(d.error);
-    var closed = (d.sessions || []).filter(function(s){ return s.closed_at; }).slice(0, 5);
-    if (!closed.length) { host.innerHTML = '<div class="wsc-empty">Noch kein abgeschlossenes Giveaway.</div>'; return; }
-    host.innerHTML = closed.map(function(s){
-      var when = new Date(s.closed_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
-      var win = s.winners ? (privacyOn ? 'Gewinner maskiert' : String(s.winners)) : null;
-      return '<div class="tb-prize"><span class="t" title="' + esc((s.keyword || '') + (win ? ' — Gewinner: ' + win : '')) + '">'
-        + when + (s.keyword ? ' „' + esc(s.keyword) + '"' : '')
-        + (win ? ' <span style="opacity:.55">· 🏆 ' + esc(win) + '</span>' : '') + '</span>'
-        + '<span class="s">' + Number(s.total_participants || 0) + ' TN</span></div>';
-    }).join('');
-  } catch(e) { host.innerHTML = '<div class="wsc-empty">' + esc(e.message) + '</div>'; }
-}
+function refresh() { requestData(); loadKeyword(); loadHistory(); loadAudit(); loadClaims(); loadDrafts(); }
 
 // ── Gewinn-Abwicklung (Rail-Karte, nur Owner) ─────────────
 // BEWUSST nicht im 10s-Poll: jeder /api/claims-Abruf wird auditiert
@@ -923,9 +1058,11 @@ function handle(msg) {
       gwIsOpen = !!msg.open;
       gwPaused = !!msg.paused;
       gwCore = msg.core || null;
+      gwSession = msg.session || null;   // Kampagne: Ziehen bleibt bis zum Reset moeglich
       gwCoreMeta = msg.coreMeta || null;   // P5: kompletter Anzeige-Vertrag des Cores
       gwDisplayCols = (Array.isArray(msg.display) && msg.display.length) ? msg.display : null;
       if (Array.isArray(msg.channels)) gwChannels = msg.channels;
+      renderIngestWarn(msg.ingestPulse);
       (msg.participants || []).forEach(p => {
         const key = (p.username || '').toLowerCase();
         // Core-Felder (present/stake/balance/score/…) mitnehmen, die
@@ -949,6 +1086,7 @@ function handle(msg) {
       renderHead();
       renderTable();
       updateStats();
+      updateMainView();     // Uebersicht/Tabelle passend zur Auswahl
       break;
 
     case 'gw_status':
@@ -968,14 +1106,32 @@ function handle(msg) {
         msg.warnings.forEach(function(w){ log('Startwarnung: ' + w, 'gold'); });
       }
       // Read-only Antworten (NIE requestData → sonst Endlosschleife)
-      if (msg.type === 'giveaways')     { giveawayList = msg.giveaways || []; renderGiveawaySelect(); break; }
+      if (msg.type === 'giveaways')     { giveawayList = msg.giveaways || []; renderGiveawaySelect(); updateMainView(); break; }
       if (msg.type === 'drafts')        { drafts = msg.drafts || []; renderDrafts(); break; }
       if (msg.type === 'preflight')     { renderPreflight(msg); break; }
       if (msg.type === 'entries')       { renderEntries(msg); break; }
-      if (msg.type === 'prizes')        { renderPrizes(msg.prizes || []); break; }
-      if (msg.type === 'instant_window') { log('Anmeldefenster offen: ' + msg.windowSec + 's', 'gold'); liveRefresh(); break; }
+      if (msg.type === 'prizes') {
+        // Antwort einer anderen Auswahl verwerfen (mehrere Los-Giveaways moeglich).
+        if (msg.giveawayId !== undefined && (msg.giveawayId || null) !== currentGiveaway) break;
+        renderPrizes(msg.prizes || []); break;
+      }
+      if (msg.type === 'instant_window') {
+        log('Anmeldefenster offen: ' + msg.windowSec + 's', 'gold');
+        renderIngestWarn(msg.ingestPulse);
+        if (msg.ingestStale && msg.ingestStale.length) {
+          alert('Fenster ist offen — ABER von ' + msg.ingestStale.map(maskName).join(', ')
+              + ' kommen keine Zuschauer-Meldungen.\n\nOhne sie gilt niemand als anwesend und die Ziehung bleibt leer.'
+              + '\nStreamerbot-Aktion GW_ViewerTick auf diesem Kanal prüfen.');
+        }
+        liveRefresh(); break;
+      }
       if (msg.type === 'announce_set')   { liveRefresh(); break; }
-      if (msg.type === 'instant_window_closed') { log('Anmeldefenster zu — ' + msg.eligible + ' im Topf. Ziehen mit ★', 'gold'); liveRefresh(); break; }
+      if (msg.type === 'instant_window_closed') {
+        log('Anmeldefenster zu — ' + msg.eligible + ' im Topf'
+            + (msg.registered !== undefined ? ' (' + msg.registered + ' angemeldet)' : '') + '. Ziehen mit ★', 'gold');
+        renderIngestWarn(msg.ingestPulse);
+        liveRefresh(); break;
+      }
       if (msg.type === 'channels')      { ingestChannels = msg.channels || []; renderIngest(); break; }
       if (msg.type === 'ingest_tokens') { ingestTokens = {}; (msg.tokens || []).forEach(t => ingestTokens[t.channel] = t.token); renderIngest(); break; }
       if (msg.type === 'ingest_token')  { ingestTokens[msg.channel] = msg.token; renderIngest(); break; }
@@ -1043,14 +1199,27 @@ function handle(msg) {
       if (msg.type === 'entry_reviewed') { log('Einsendung #' + msg.entryId + ' → ' + (msg.decision === 'approve' ? 'FREIGEGEBEN' : 'abgelehnt'), 'gold'); scLoadEntries(); }
       if (msg.type === 'entry_deleted')  { log('Einsendung #' + msg.entryId + ' von „' + maskName((msg.username || '').toLowerCase(), msg.username || '?') + '" endgültig gelöscht', 'gold'); scLoadEntries(); }
       if (msg.type === 'instance_closed') { log('Instanz geschlossen: ' + instanceLabel(msg.giveawayId || '?')
-            + ' — Nachweis unter Tools → 🗄 Vergangene Giveaways', 'gold'); loadArchiveCard(); }
+            + ' — jetzt ziehen (★), danach AUFRÄUMEN', 'gold'); }
+      if (msg.type === 'instance_cleaned') { log('Instanz aufgeräumt: ' + instanceLabel(msg.giveawayId || '?')
+            + ' — Nachweis unter Tools → 🗄 Vergangene Giveaways', 'gold'); }
       if (msg.type === 'instance_paused')  log('Instanz pausiert: '   + (msg.giveawayId || '?'), 'gold');
       if (msg.type === 'instance_resumed') log('Instanz läuft weiter: ' + (msg.giveawayId || '?'), 'cyan');
       if (msg.type === 'winner_drawn') {
         lastDraw = { drawId: msg.drawId, prizeId: msg.prizeId || null, giveawayId: currentGiveaway };
         showWinnerAnimation(msg.winner, msg.watchSec, msg.coins, msg.prize, msg); loadHistory(); loadClaims();
       }
-      if (msg.type === 'no_winner') log(msg.message || 'Niemand im Lostopf — kein Gewinner ermittelbar.', 'red');
+      if (msg.type === 'no_winner') {
+        var nw = msg.message || 'Niemand im Lostopf — kein Gewinner ermittelbar.';
+        if (msg.registered !== undefined) {
+          nw += '\n\nAngemeldet: ' + msg.registered + ' · davon anwesend: ' + (msg.present || 0);
+          if (msg.ingestStale && msg.ingestStale.length) {
+            nw += '\nKeine Zuschauer-Meldungen von: ' + msg.ingestStale.map(maskName).join(', ')
+                + ' — Streamerbot-Aktion GW_ViewerTick prüft die Anwesenheit.';
+          }
+        }
+        log(nw.replace(/\n/g, ' | '), 'red');
+        alert(nw);
+      }
       if (msg.type === 'draw_error') log('ZIEHUNG FEHLGESCHLAGEN: ' + (msg.error || '?') + ' – nichts gespeichert, bitte erneut ziehen', 'red');
       if (msg.type === 'cmd_error') log('BEFEHL FEHLGESCHLAGEN (' + (msg.cmd || '?') + '): ' + (msg.error || '?'), 'red');
       loadAudit();          // jede Mutation erzeugt einen Audit-Eintrag
@@ -1237,25 +1406,65 @@ function updateGwStatus() {
 // Kampagne: Zustand aus gwIsOpen/gwPaused; Instanz: aus giveawayList
 // (gelistete Instanzen sind offen, paused steht am Eintrag).
 function updateActionButtons() {
-  var open = gwIsOpen, paused = gwPaused;
+  var open = gwIsOpen, paused = gwPaused, closedPending = false;
   if (currentGiveaway) {
     var g = giveawayList.find(function(x){ return x.gid === currentGiveaway && !x.primary; });
-    open = !!g; paused = !!(g && g.paused);
+    closedPending = !!(g && g.closed);          // geschlossen, aber noch nicht aufgeraeumt
+    open = !!g && !closedPending;
+    paused = !!(g && g.paused);
   }
   var set = function(id, enabled) { var b = document.getElementById(id); if (b) b.disabled = !enabled; };
   set('btn-open',   !currentGiveaway && !open);
   set('btn-pause',  open && !paused);
   set('btn-resume', open && paused);
-  set('btn-close',  open);
-  set('btn-draw',   open);
+  set('btn-close',  open || closedPending);
+  // Reihenfolge: schliessen -> ziehen -> aufraeumen. Nach dem Schliessen
+  // bleibt der Topf stehen, das Ziehen muss also weiter gehen.
+  // Kampagne: nach dem SCHLIESSEN bleibt die Sitzung bis zum Reset stehen,
+  // also bleibt auch das Ziehen moeglich (Reihenfolge schliessen -> ziehen).
+  set('btn-draw',   open || closedPending || (!currentGiveaway && !!gwSession));
+  var cb = document.getElementById('btn-close');
+  if (cb) {
+    cb.textContent = closedPending ? 'AUFRÄUMEN' : 'SCHLIESSEN';
+    cb.title = closedPending
+      ? 'Giveaway ist geschlossen — entfernt es nach der Ziehung aus der Liste'
+      : 'Sammeln/Anmelden beenden. Gezogen wird danach.';
+  }
+  // Beschriftung folgt dem Ziehungs-Modus des Cores (drawKind aus dem Vertrag).
+  var db = document.getElementById('btn-draw');
+  if (db) {
+    var per = isPerPrize();
+    db.textContent = per ? '★ ZIEHEN (JE PREIS)' : '★ GEWINNER ZIEHEN';
+    db.title = per ? 'Los-Giveaway: jeder Preis wird einzeln gezogen — fuehrt zur Preis-Karte'
+                   : 'Gewinner aus dem Lostopf ziehen';
+  }
+}
+
+// Zieht dieser Core je Preis? drawKind kommt aus dem CORE-Vertrag, die
+// Core-ID ist nur Fallback fuer alte Serverstaende.
+function isPerPrize() {
+  var sg = selectedGiveaway();
+  return (sg && sg.drawKind === 'perPrize') || selectedCore() === 'CORE_TicketBuy';
+}
+// ★ beim Los-Giveaway: Preis-Karte zeigen und hervorheben, nichts ziehen.
+function gotoPrizeCard() {
+  var card = document.getElementById('card-ticketbuy');
+  if (!card) return;
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  card.classList.remove('card-flash');
+  void card.offsetWidth;              // Reflow, damit die Animation neu startet
+  card.classList.add('card-flash');
+  setTimeout(function(){ card.classList.remove('card-flash'); }, 2600);
+  var open = tbPrizes.filter(function(p){ return p.status === 'open'; }).length;
+  log(open ? 'Los-Giveaway: ★ ZIEHEN je Preis in der Preis-Karte (' + open + ' offen)'
+           : 'Los-Giveaway: kein offener Preis — erst einen Preis anlegen', 'gold');
 }
 
 function drawWinner() {
-  // Ziehung je Preis (drawKind perPrize) läuft über die ★-Buttons der Preis-Karte.
-  var sg = selectedGiveaway();
-  if ((sg && sg.drawKind === 'perPrize') || selectedCore() === 'CORE_TicketBuy') {
-    log('Los-Giveaway: Ziehung je Preis — ★ in der Preis-Karte rechts', 'gold'); return;
-  }
+  // Ziehung je Preis (drawKind perPrize): es gibt keinen einen Topf, also
+  // fuehrt ★ zur Preis-Karte statt zu ziehen. Gezogen wird dort je Preis —
+  // von Hand, wie ueberall sonst auch.
+  if (isPerPrize()) { gotoPrizeCard(); return; }
   var el = document.getElementById('prize-input');
   send({ event:'gw_cmd', cmd:'gw_draw_winner', prize: el ? el.value.trim() : '' });
 }
@@ -1985,6 +2194,7 @@ if (!window._sfUnitTests) {
   applyPrivacy();               // vor connectWS: Zustand steht, bevor Daten kommen
   updateStats();                // Kacheln sofort zeigen (Nullstand, Kampagnen-Layout)
   applyHelp();                  // Hilfemodus-Zustand aus localStorage
+  updateMainView();             // Start ohne Auswahl = Uebersicht, Rail leer
   connectWS();
   log('Admin-Panel gestartet', 'cyan');
   if (privacyOn) log('Streamermodus aktiv (gespeichert)', 'gold');

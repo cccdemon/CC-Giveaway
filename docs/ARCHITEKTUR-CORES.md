@@ -255,6 +255,13 @@ einen Preis gesetzt** wird.
   reicht nicht, wenn man darauf bieten können soll.
 - Zuschauer setzen über eine Seite oder einen Chatbefehl Lose auf einen Preis.
   Ein Einsatz ist bis zum Einsatz-Ende zurücknehmbar, danach gebunden.
+- **Ein Giveaway = ein Preis** (Betreiber-Entscheidung 9.8.2026): eine
+  TicketBuy-Instanz hat höchstens einen offenen Preis (`addPrize` →
+  `prize_exists`). Wer mehrere Preise verlosen will, startet mehrere
+  Los-Giveaways parallel — `duplicate_core` gilt nur noch für den Contest.
+  Preisnummern sind team-weit eindeutig; welche Instanz gemeint ist, sagt
+  `giveaway_prizes.session_id` (nicht die Reihenfolge der Instanzliste), auch
+  wenn zwei Instanzen denselben Setz-Befehl tragen.
 - `buildPool` läuft **je Preis**: Gewicht = gesetzte Lose auf diesen Preis.
 - `afterDraw` bucht die Einsätze **aller** Teilnehmer dieses Preises ab, nicht
   nur die des Gewinners — sonst wäre Setzen risikolos und jeder setzt alles auf

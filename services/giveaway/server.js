@@ -351,7 +351,7 @@ async function secondaryStatusLines(teamId, channel) {
   const ch = sanitizeChannel(channel || '');
   try {
     for (const g of await wte.listGiveaways(teamId)) {
-      if (g.primary || g.paused) continue;
+      if (g.primary || g.paused || g.closed) continue;   // geschlossen = nichts anzusagen
       // Kanal-limitierte Instanz nur auf ihren eigenen Kanälen ansagen.
       if (Array.isArray(g.channels) && ch && !g.channels.includes(ch)) continue;
       // Stumm geschaltete Sofortverlosung taucht auch in !los nicht auf.
@@ -740,7 +740,24 @@ async function sendTeamData(meta, gid = null) {
   const paused = await wte.isPaused(teamId, gid || undefined);
   const session = gid || await wte.getSessionId(teamId);
   const channels = await wte.getChannels(teamId);
-  send({ event: 'gw_data', teamId, giveawayId: gid, core: coreId, display, coreMeta, open, paused, session, participants, channels });
+  // Kampagnen-Liste: nur wer in DIESEM Giveaway etwas getan hat. Ohne den
+  // Filter stand jeder je gesehene Zuschauer des Teams mit Nullwerten in der
+  // Tabelle — auch bei geschlossener Kampagne (9.8.26, „Roster fuellt sich").
+  if (!gid) {
+    // Kampagnen-Ansicht ohne laufende Kampagne: die Liste bleibt leer. Vorher
+    // stand hier jeder je gesehene Zuschauer des Teams mit Nullwerten (9.8.26).
+    if (!(await wte.getSessionId(teamId))) participants = [];
+    else participants = participants.filter(p => p.registered || p.banned
+      || (parseFloat(p.totalCoins) || 0) > 0 || (parseInt(p.totalWatchSec, 10) || 0) > 0
+      || (parseInt(p.msgs, 10) || 0) > 0);
+  }
+  // Ingest-Puls je Kanal: kommen ueberhaupt viewer_tick an? Ohne Ticks kann
+  // die Sofortverlosung niemanden ziehen — das Panel warnt sichtbar.
+  let ingestPulse = [];
+  try { ingestPulse = await wte.getIngestPulse(teamId, channels); }
+  catch (e) { logErr('GW', 'ingestPulse:', e.message); }
+  send({ event: 'gw_data', teamId, giveawayId: gid, core: coreId, display, coreMeta, open, paused,
+         session, participants, channels, ingestPulse });
 }
 
 async function handleClientMessage(meta, msg) {
@@ -1070,7 +1087,8 @@ async function runAdminCmd(send, msg, meta, ctx) {
         break;
       }
       if (iChecks.warnings.length) send({ event: 'gw_ack', type: 'open_warnings', warnings: iChecks.warnings });
-      const running = await wte.listGiveaways(teamId);
+      // Geschlossene, noch nicht aufgeraeumte Instanzen belegen keinen Platz.
+      const running = (await wte.listGiveaways(teamId)).filter(g => !g.closed);
       if (running.length >= MAX_PARALLEL_GIVEAWAYS) {
         Object.assign(outcome, { blocked: 'limit', running: running.length });
         send({ event: 'gw_ack', type: 'open_blocked',
@@ -1110,21 +1128,24 @@ async function runAdminCmd(send, msg, meta, ctx) {
       if (coreId === 'CORE_TicketBuy') {
         wagerCmd = sanitizeStr(msg.wagerCmd || '', 30).trim().toLowerCase() || coreMod.config.wagerCmd.def;
       }
-      // Contest: Mindest-Viewtime für Einsenden/Voten (WebUI-konfigurierbar).
+      // Mindest-Viewtime: Contest (Einsenden/Voten) und Sofortverlosung
+      // (Teilnahmeschwelle, Default 10 Minuten) — beide WebUI-konfigurierbar.
       let minWatchSec = null;
-      if (coreId === 'CORE_ScreenshotContest') {
+      if (coreId === 'CORE_ScreenshotContest' || coreId === 'CORE_CurrentViewers') {
         const mc = coreMod.config.minWatchSec;
         minWatchSec = Math.max(mc.min, Math.min(mc.max,
           Number.isFinite(parseInt(msg.minWatchSec, 10)) ? parseInt(msg.minWatchSec, 10) : mc.def));
       }
       // Zuschauer-Seiten (Setzen/Contest) finden ihre Instanz über das Team —
-      // zwei parallele derselben Mechanik wären dort nicht unterscheidbar.
-      if (coreId === 'CORE_TicketBuy' || coreId === 'CORE_ScreenshotContest') {
-        const dup = (await wte.listGiveaways(teamId)).find(g => !g.primary && g.core === coreId);
+      // zwei parallele Contests waeren auf der Zuschauer-Seite nicht
+      // unterscheidbar. Los-Giveaways duerfen parallel laufen: ein Giveaway
+      // = ein Preis, mehrere Preise = mehrere Los-Giveaways.
+      if (coreId === 'CORE_ScreenshotContest') {
+        const dup = (await wte.listGiveaways(teamId)).find(g => !g.primary && !g.closed && g.core === coreId);
         if (dup) {
           Object.assign(outcome, { blocked: 'duplicate_core', existing: dup.gid });
           send({ event: 'gw_ack', type: 'open_blocked',
-                 error: `Es läuft bereits ${coreId === 'CORE_TicketBuy' ? 'ein Los-Giveaway' : 'ein Screenshot-Contest'} in diesem Team — erst schließen, dann neu starten.` });
+                 error: 'Es läuft bereits ein Screenshot-Contest in diesem Team — erst schließen, dann neu starten.' });
           break;
         }
       }
@@ -1132,7 +1153,7 @@ async function runAdminCmd(send, msg, meta, ctx) {
       const wanted = Array.isArray(msg.channels) ? msg.channels.map(sanitizeChannel).filter(Boolean) : [];
       const channels = wanted.filter(ch => teamChans.includes(ch));   // nur eigene Kanäle
       const gid = `sess_${Date.now()}`;
-      const coreConfig = coreId === 'CORE_CurrentViewers' ? { windowSec }
+      const coreConfig = coreId === 'CORE_CurrentViewers' ? { windowSec, minWatchSec }
                        : coreId === 'CORE_ScreenshotContest' ? { minWatchSec }
                        : coreId === 'CORE_TicketBuy' ? { ...(await snapshotCoreConfig(teamId)), wagerCmd }
                        : await snapshotCoreConfig(teamId);
@@ -1167,17 +1188,21 @@ async function runAdminCmd(send, msg, meta, ctx) {
                                announce: announceOn });
       if (announceOn) await announceChannels(teamId, channels.length ? channels : null,
         (coreId === 'CORE_CurrentViewers'
-          ? (windowSec > 0 ? coreMod.infoText({ keyword, windowSec }) : coreMod.prepText({ keyword }))
+          ? (windowSec > 0 ? coreMod.infoText({ keyword, windowSec,
+                                                minWatchSec: minWatchSec !== null ? minWatchSec : undefined })
+                           : coreMod.prepText({ keyword }))
         : coreId === 'CORE_ScreenshotContest' ? coreMod.infoText({ url: publicHost() + '/viewer/contest' })
         : coreId === 'CORE_TicketBuy' ? coreMod.infoText({ cmd: wagerCmd, url: publicHost() + '/viewer/wager' })
         : '🎁 Zusätzliches Giveaway gestartet!' + (keyword ? ` Mitmachen: schreib "${keyword}" im Chat.` : ''))
         + prizeLine(iPrize, iSponsor));
       // P6: vorbereitete Preise direkt beim Start anlegen (Los-Giveaway) —
       // aus dem Modal oder aus einem Entwurf (draftStart sendet dessen config).
+      // Ein Giveaway = ein Preis: aus Modal/Entwurf wird genau der erste
+      // gueltige Preis angelegt, weitere brauchen eigene Instanzen.
       if (coreId === 'CORE_TicketBuy' && Array.isArray(msg.prizes) && msg.prizes.length) {
         const created = [];
         try {
-          for (const p of msg.prizes.slice(0, 20)) {
+          for (const p of msg.prizes.slice(0, 1)) {
             const pTitle = sanitizeStr((p && p.title) || '', 100).trim();
             if (!pTitle) continue;
             const endMin = Math.max(0, parseInt(p && p.wagerEndMinutes, 10) || 0);
@@ -1205,6 +1230,10 @@ async function runAdminCmd(send, msg, meta, ctx) {
              channels: channels.length ? channels : null });
       break;
     }
+    // SCHLIESSEN und AUFRAEUMEN sind zwei Schritte. Reihenfolge fuer ALLE
+    // Mechaniken (Betreiber 9.8.26): erst schliessen (Sammeln/Anmelden
+    // vorbei, Topf bleibt), dann ziehen, dann aufraeumen. Zweiter Aufruf auf
+    // eine bereits geschlossene Instanz raeumt sie ab.
     case 'gw_close_instance': {
       const gid = validGid(msg.giveawayId);
       const known = gid ? (await wte.listGiveaways(teamId)).find(g => g.gid === gid && !g.primary) : null;
@@ -1213,37 +1242,41 @@ async function runAdminCmd(send, msg, meta, ctx) {
         send({ event: 'gw_ack', type: 'error', error: 'Unbekannte Giveaway-Instanz.' });
         break;
       }
-      // Los-Giveaway: Schließen räumt die Instanz vollständig ab — mit noch
-      // ungezogenen Preisen wären die danach unbedienbar (kein Core, keine
-      // Karten). Darum erst alle Preise ziehen oder stornieren; Sammeln
-      // stoppen geht jederzeit mit PAUSE.
-      if (known.core === 'CORE_TicketBuy') {
-        const openPrizes = await wte.openPrizeCount(teamId, gid);
-        if (openPrizes > 0) {
-          Object.assign(outcome, { blocked: 'open_prizes', openPrizes });
-          send({ event: 'gw_ack', type: 'error',
-                 error: `Noch ${openPrizes} ungezogene${openPrizes === 1 ? 'r Preis' : ' Preise'} — erst ziehen (★) oder stornieren (✖). Sammeln stoppen: PAUSE.` });
-          break;
+      // Schritt 2: aufraeumen. Beim Los-Giveaway erst, wenn kein Preis mehr
+      // offen ist — sonst waeren die Einsaetze ohne Ziehung verloren.
+      if (known.closed) {
+        if (known.core === 'CORE_TicketBuy') {
+          const openPrizes = await wte.openPrizeCount(teamId, gid);
+          if (openPrizes > 0) {
+            Object.assign(outcome, { blocked: 'open_prizes', openPrizes });
+            send({ event: 'gw_ack', type: 'error',
+                   error: `Noch ${openPrizes} ungezogene${openPrizes === 1 ? 'r Preis' : ' Preise'} — erst ziehen (★) oder stornieren (✖), dann aufräumen.` });
+            break;
+          }
         }
+        await wte.cleanupGiveawayInstance(teamId, gid);
+        Object.assign(outcome, { giveawayId: gid, cleaned: true });
+        send({ event: 'gw_ack', type: 'instance_cleaned', giveawayId: gid });
+        break;
       }
+      // Schritt 1: schliessen. Der Topf bleibt stehen, gezogen wird danach.
       await wte.closeGiveawayInstance(teamId, gid);
       await setSessionStatusById(gid, 'closed');
       Object.assign(outcome, { giveawayId: gid });
       if (known.core === 'CORE_TicketBuy') {
-        // Erspielten Stand als Guthaben gutschreiben (§10.1) + aufräumen.
+        // Erspielten Stand als Guthaben gutschreiben (§10.1). Aufgeraeumt
+        // wird erst nach der Ziehung je Preis.
         const settled = await wte.settleTicketBuyInstance(teamId, gid);
         Object.assign(outcome, { settledUsers: settled.users, settledCredit: settled.total });
         await announceChannels(teamId, known.channels,
           `🎟 Los-Giveaway beendet — eure Zuschauzeit ist jetzt Los-Guthaben (${settled.users} Konten gutgeschrieben). `
-          + 'Es bleibt erhalten und zählt beim nächsten Los-Giveaway weiter.');
-      } else if (known.core === 'CORE_CurrentViewers' || known.core === 'CORE_ScreenshotContest') {
-        // Kein Accrual-Zustand, der eine spätere Ziehung braucht (Contest-Daten
-        // liegen in PG) → Redis-Reste sofort abräumen, keine g:-Leichen.
-        await wte.cleanupGiveawayInstance(teamId, gid);
+          + 'Es bleibt erhalten und zählt beim nächsten Los-Giveaway weiter. Die Ziehung folgt gleich!');
+      } else if (known.core === 'CORE_CurrentViewers') {
         if (known.announce !== false) await announceChannels(teamId, known.channels,
-          known.core === 'CORE_CurrentViewers'
-            ? '⚡ Die Sofortverlosung ist beendet.'
-            : '📸 Der Screenshot-Contest ist beendet — danke an alle Einsender!');
+          '⚡ Anmeldung beendet — die Ziehung macht der Streamer jetzt live!');
+      } else if (known.core === 'CORE_ScreenshotContest') {
+        await announceChannels(teamId, known.channels,
+          '📸 Der Screenshot-Contest ist beendet — danke an alle Einsender! Die Ziehung folgt.');
       } else {
         await announceChannels(teamId, known.channels,
           '🔒 Das zusätzliche Giveaway ist geschlossen — Ziehung folgt.');
@@ -1251,6 +1284,7 @@ async function runAdminCmd(send, msg, meta, ctx) {
       send({ event: 'gw_ack', type: 'instance_closed', giveawayId: gid });
       break;
     }
+
     // ── Phase 4b: Preise (CORE_TicketBuy) ──────────────────
     case 'gw_add_prize': {
       const gid = validGid(msg.giveawayId);
@@ -1269,8 +1303,19 @@ async function runAdminCmd(send, msg, meta, ctx) {
       const endMin = Math.max(0, parseInt(msg.wagerEndMinutes, 10) || 0);
       const wagerEndTs = endMin ? Math.floor(Date.now() / 1000) + endMin * 60 : null;
       const pSponsor = sanitizeStr(msg.sponsor || '', 100).trim();
-      const prizeId = await wte.addPrize(teamId, gid, {
-        title, description: sanitizeStr(msg.description || '', 500), wagerEndTs });
+      let prizeId;
+      try {
+        prizeId = await wte.addPrize(teamId, gid, {
+          title, description: sanitizeStr(msg.description || '', 500), wagerEndTs });
+      } catch (e) {
+        if (e && e.message === 'prize_exists') {
+          Object.assign(outcome, { error: 'prize_exists' });
+          send({ event: 'gw_ack', type: 'error',
+                 error: 'Ein Los-Giveaway verlost genau einen Preis. Für einen weiteren Preis ein zusätzliches Los-Giveaway starten (＋ oben).' });
+          break;
+        }
+        throw e;
+      }
       if (pSponsor) await pg.query(`UPDATE giveaway_prizes SET sponsor=$1 WHERE id=$2`, [pSponsor, prizeId]);
       Object.assign(outcome, { prizeId, title, sponsor: pSponsor || undefined, giveawayId: gid, wagerEndMinutes: endMin || null });
       const cmd = (await redis.get(K.gWagerCmd(teamId, gid))) || 'setzen-Befehl';
@@ -1283,7 +1328,11 @@ async function runAdminCmd(send, msg, meta, ctx) {
       break;
     }
     case 'gw_list_prizes': {
-      send({ event: 'gw_ack', type: 'prizes', prizes: await wte.listPrizes(teamId, { openOnly: !!msg.openOnly }) });
+      // giveawayId gesetzt = nur die Preise DIESER Instanz (ein Team darf
+      // mehrere Los-Giveaways parallel fahren).
+      send({ event: 'gw_ack', type: 'prizes', giveawayId: validGid(msg.giveawayId) || null,
+             prizes: await wte.listPrizes(teamId, { openOnly: !!msg.openOnly,
+                                                    gid: validGid(msg.giveawayId) || null }) });
       break;
     }
     // Preis korrigieren (Titel/Sponsor/Beschreibung/Einsatz-Ende) — nur offene.
@@ -1365,8 +1414,18 @@ async function runAdminCmd(send, msg, meta, ctx) {
       const w = await wte.openInstantWindow(teamId, gid, msg.windowSec);
       Object.assign(outcome, { giveawayId: gid, windowSec: w.windowSec });
       const CV = CoreRegistry.getCore('CORE_CurrentViewers');
-      if (inst.announce) await announceChannels(teamId, inst.channels, CV.infoText({ keyword: inst.keyword, windowSec: w.windowSec }));
-      send({ event: 'gw_ack', type: 'instant_window', giveawayId: gid, windowSec: w.windowSec, endsAt: w.endsAt });
+      const cvMin = parseInt(await redis.get(K.gMinWatch(teamId, gid)), 10);
+      if (inst.announce) await announceChannels(teamId, inst.channels,
+        CV.infoText({ keyword: inst.keyword, windowSec: w.windowSec,
+                      minWatchSec: Number.isFinite(cvMin) ? cvMin : undefined }));
+      // Ohne viewer_tick ist niemand „anwesend" — die Ziehung liefe ins Leere.
+      // Darum beim Oeffnen des Fensters sofort warnen, nicht erst beim ★.
+      let pulse = [];
+      try { pulse = await wte.getIngestPulse(teamId, inst.channels); } catch { /* Warnung entfaellt */ }
+      const dead = pulse.filter(x => x.stale).map(x => x.channel);
+      if (dead.length) Object.assign(outcome, { ingestStale: dead });
+      send({ event: 'gw_ack', type: 'instant_window', giveawayId: gid, windowSec: w.windowSec,
+             endsAt: w.endsAt, ingestStale: dead, ingestPulse: pulse });
       break;
     }
     // Zuschauer-Seite der Instanz im Chat ankündigen (Setz-/Contest-Seite).
@@ -1775,7 +1834,21 @@ async function runAdminCmd(send, msg, meta, ctx) {
             const cid = drawGid ? await wte.getCoreId(teamId, drawGid) : CORE.id;
             emptyMsg = (CoreRegistry.getCore(cid).display || {}).emptyPool || null;
           } catch { /* Standardtext im Panel */ }
-          send({ event: 'gw_ack', type: 'no_winner', message: emptyMsg });
+          // Warum leer? Bei der Sofortverlosung fast immer: angemeldet ja,
+          // anwesend nein (keine viewer_tick). Zahlen mitschicken.
+          let noWinner = { event: 'gw_ack', type: 'no_winner', message: emptyMsg };
+          try {
+            const cid2 = drawGid ? await wte.getCoreId(teamId, drawGid) : CORE.id;
+            if (cid2 === 'CORE_CurrentViewers') {
+              const rows = await wte.getInstantParticipants(teamId, drawGid);
+              const inst2 = (await wte.listGiveaways(teamId)).find(g => g.gid === drawGid);
+              const pulse2 = await wte.getIngestPulse(teamId, inst2 ? inst2.channels : null);
+              noWinner.registered = rows.length;
+              noWinner.present = rows.filter(r => r.present).length;
+              noWinner.ingestStale = pulse2.filter(x => x.stale).map(x => x.channel);
+            }
+          } catch (e) { logErr('GW', 'no_winner detail:', e.message); }
+          send(noWinner);
           break;
         }
         // P4: semantische Felder aus dem Core-Vertrag — winner_coins bleibt
@@ -2214,7 +2287,7 @@ async function viewerTeams(user, coreId) {
   try {
     for (const t of await redis.smembers(K.openTeams())) {
       if (set.has(t)) continue;
-      if ((await wte.listGiveaways(t)).some(g => !g.primary && g.core === coreId)) set.add(t);
+      if ((await wte.listGiveaways(t)).some(g => !g.primary && !g.closed && g.core === coreId)) set.add(t);
     }
   } catch (e) { logErr('GW', 'viewerTeams scan:', e.message); }
   return [...set];
@@ -2229,30 +2302,28 @@ app.get('/api/wager/state', async (req, res) => {
     if (!user) return res.status(401).json({ error: 'unauthenticated' });
     const out = [];
     for (const t of await viewerTeams(user, 'CORE_TicketBuy')) {
-      const prizes = await wte.listPrizes(t);
       const available = await wte.availableCredit(t, user);
-      if (!prizes.length && available <= 0) continue;   // nichts zu zeigen
-      const withStake = [];
-      for (const p of prizes) withStake.push({ ...p, myStake: await wte.prizeStake(p.id, user) });
-      let wagerCmd = null, tbChannels = null, tbGid = null;   // Chat-Befehl + Kanäle der Los-Instanz
-      for (const g of await wte.listGiveaways(t)) {
-        if (g.core === 'CORE_TicketBuy' && g.gid) {
-          wagerCmd = (await redis.get(K.gWagerCmd(t, g.gid))) || '!setzen';
-          tbChannels = g.channels;
-          tbGid = g.gid;
-          break;
-        }
-      }
-      // P1c: schon zugestimmt? Dann zeigt die Seite keine Checkbox mehr.
-      let consented = false;
-      if (tbGid) {
+      const insts = (await wte.listGiveaways(t)).filter(g => g.core === 'CORE_TicketBuy' && g.gid && !g.closed);
+      const tName = await teamName(t);
+      // Je laufendem Los-Giveaway ein Block: eigener Preis, eigener
+      // Setz-Befehl, eigene Kanaele (ein Giveaway = ein Preis).
+      for (const g of insts) {
+        const prizes = await wte.listPrizes(t, { gid: g.gid });
+        const withStake = [];
+        for (const pz of prizes) withStake.push({ ...pz, myStake: await wte.prizeStake(pz.id, user) });
         const seen = await pg.query(`SELECT 1 FROM participation_consents
-          WHERE team_id=$1 AND session_id=$2 AND username=$3 AND action='wager'`, [t, tbGid, user]);
-        consented = seen.rowCount > 0;
+          WHERE team_id=$1 AND session_id=$2 AND username=$3 AND action='wager'`, [t, g.gid, user]);
+        out.push({ teamId: t, teamName: tName, available, prizes: withStake,
+                   wagerCmd: (await redis.get(K.gWagerCmd(t, g.gid))) || '!setzen',
+                   consented: seen.rowCount > 0, giveawayId: g.gid, name: g.name || null,
+                   channels: g.channels || await wte.getChannels(t) });
       }
-      out.push({ teamId: t, teamName: await teamName(t), available, prizes: withStake, wagerCmd,
-                 consented, giveawayId: tbGid,
-                 channels: tbChannels || await wte.getChannels(t) });
+      // Kein laufendes Los-Giveaway, aber Guthaben da: Stand trotzdem zeigen.
+      if (!insts.length && available > 0) {
+        out.push({ teamId: t, teamName: tName, available, prizes: [], wagerCmd: null,
+                   consented: false, giveawayId: null, name: null,
+                   channels: await wte.getChannels(t) });
+      }
     }
     res.json({ user, teams: out });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -2274,10 +2345,9 @@ app.post('/api/wager', express.json(), async (req, res) => {
     // P1c: erster Web-Einsatz braucht die sichtbare Kenntnisnahme der
     // Bedingungen (Checkbox). Chat-Einsätze laufen ohne Checkbox — dort
     // steht die Kenntnisnahme in den Bedingungen selbst (Befehl = Teilnahme).
-    let tbGid = null;
-    for (const g of await wte.listGiveaways(teamId)) {
-      if (g.core === 'CORE_TicketBuy' && g.gid) { tbGid = g.gid; break; }
-    }
+    // Die Instanz haengt am Preis, nicht an der Reihenfolge der Liste —
+    // ein Team darf mehrere Los-Giveaways parallel fahren.
+    const tbGid = await wte.prizeGiveawayId(teamId, prizeId);
     if (amount > 0 && tbGid && !(req.body && req.body.acceptTerms)) {
       const seen = await pg.query(`SELECT 1 FROM participation_consents
         WHERE team_id=$1 AND session_id=$2 AND username=$3 AND action='wager'`, [teamId, tbGid, user]);
@@ -2452,7 +2522,7 @@ app.post('/internal/team/cleanup', express.json(), async (req, res) => {
 // Anti-Votebot: Twitch-Session + UNIQUE(entry, voter) + Viewtime-Schwelle
 // + Rate-Limit. Identität ausschließlich aus X-Auth-User.
 async function contestInstance(teamId) {
-  return (await wte.listGiveaways(teamId)).find(g => g.core === 'CORE_ScreenshotContest' && g.gid) || null;
+  return (await wte.listGiveaways(teamId)).find(g => g.core === 'CORE_ScreenshotContest' && g.gid && !g.closed) || null;
 }
 
 // Follow-Fallback für die Contest-Seite: das Redis-Flag (chFollows) entsteht
@@ -3115,7 +3185,7 @@ app.get('/api/my-status', async (req, res) => {
       // Aktive Sekundär-Instanzen mit Eigen-Status je Mechanik.
       const giveaways = [];
       for (const g of await wte.listGiveaways(t)) {
-        if (g.primary) continue;
+        if (g.primary || g.closed) continue;   // geschlossen = fuer Zuschauer vorbei
         let d = {}, label = g.core;
         try { const c = CoreRegistry.getCore(g.core); d = c.display || {}; label = c.label; } catch { /* Fallback */ }
         const row = { gid: g.gid, core: g.core, label, icon: d.icon || '🎁',
@@ -3131,7 +3201,7 @@ app.get('/api/my-status', async (req, res) => {
               ? end - Math.floor(Date.now() / 1000) : null,
           };
         } else if (g.core === 'CORE_TicketBuy') {
-          const prizes = await wte.listPrizes(t);
+          const prizes = await wte.listPrizes(t, { gid: g.gid, openOnly: false });
           const withStake = [];
           for (const p of prizes) {
             withStake.push({ id: p.id, title: p.title, status: p.status, wagerEnd: p.wager_end,
@@ -3579,10 +3649,17 @@ function startInstantWatcher() {
 
 async function closeInstantWindow(teamId, g) {
   await redis.del(K.gWinEnd(teamId, g.gid));
-  const n = (await wte.getInstantParticipants(teamId, g.gid)).filter(p => p.eligible).length;
+  const rows = await wte.getInstantParticipants(teamId, g.gid);
+  const n = rows.filter(p => p.eligible).length;
   if (g.announce !== false) await announceChannels(teamId, g.channels,
     `⚡ Anmeldefenster geschlossen — ${n} im Topf. Die Ziehung macht der Streamer gleich live!`);
-  broadcastTeam(teamId, { event: 'gw_ack', type: 'instant_window_closed', giveawayId: g.gid, eligible: n });
+  // Angemeldet, aber keiner anwesend? Dann fehlen die viewer_tick — das
+  // Panel soll das sehen, bevor der Streamer live auf ★ drueckt.
+  let pulse = [];
+  try { pulse = await wte.getIngestPulse(teamId, g.channels); } catch { /* Warnung entfaellt */ }
+  broadcastTeam(teamId, { event: 'gw_ack', type: 'instant_window_closed', giveawayId: g.gid, eligible: n,
+                          registered: rows.length, ingestPulse: pulse,
+                          ingestStale: pulse.filter(x => x.stale).map(x => x.channel) });
   await audit({ teamId, actor: 'system:instant', ip: null, action: 'instant_window_closed',
                 target: null, detail: { giveawayId: g.gid, keyword: g.keyword, eligible: n } });
 }

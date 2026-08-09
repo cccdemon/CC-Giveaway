@@ -3,10 +3,16 @@
 // ════════════════════════════════════════════════════════
 // CORE_CurrentViewers — Sofortverlosung (docs/ARCHITEKTUR-CORES.md §5.3)
 //
-// Verlosung unter allen, die GERADE zuschauen: Keyword im Zeitfenster
-// geschrieben UND als anwesend gemeldet. Anwesenheit kommt ausschließlich
-// aus viewer_tick (chLastTick) — Chat allein reicht nicht, sonst zählen
-// Bots und Leute mit offenem Chat-Tab als Zuschauer.
+// Verlosung unter allen, die GERADE dabei sind. Anwesenheit weist das
+// KEYWORD im offenen Fenster nach (Betreiber-Entscheidung 9.8.26) — nicht
+// mehr der viewer_tick. Gegen Bots und reine Chat-Tabs stehen zwei
+// Schwellen aus dem Kampagnenstand des Teams: bestätigter Follow auf einem
+// Instanz-Kanal und Mindest-Viewtime (Default 10 Minuten).
+//
+// Hintergrund: die alte Regel (Keyword UND viewer_tick) hat am 9.8.26 eine
+// Live-Verlosung gekippt, weil am Creator-PC keine Ticks liefen — 36
+// Anmeldungen, 0 im Topf. viewer_tick bleibt als ANZEIGE (Spalte
+// „Anwesend") und speist die Viewtime, entscheidet aber nicht mehr allein.
 //
 // Kein Guthaben, kein Coin-Konto: Gewicht = 1 für alle Berechtigten.
 // Kein Watchtime-Accrual (accrual:'none') — Tick und Chat-Bonus der
@@ -19,18 +25,28 @@
 
 const WINDOW_SEC_DEF = 60;
 
-// input: [{ username, registered, banned, present }]
-// present = viewer_tick innerhalb PRESENCE_TTL auf einem Instanz-Kanal.
-function aggregate({ username, registered, banned, present }) {
-  const eligible = registered && !banned && present;
+const MIN_WATCH_DEF = 600;    // 10 Minuten Zuschauzeit reichen zum Mitmachen
+
+// input: [{ username, registered, banned, present, watchSec, follows, cfg }]
+// present = viewer_tick innerhalb PRESENCE_TTL (nur Anzeige)
+// watchSec/follows = Kampagnenstand des Teams auf den Instanz-Kanälen
+// cfg = { minWatchSec, followRequired }
+function aggregate({ username, registered, banned, present = false, watchSec = 0,
+                     follows = false, cfg = {} }) {
+  const minWatch = cfg.minWatchSec === undefined ? MIN_WATCH_DEF : cfg.minWatchSec;
+  const needFollow = cfg.followRequired !== false;
+  const watchOk  = watchSec >= minWatch;
+  const followOk = !needFollow || follows;
+  const eligible = registered && !banned && watchOk && followOk;
   return {
     username, registered, banned, present, eligible,
+    watchOk, followOk, minWatchSec: minWatch,
     // Panel-/Snapshot-kompatible Felder (Coin-Spalten zeigen 0/1):
     weight: eligible ? 1 : 0,
     totalCoins: eligible ? 1 : 0, coins: eligible ? 1 : 0,
-    totalWatchSec: 0, watchSec: 0, msgs: 0,
-    channelsQualified: present ? 1 : 0, channelsFollowed: present ? 1 : 0,
-    followMin: 0, drawMinSec: 0, coinBaseSec: 0, perChannel: {},
+    totalWatchSec: watchSec, watchSec, msgs: 0,
+    channelsQualified: follows ? 1 : 0, channelsFollowed: follows ? 1 : 0,
+    followMin: needFollow ? 1 : 0, drawMinSec: 0, coinBaseSec: 0, perChannel: {},
   };
 }
 
@@ -47,9 +63,19 @@ function fmtWindow(sec) {
        : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} Minuten`;
 }
 
-function infoText({ keyword, windowSec }) {
+function fmtMin(sec) {
+  const m = Math.round((sec || 0) / 60);
+  return m <= 1 ? '1 Minute' : `${m} Minuten`;
+}
+
+function infoText({ keyword, windowSec, minWatchSec = MIN_WATCH_DEF, followRequired = true }) {
   const kwTxt = keyword ? `"${keyword}"` : 'das Keyword';
-  return `⚡ SOFORTVERLOSUNG! Schreib jetzt ${kwTxt} in den Chat — das Anmeldefenster ist ${fmtWindow(windowSec)} offen. Mitmachen kann, wer gerade zuschaut. Kein Sammeln, keine Vorleistung — die Ziehung macht der Streamer gleich live!`;
+  const bed = [];
+  if (followRequired) bed.push('Follow');
+  if (minWatchSec > 0) bed.push(`${fmtMin(minWatchSec)} Zuschauzeit`);
+  return `⚡ SOFORTVERLOSUNG! Schreib jetzt ${kwTxt} in den Chat — das Anmeldefenster ist ${fmtWindow(windowSec)} offen.`
+       + (bed.length ? ` Mitmachen kann, wer ${bed.join(' und ')} hat.` : ' Mitmachen kann jeder.')
+       + ` Kein Sammeln, keine Vorleistung — die Ziehung macht der Streamer gleich live!`;
 }
 
 function prepText({ keyword }) {
@@ -66,7 +92,7 @@ function statusLine({ keyword, secondsLeft }) {
 
 function emptyDrawText() {
   return '⚡ Sofortverlosung abgebrochen — niemand war teilnahmeberechtigt '
-       + '(Keyword geschrieben UND als Zuschauer gemeldet). Keine Ziehung erfolgt.';
+       + '(Keyword im Fenster geschrieben, dazu Follow und Mindest-Zuschauzeit). Keine Ziehung erfolgt.';
 }
 
 function winnerText({ winner }) {
@@ -79,11 +105,14 @@ module.exports = {
   accrual: 'none',   // kein Watchtime-/Chat-Bonus-Accrual für diese Instanzen
 
   config: {
-    windowSec: { type: 'int', min: 10, max: 3600, def: WINDOW_SEC_DEF, label: 'Fensterdauer (Sekunden)' },
+    windowSec:   { type: 'int', min: 10, max: 3600, def: WINDOW_SEC_DEF, label: 'Fensterdauer (Sekunden)' },
+    minWatchSec: { type: 'int', min: 0, max: 360000, def: MIN_WATCH_DEF,
+                   label: 'Mindest-Zuschauzeit zum Mitmachen (Sekunden)' },
   },
 
   aggregate,
   buildPool,
+  MIN_WATCH_DEF,
   infoText,
   prepText,
   statusLine,
@@ -97,8 +126,10 @@ module.exports = {
     unit:       null,          // keine Gewichtseinheit — alle gleich
     winnerStat: null,          // winner_coins hat hier keine Aussage
     drawKind:   'equal',       // gleiche Chance für alle Berechtigten
-    emptyPool:  'Niemand angemeldet und anwesend — kein Teilnehmer im Topf.',
+    emptyPool:  'Niemand erfüllt die Bedingungen — Keyword im Fenster, Follow und Mindest-Zuschauzeit.',
     columns: [
+      { key: 'watchSec', label: 'Viewtime', mask: false },
+      { key: 'followOk', label: 'Follow',   mask: false },
       { key: 'present',  label: 'Anwesend', mask: false },
       { key: 'eligible', label: 'Im Topf',  mask: false },
     ],

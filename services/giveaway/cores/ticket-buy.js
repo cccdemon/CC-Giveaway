@@ -12,6 +12,12 @@
 // die Einsätze ALLER Setzer dieses Preises verbraucht (§5.2), sonst wäre
 // Setzen risikolos.
 //
+// EIN GIVEAWAY = EIN PREIS (Betreiber-Entscheidung 9.8.26): je Instanz gibt
+// es genau einen offenen Preis; wer mehrere Preise verlosen will, startet
+// mehrere Los-Giveaways parallel. Die Preis-Nummern bleiben team-weit
+// eindeutig, die Zuordnung Preis → Instanz haengt an
+// giveaway_prizes.session_id.
+//
 // Rechtliche Leitplanken (§5.2/§10.1): eingesetzt wird ausschließlich
 // erspielte Zuschauzeit; kein Kauf, kein Barwert, kein Umtausch, keine
 // Übertragung — die Buchungstypen dafür existieren nicht (credit.js).
@@ -47,6 +53,7 @@ function buildPool(stakes) {
 }
 
 // ── Chat-Texte ────────────────────────────────────────────
+// prizes = offene Preise ALLER Los-Giveaways des Kanals (je Instanz einer).
 function helpText(cmd, prizes) {
   const list = (prizes || []).map(p => `#${p.id} ${p.title}`).join(' · ');
   return `🎟 Lose setzen: „${cmd} <preis-nr> <anzahl>" — z.B. „${cmd} ${prizes && prizes[0] ? prizes[0].id : 1} 2". `

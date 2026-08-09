@@ -60,7 +60,12 @@ function makePg(channels) {
       prizes.push(row);
       return { rows: [{ id: row.id }], rowCount: 1 };
     }
-    if (/SELECT id, title, status, wager_end FROM giveaway_prizes/.test(sql)
+    if (/SELECT session_id FROM giveaway_prizes WHERE id=\$1 AND team_id=\$2/.test(sql)) {
+      const r = prizes.filter(x => x.id === p[0] && x.team_id === p[1]);
+      return { rows: r.map(x => ({ session_id: x.session_id })), rowCount: r.length };
+    }
+    if (/SELECT id, title, status, wager_end, session_id FROM giveaway_prizes/.test(sql)
+        || /SELECT id, title, status, wager_end FROM giveaway_prizes/.test(sql)
         || /SELECT id, title, status FROM giveaway_prizes/.test(sql)
         || /SELECT id, status FROM giveaway_prizes/.test(sql)) {
       const r = prizes.filter(x => x.id === p[0] && x.team_id === p[1]);
@@ -83,7 +88,10 @@ function makePg(channels) {
       return { rowCount: pr ? 1 : 0, rows: [] };
     }
     if (/FROM giveaway_prizes p WHERE/.test(sql)) {
-      return { rows: prizes.filter(x => x.team_id === p[0] && (!/status='open'/.test(sql) || x.status === 'open'))
+      const gidFilter = /p\.session_id=\$2/.test(sql) ? p[1] : null;
+      return { rows: prizes.filter(x => x.team_id === p[0]
+          && (!gidFilter || x.session_id === gidFilter)
+          && (!/status='open'/.test(sql) || x.status === 'open'))
         .map(x => ({ ...x, total_stake: wagers.filter(w => w.prize_id === x.id).reduce((s, w) => s + w.amount, 0) })) };
     }
     if (/INSERT INTO prize_wagers/.test(sql)) {
@@ -197,8 +205,9 @@ function makePg(channels) {
     if (/COUNT\(\*\)::int AS cnt FROM contest_entries/.test(sql)) {
       return { rows: [{ cnt: entries.filter(e => e.session_id === p[0] && e.team_id === p[1]).length }] };
     }
-    if (/SELECT id, opened_at FROM sessions/.test(sql)) {
-      return { rows: (p[1] || []).map(id => ({ id, opened_at: '2026-08-06T10:00:00Z' })) };
+    if (/SELECT id, opened_at(, prize, sponsor)? FROM sessions/.test(sql)) {
+      return { rows: (p[1] || []).map(id => ({ id, opened_at: '2026-08-06T10:00:00Z',
+                                               prize: null, sponsor: null })) };
     }
     return { rows: [{ n: 0 }], rowCount: 1 };
   }
@@ -719,26 +728,34 @@ test('phase3: CV-Instanz sammelt keine Watchtime, Kampagne schon', async () => {
   assert.equal(await e.redis.get(K.gWatch(TEAM, 'sess_2', 'justcallmedeimos', 'bob')), null);
 });
 
-test('phase3: berechtigt nur mit Keyword UND viewer_tick-Praesenz', async () => {
+test('phase3: Keyword weist die Anwesenheit nach, Follow + Mindest-Viewtime bleiben Pflicht', async () => {
   const e = engine();
-  await e.openGiveawayInstance(TEAM, 'sess_2', { keyword: 'blitz', core: 'CORE_CurrentViewers', windowSec: 60 });
-  // alice: nur Chat (Keyword) — chLastTick fehlt → nicht anwesend
+  await e.openGiveawayInstance(TEAM, 'sess_2',
+    { keyword: 'blitz', core: 'CORE_CurrentViewers', windowSec: 60, minWatchSec: 600 });
+  // alice: Keyword + Follow, aber nur 5 Minuten Zuschauzeit → zu wenig
+  await e.redis.set(K.chWatch(TEAM, 'justcallmedeimos', 'alice'), '300');
   await e.handleChatMessage(TEAM, 'justcallmedeimos', 'alice', 'blitz', true);
-  // bob: Keyword + viewer_tick → anwesend
-  await e.handleViewerTick(TEAM, 'justcallmedeimos', 'bob', true);
+  // bob: Keyword + Follow + 12 Minuten — OHNE viewer_tick, der ist nicht mehr Pflicht
+  await e.redis.set(K.chWatch(TEAM, 'justcallmedeimos', 'bob'), '720');
   await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'blitz', true);
+  // carol: genug Zeit, aber kein Follow
+  await e.redis.set(K.chWatch(TEAM, 'justcallmedeimos', 'carol'), '900');
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'carol', 'blitz', false);
   const parts = await e.getInstantParticipants(TEAM, 'sess_2');
-  const alice = parts.find(p => p.username === 'alice');
-  const bob   = parts.find(p => p.username === 'bob');
-  assert.equal(alice.eligible, false);   // Chat-Tab offen reicht nicht
-  assert.equal(bob.eligible, true);
-  assert.equal(bob.weight, 1);
+  const by = (n) => parts.find(p => p.username === n);
+  assert.equal(by('alice').eligible, false);
+  assert.equal(by('alice').watchOk, false);
+  assert.equal(by('bob').eligible, true);
+  assert.equal(by('bob').present, false);    // kein Tick, trotzdem im Topf
+  assert.equal(by('bob').weight, 1);
+  assert.equal(by('carol').eligible, false);
+  assert.equal(by('carol').followOk, false);
 });
 
-test('phase3: Ziehung der CV-Instanz zieht unter Anwesenden, stempelt Core', async () => {
+test('phase3: Ziehung der CV-Instanz zieht unter Berechtigten, stempelt Core', async () => {
   const e = engine();
   await e.openGiveawayInstance(TEAM, 'sess_2', { keyword: 'blitz', core: 'CORE_CurrentViewers', windowSec: 60 });
-  await e.handleViewerTick(TEAM, 'justcallmedeimos', 'bob', true);
+  await e.redis.set(K.chWatch(TEAM, 'justcallmedeimos', 'bob'), '720');
   await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'blitz', true);
   const r = await e.drawWinner(TEAM, 'sess_2', {});
   assert.equal(r.winner, 'bob');
@@ -749,7 +766,7 @@ test('phase3: Ziehung der CV-Instanz zieht unter Anwesenden, stempelt Core', asy
 test('phase3: leere CV-Ziehung liefert null (Abbruch statt Leer-Zug)', async () => {
   const e = engine();
   await e.openGiveawayInstance(TEAM, 'sess_2', { keyword: 'blitz', core: 'CORE_CurrentViewers', windowSec: 60 });
-  // alice hat Keyword, aber keine Praesenz → niemand berechtigt
+  // alice hat Keyword + Follow, aber keine Zuschauzeit → niemand berechtigt
   await e.handleChatMessage(TEAM, 'justcallmedeimos', 'alice', 'blitz', true);
   assert.equal(await e.drawWinner(TEAM, 'sess_2', {}), null);
 });
@@ -797,7 +814,11 @@ test('phase4b: earn beim Close - Guthaben wandert ins Ledger', async () => {
   assert.equal(s.users, 1);
   assert.equal(s.total, 2);
   assert.equal(await e.credit.balance(TEAM, 'bob'), 2);
-  assert.equal(await e.redis.get(K.gWatch(TEAM, 'sess_2', 'justcallmedeimos', 'bob')), null);   // aufgeräumt
+  // Aufgeraeumt wird erst NACH der Ziehung (schliessen -> ziehen -> aufraeumen),
+  // die Zeitstaende bleiben bis dahin lesbar.
+  assert.equal(parseFloat(await e.redis.get(K.gWatch(TEAM, 'sess_2', 'justcallmedeimos', 'bob'))), SECS_PER_COIN * 2);
+  await e.cleanupGiveawayInstance(TEAM, 'sess_2');
+  assert.equal(await e.redis.get(K.gWatch(TEAM, 'sess_2', 'justcallmedeimos', 'bob')), null);
 });
 
 test('phase4b: setzen/zuruecknehmen bucht Ledger UND wagers, prueft Guthaben', async () => {
@@ -820,17 +841,21 @@ test('phase4b: Ziehung je Preis, Gewicht = Einsatz, afterDraw bindet Einsaetze',
   const e = engine();
   await e.credit.book(TEAM, 'bob', 'earn', 10);
   await e.credit.book(TEAM, 'alice', 'earn', 10);
-  const p1 = await e.addPrize(TEAM, null, { title: 'Headset' });
-  const p2 = await e.addPrize(TEAM, null, { title: 'Maus' });
-  await e.placeWager(TEAM, null, 'bob', p1, 4);
-  await e.placeWager(TEAM, null, 'alice', p2, 2);                 // anderer Preis
+  // Ein Giveaway = ein Preis: zweiter Preis lebt in einer zweiten Instanz.
   await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy' });
+  await e.openGiveawayInstance(TEAM, 'sess_3', { core: 'CORE_TicketBuy' });
+  const p1 = await e.addPrize(TEAM, 'sess_2', { title: 'Headset' });
+  const p2 = await e.addPrize(TEAM, 'sess_3', { title: 'Maus' });
+  await e.placeWager(TEAM, 'sess_2', 'bob', p1, 4);
+  await e.placeWager(TEAM, 'sess_3', 'alice', p2, 2);             // anderer Preis
+  // Fremder Preis in dieser Instanz wird abgelehnt.
+  await assert.rejects(() => e.drawWinner(TEAM, 'sess_2', { prizeId: p2 }), /prize_not_in_giveaway/);
   const r = await e.drawWinner(TEAM, 'sess_2', { prizeId: p1 });
   assert.equal(r.winner, 'bob');                                  // alice setzt auf p2, nicht im Pool
   assert.equal(r.coins, 4);                                       // Gewicht = Einsatz
   assert.equal(r.prizeId, p1);
   assert.equal(e.pg.prizes.find(x => x.id === p1).status, 'drawn');   // afterDraw in der TX
-  const late = await e.placeWager(TEAM, null, 'bob', p1, 0);      // Rücknahme nach Ziehung
+  const late = await e.placeWager(TEAM, 'sess_2', 'bob', p1, 0);  // Rücknahme nach Ziehung
   assert.equal(late.error, 'no_prize');                           // gebunden
 });
 
@@ -859,6 +884,27 @@ test('phase4b: Setz-Befehl per Chat, konfigurierbarer Befehl', async () => {
   r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', `!lose ${prizeId} 0`, true);
   assert.ok(r.chatReply.includes('↩'));
   assert.equal(await e.prizeStake(prizeId, 'bob'), 0);
+});
+
+test('phase4b: zwei Los-Giveaways parallel — die Preis-Nummer waehlt die Instanz', async () => {
+  const e = engine();
+  await e.credit.book(TEAM, 'bob', 'earn', 10);
+  await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy', wagerCmd: '!setzen' });
+  await e.openGiveawayInstance(TEAM, 'sess_3', { core: 'CORE_TicketBuy', wagerCmd: '!setzen' });
+  const pA = await e.addPrize(TEAM, 'sess_2', { title: 'Headset' });
+  const pB = await e.addPrize(TEAM, 'sess_3', { title: 'Maus' });
+  // Beide Instanzen hoeren auf denselben Befehl — der Einsatz landet trotzdem
+  // beim richtigen Preis, weil die Nummer die Instanz bestimmt.
+  let r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', `!setzen ${pB} 3`, true);
+  assert.ok(r.chatReply.includes('Maus'));
+  assert.equal(await e.prizeStake(pB, 'bob'), 3);
+  assert.equal(await e.prizeStake(pA, 'bob'), 0);
+  // Unbekannte Nummer wird beantwortet, nicht stillschweigend als Chat gewertet.
+  r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', '!setzen 999 1', true);
+  assert.ok(r.chatReply.includes('@bob'));
+  // Preisliste je Instanz getrennt.
+  assert.deepEqual((await e.listPrizes(TEAM, { gid: 'sess_2' })).map(x => x.id), [pA]);
+  assert.deepEqual((await e.listPrizes(TEAM, { gid: 'sess_3' })).map(x => x.id), [pB]);
 });
 
 test('phase4b: verfuegbares Guthaben = Ledger + Live-Stand laufender Instanz', async () => {
@@ -974,10 +1020,37 @@ test('phase6: Contest ohne bewertete Einsendungen zieht nicht', async () => {
   assert.equal(await e.drawWinner(TEAM, 'sess_9', {}), null);
 });
 
+test('ingest: Puls je Kanal meldet fehlende viewer_tick', async () => {
+  const e = engine();
+  // Noch nie ein Tick: stale, kein Zeitstempel, niemand anwesend.
+  let pulse = await e.getIngestPulse(TEAM, ['justcallmedeimos']);
+  assert.equal(pulse[0].stale, true);
+  assert.equal(pulse[0].lastTickAgo, null);
+  assert.equal(pulse[0].present, 0);
+  // Nach einem Tick lebt der Kanal.
+  await e.handleViewerTick(TEAM, 'justcallmedeimos', 'bob', true);
+  pulse = await e.getIngestPulse(TEAM, ['justcallmedeimos']);
+  assert.equal(pulse[0].stale, false);
+  assert.ok(pulse[0].lastTickAgo !== null && pulse[0].lastTickAgo < 5);
+  assert.equal(pulse[0].present, 1);
+  // Chat allein setzt keinen Puls — genau daran scheiterte die Ziehung.
+  const e2 = engine();
+  await e2.openGiveawayInstance(TEAM, 'sess_2', { keyword: '!los', core: 'CORE_CurrentViewers' });
+  await e2.openInstantWindow(TEAM, 'sess_2', 60);
+  await e2.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', '!los', true);
+  const rows = await e2.getInstantParticipants(TEAM, 'sess_2');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].present, false);          // angemeldet, aber nicht anwesend
+  assert.equal(rows[0].eligible, false);
+  assert.equal((await e2.getIngestPulse(TEAM, ['justcallmedeimos']))[0].stale, true);
+});
+
 test('phase3b: Keyword zaehlt nur im offenen Anmeldefenster, Fenster mehrfach oeffenbar', async () => {
   const e = engine();
   // Instanz OHNE Fenster: Keyword wird ignoriert
   await e.openGiveawayInstance(TEAM, 'sess_2', { keyword: 'blitz', core: 'CORE_CurrentViewers', windowSec: 0 });
+  await e.redis.set(K.chWatch(TEAM, 'justcallmedeimos', 'bob'), '720');
+  await e.redis.set(K.chWatch(TEAM, 'justcallmedeimos', 'carol'), '720');
   await e.handleViewerTick(TEAM, 'justcallmedeimos', 'bob', true);
   await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'blitz', true);
   let parts = await e.getInstantParticipants(TEAM, 'sess_2');
@@ -1004,11 +1077,35 @@ test('phase3b: Keyword zaehlt nur im offenen Anmeldefenster, Fenster mehrfach oe
   assert.ok(['bob', 'carol'].includes(r.winner));
 });
 
-test('lifecycle: max. eine TicketBuy-/Contest-Instanz je Team, CV mehrfach ok', async () => {
+test('lifecycle: schliessen haelt den Topf, erst aufraeumen loescht ihn', async () => {
   const e = engine();
+  await e.openGiveawayInstance(TEAM, 'sess_2',
+    { keyword: 'blitz', core: 'CORE_CurrentViewers', windowSec: 60, minWatchSec: 600 });
+  await e.redis.set(K.chWatch(TEAM, 'justcallmedeimos', 'bob'), '720');
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'blitz', true);
+  await e.closeGiveawayInstance(TEAM, 'sess_2');
+  // Nach dem Schliessen: kein Sammeln mehr, aber die Instanz bleibt waehlbar
+  // und der Topf steht — die Ziehung kommt erst jetzt.
+  const list = await e.listGiveaways(TEAM);
+  const inst = list.find(g => g.gid === 'sess_2');
+  assert.ok(inst && inst.closed === true);
+  assert.equal((await e._activeGiveaways(TEAM)).length, 0);
+  const parts = await e.getInstantParticipants(TEAM, 'sess_2');
+  assert.equal(parts.length, 1);
+  const r = await e.drawWinner(TEAM, 'sess_2', {});
+  assert.equal(r.winner, 'bob');
+  // Aufraeumen entfernt Instanz und Topf.
+  await e.cleanupGiveawayInstance(TEAM, 'sess_2');
+  assert.equal((await e.listGiveaways(TEAM)).find(g => g.gid === 'sess_2'), undefined);
+  assert.equal((await e.getInstantParticipants(TEAM, 'sess_2')).length, 0);
+});
+
+test('lifecycle: max. ein Contest je Team, TicketBuy und CV mehrfach ok', async () => {
+  const e = engine();
+  // Ein Giveaway = ein Preis: mehrere Los-Giveaways parallel sind der Weg,
+  // mehrere Preise zu verlosen.
   await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy' });
-  await assert.rejects(() => e.openGiveawayInstance(TEAM, 'sess_3', { core: 'CORE_TicketBuy' }),
-    /duplicate_core/);
+  await e.openGiveawayInstance(TEAM, 'sess_3', { core: 'CORE_TicketBuy' });
   await e.openGiveawayInstance(TEAM, 'sess_4', { core: 'CORE_ScreenshotContest' });
   await assert.rejects(() => e.openGiveawayInstance(TEAM, 'sess_5', { core: 'CORE_ScreenshotContest' }),
     /duplicate_core/);
@@ -1017,13 +1114,20 @@ test('lifecycle: max. eine TicketBuy-/Contest-Instanz je Team, CV mehrfach ok', 
   await e.openGiveawayInstance(TEAM, 'sess_7', { keyword: 'b', core: 'CORE_CurrentViewers' });
 });
 
-test('lifecycle: openPrizeCount zaehlt nur offene Preise der Instanz', async () => {
+test('lifecycle: ein offener Preis je Instanz, openPrizeCount zaehlt je Instanz', async () => {
   const e = engine();
   await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy' });
+  await e.openGiveawayInstance(TEAM, 'sess_3', { core: 'CORE_TicketBuy' });
   const p1 = await e.addPrize(TEAM, 'sess_2', { title: 'Headset' });
-  await e.addPrize(TEAM, 'sess_2', { title: 'Maus' });
-  assert.equal(await e.openPrizeCount(TEAM, 'sess_2'), 2);
+  // Zweiter Preis in derselben Instanz waere ein zweites Giveaway im ersten.
+  await assert.rejects(() => e.addPrize(TEAM, 'sess_2', { title: 'Maus' }), /prize_exists/);
+  await e.addPrize(TEAM, 'sess_3', { title: 'Maus' });
+  assert.equal(await e.openPrizeCount(TEAM, 'sess_2'), 1);
+  assert.equal(await e.openPrizeCount(TEAM, 'sess_3'), 1);
   await e.cancelPrize(TEAM, p1);
+  assert.equal(await e.openPrizeCount(TEAM, 'sess_2'), 0);
+  // Nach der Stornierung ist der Platz wieder frei.
+  await e.addPrize(TEAM, 'sess_2', { title: 'Tastatur' });
   assert.equal(await e.openPrizeCount(TEAM, 'sess_2'), 1);
 });
 

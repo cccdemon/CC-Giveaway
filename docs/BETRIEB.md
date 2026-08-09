@@ -178,3 +178,10 @@ Fehlt die Zeile, verweigert `gw_open` mit `TOS_HINT`. Details:
   Datei namens `&1` erzeugt. `git status` auf dem Server zeigt das.
 - **Öffentliche Seite hinzugefügt, aber Login verlangt** → Pfad fehlt in der
   `@needsauth not path`-Liste in `caddy/Caddyfile.team`.
+- **Sofortverlosung zieht niemanden, obwohl sich Leute angemeldet haben.**
+  Anwesenheit kommt ausschließlich aus `viewer_tick`. Prüfen:
+  `docker logs --since 1h cc-bridge | grep -c viewer_tick` — steht da 0, während
+  `chat_msg` läuft, fehlt am Creator-PC die Streamerbot-Action `GW_ViewerTick`
+  (Trigger *Twitch → General → Present Viewers*; sendet nur bei laufendem
+  OBS-Stream). Das Panel warnt seit 9.8.26 sichtbar, Kanal-Puls in Redis:
+  `t:<team>:gw:ch:<kanal>:pulse`.

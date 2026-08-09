@@ -26,16 +26,18 @@ var ERRORS = {
 };
 
 // Kenntnisnahme der Bedingungen: Pflicht vor dem ERSTEN Einsatz je Los-Giveaway
-// (Server erzwingt das mit HTTP 428). Der Haken gilt je Team-Block.
-function consentHtml(teamId) {
+// (Server erzwingt das mit HTTP 428). Ein Team kann mehrere Los-Giveaways
+// parallel fahren — darum haengt der Haken am Giveaway, nicht am Team.
+function consentKey(teamId, gid) { return String(gid || teamId).replace(/[^A-Za-z0-9_-]/g, ''); }
+function consentHtml(teamId, gid) {
   return '<label class="wg-consent" style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin:10px 0">'
-    + '<input type="checkbox" id="consent-' + esc(teamId) + '" style="margin-top:2px">'
+    + '<input type="checkbox" id="consent-' + esc(consentKey(teamId, gid)) + '" style="margin-top:2px">'
     + '<span>Ich habe die <a href="/viewer/terms?team=' + encodeURIComponent(teamId)
     + '" target="_blank" rel="noopener">Teilnahmebedingungen</a> (inkl. Impressum des Veranstalters) und die '
     + '<a href="/admin/datenschutz.html" target="_blank" rel="noopener">Datenschutzerklärung</a> zur Kenntnis genommen.</span></label>';
 }
-function consentChecked(teamId) {
-  var el = document.getElementById('consent-' + teamId);
+function consentChecked(teamId, gid) {
+  var el = document.getElementById('consent-' + consentKey(teamId, gid));
   return !el || el.checked;   // Block fehlt (schon zugestimmt) → ok
 }
 
@@ -52,26 +54,29 @@ function load() {
         + 'Guthaben entsteht durch Zuschauen, während ein Los-Giveaway läuft.</span>';
       return;
     }
-    host.innerHTML = d.teams.map(renderTeam).join('');
+    // Ein Block je laufendem Los-Giveaway (ein Giveaway = ein Preis).
+    host.innerHTML = d.teams.map(renderGiveaway).join('');
   }).catch(function(e) {
     document.getElementById('wg-body').innerHTML = '<span class="wg-msg err">' + esc(e.message) + '</span>';
   });
 }
 
-function renderTeam(t) {
-  var prizes = (t.prizes || []).map(function(p) { return renderPrize(t.teamId, p); }).join('')
-            || '<span class="wg-empty">Keine offenen Preise.</span>';
-  return '<div class="wg-team"><h2>Team ' + esc(t.teamName || t.teamId) + '</h2>'
+function renderGiveaway(t) {
+  var prizes = (t.prizes || []).map(function(p) { return renderPrize(t.teamId, t.giveawayId, p); }).join('')
+            || '<span class="wg-empty">Noch kein Preis eingetragen.</span>';
+  return '<div class="wg-team"><h2>Team ' + esc(t.teamName || t.teamId)
+    + (t.name ? ' · ' + esc(t.name) : '') + '</h2>'
     + ((t.channels || []).length
         ? '<div class="wg-meta">Beteiligte(r) Streamer: ' + t.channels.map(esc).join(', ') + '</div>' : '')
-    + '<div class="wg-balance">Dein Guthaben: <b>' + Number(t.available).toFixed(2) + '</b> Lose</div>'
+    + '<div class="wg-balance">Dein Guthaben: <b>' + Number(t.available).toFixed(2) + '</b> Lose'
+    + '<span class="wg-meta"> (gilt für alle Los-Giveaways dieses Teams)</span></div>'
     + (t.wagerCmd ? '<div class="wg-cmd">Geht auch im Chat: „' + esc(t.wagerCmd)
         + ' &lt;preis-nr&gt; &lt;anzahl&gt;" · Rücknahme mit Anzahl 0.</div>' : '')
-    + (t.consented ? '' : consentHtml(t.teamId))
+    + (t.consented || !t.giveawayId ? '' : consentHtml(t.teamId, t.giveawayId))
     + prizes + '</div>';
 }
 
-function renderPrize(teamId, p) {
+function renderPrize(teamId, gid, p) {
   var drawn = p.status !== 'open';
   var own = Number(p.myStake) || 0;
   return '<div class="wg-prize' + (drawn ? ' drawn' : '') + '" id="prize-' + p.id + '">'
@@ -85,22 +90,22 @@ function renderPrize(teamId, p) {
     + (drawn ? '' :
         '<div class="wg-row">'
       + '<input type="number" min="1" step="1" value="1" id="amt-' + p.id + '">'
-      + '<button class="btn btn-gold btn-sm" onclick="setWager(\'' + esc(teamId) + '\',' + p.id + ')">SETZEN</button>'
-      + (own ? '<button class="btn btn-red btn-sm" onclick="retract(\'' + esc(teamId) + '\',' + p.id + ')">ZURÜCKNEHMEN</button>' : '')
+      + '<button class="btn btn-gold btn-sm" onclick="setWager(\'' + esc(teamId) + '\',' + p.id + ',\'' + esc(gid || '') + '\')">SETZEN</button>'
+      + (own ? '<button class="btn btn-red btn-sm" onclick="retract(\'' + esc(teamId) + '\',' + p.id + ',\'' + esc(gid || '') + '\')">ZURÜCKNEHMEN</button>' : '')
       + '</div><div class="wg-msg" id="msg-' + p.id + '"></div>')
     + '</div>';
 }
 
-function post(teamId, prizeId, amount) {
+function post(teamId, prizeId, amount, gid) {
   var el = document.getElementById('msg-' + prizeId);
-  if (amount > 0 && !consentChecked(teamId)) {
+  if (amount > 0 && !consentChecked(teamId, gid)) {
     if (el) { el.className = 'wg-msg err'; el.textContent = ERRORS.terms_required; }
     return;
   }
   fetch('/giveaway/api/wager', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ team: teamId, prizeId: prizeId, amount: amount,
-                           acceptTerms: consentChecked(teamId) }),
+                           acceptTerms: consentChecked(teamId, gid) }),
   }).then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
     .then(function(x) {
       if (!x.ok) { if (el) { el.className = 'wg-msg err'; el.textContent = ERRORS[x.j.error] || x.j.error; } return; }
@@ -115,14 +120,14 @@ function post(teamId, prizeId, amount) {
     .catch(function(e) { if (el) { el.className = 'wg-msg err'; el.textContent = e.message; } });
 }
 
-function setWager(teamId, prizeId) {
+function setWager(teamId, prizeId, gid) {
   var amt = parseInt((document.getElementById('amt-' + prizeId) || {}).value, 10);
   if (!Number.isFinite(amt) || amt < 1) return;
-  post(teamId, prizeId, amt);
+  post(teamId, prizeId, amt, gid);
 }
 
-function retract(teamId, prizeId) {
-  post(teamId, prizeId, 0);
+function retract(teamId, prizeId, gid) {
+  post(teamId, prizeId, 0, gid);
 }
 
 load();

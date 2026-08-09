@@ -19,6 +19,14 @@ keine Abhängigkeit zu Spacefight, Alerts, HUD-Chat, Gamescenes, Stats oder Haul
 - **Ziehung je Mechanik:** Kampagne = Zufall gewichtet nach Coins; Sofortverlosung = Gewicht 1 für alle Berechtigten; TicketBuy = je Preis, gewichtet nach Einsatz; Contest = höchste Punktsumme, Zufall NUR bei Gleichstand. Gewinner 14 Tage Meldefrist, sonst kontrollierte Ersatzziehung (`rerollOf`, nie automatisch).
 - **Gewinnermeldung:** echte Ziehung legt einen `draw_claims`-Satz an (Frist `CLAIM_DEADLINE_DAYS=14`) und sagt den Gewinner im Chat an. Kontaktdaten (Name/E-Mail/Anschrift) trägt **nur der Gewinner selbst** auf `/giveaway/claim.html` ein — identifiziert über die Twitch-Session, nie per Fremdeingabe. Automatische Löschung der Kontaktfelder nach `CLAIM_RETENTION_DAYS=365`; der Ziehungsnachweis bleibt.
 - **Follow-Check = Hybrid:** Streamerbot-Live-Gate (`follows` am Event) + Helix-Reconcile vor Ziehung. Follower werden **pro Kanal über den Self-OAuth-Token des Kanal-Owners** gelesen (Scope `moderator:read:followers`, Login auf team.raumdock.org → Tabelle `streamers`, self=broadcaster). Kanäle ohne eingeloggten Owner bleiben permissiv. Divergenz → Flag, Coins des Kanals raus.
+- **Anwesenheit haengt an `viewer_tick`** (Streamerbot `GW_ViewerTick`, Trigger
+  *Twitch → General → Present Viewers*, sendet nur bei laufendem OBS-Stream).
+  Chat setzt `chPresent`, aber NICHT `chLastTick` — ohne Ticks ist bei der
+  Sofortverlosung niemand im Topf und die Ziehung liefert `no_winner`. Darum
+  Kanal-Puls `t:<team>:gw:ch:<ch>:pulse` (`getIngestPulse`) + sichtbare Warnung
+  im Panel (Streifen ueber der Aktionsleiste, Ack von `gw_instant_window`,
+  `instant_window_closed`, `no_winner` mit angemeldet/anwesend). Live-Ausfall
+  9.8.26: 36 Anmeldungen, 0 anwesend, ★ ohne Wirkung.
 - **Nachvollziehbarkeit:** jede Coin-Bewegung in `watchtime_events`, Per-Kanal-Stand in `campaign_participation`, jede Ziehung in `giveaway_draws` mit reproduzierbarem Snapshot + Follow-Audit.
 
 ## Cores: vier Mechaniken, parallel (umgesetzt, Phasen 0–6 + CORE-UI-Vertrag)
@@ -28,9 +36,12 @@ Gewicht wird und wer berechtigt ist; Zufall/Snapshot/Persistenz/Audit/Recht
 bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
 (Vertrag, Abgrenzung, Phasen-Stand).
 - `CORE_WatchtimeChatActivity` — die Spec oben, unverändert (Primary/Kampagne).
-- `CORE_CurrentViewers` — Sofortverlosung: Keyword **im offenen Anmeldefenster**
-  und Präsenz aus `viewer_tick` (`chLastTick`, Chat allein reicht nicht),
-  weight=1. Das Fenster ist NUR die Anmeldephase (`gWinEnd`, restart-sicher,
+- `CORE_CurrentViewers` — Sofortverlosung: **Keyword im offenen Anmeldefenster
+  ist der Anwesenheitsnachweis** (Betreiber 9.8.26; `viewer_tick` ist nur noch
+  Anzeige). Dazu zwei Schwellen aus dem Kampagnenstand des Teams: bestätigter
+  Follow auf einem Instanz-Kanal + Mindest-Zuschauzeit (`gMinWatch`, Default
+  600 s, im Start-Modal einstellbar; ohne laufende Kampagne 0 setzen, sonst ist
+  der Topf leer). weight=1. Das Fenster ist NUR die Anmeldephase (`gWinEnd`, restart-sicher,
   **mehrfach öffenbar** via `gw_instant_window` — Teilnehmer akkumulieren);
   der Watcher (5 s) schließt abgelaufene Fenster nur mit Ansage. **Ziehung
   immer manuell** (★, auch Member); Anwesenheit zählt zum Ziehungszeitpunkt.
@@ -39,7 +50,12 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
   (`credit_ledger`, append-only, **einzige Buchungsstelle
   `services/giveaway/credit.js`**, Typen erzwingen Vorzeichen; transfer/purchase
   existieren nicht). Preise (`giveaway_prizes`) + Einsätze (`prize_wagers`,
-  Rücknahme = negative Zeile). Ziehung **je Preis** (Gewicht = Einsatz),
+  Rücknahme = negative Zeile). **Ein Giveaway = ein Preis** (Betreiber,
+  9.8.26): `addPrize` wirft `prize_exists`, solange die Instanz einen offenen
+  Preis hat — mehr verlosen heißt mehrere Los-Giveaways parallel starten.
+  Preisnummern bleiben team-weit eindeutig, die Instanz hängt an
+  `giveaway_prizes.session_id` (`prizeGiveawayId`, `listPrizes({gid})`).
+  Ziehung **je Preis** (Gewicht = Einsatz),
   afterDraw bindet Einsätze aller Setzer in der Ziehungs-TX. Setz-Befehl je
   Instanz konfigurierbar (`gWagerCmd`, Default `!setzen`); Web-Seite
   `/giveaway/wager.html`. Instanz-Close bucht `earn` und räumt ab
@@ -61,10 +77,21 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
   (Lazy-Migration vom Legacy-Bestand, nur fürs Primary). Sekundär-Instanzen via
   `openGiveawayInstance` (eigenes Keyword/Kanalliste/Pause/Multiplier, strikt
   ohne Legacy-Fallback). Obergrenze `MAX_PARALLEL_GIVEAWAYS` (ENV, Default 4);
-  **max. 1 TicketBuy- und 1 Contest-Instanz je Team** (Engine wirft
-  `duplicate_core` — Zuschauer-Seiten finden ihre Instanz übers Team).
+  **max. 1 Contest-Instanz je Team** (Engine wirft `duplicate_core` — die
+  Contest-Seite findet ihre Instanz übers Team); Los-Giveaways dürfen parallel
+  laufen, die Setz-Seite listet sie einzeln (`/api/wager/state` = ein Block je
+  Instanz, Kenntnisnahme-Haken je Giveaway).
   Team-weit bleiben: Presence/LastTick, Follows, Bans, Index, Keyword, cfg:*.
   **Neu-Öffnen ohne Reset startet bei null** (beabsichtigt, im Changelog).
+- **Reihenfolge für ALLE Mechaniken (Betreiber 9.8.26): schließen → ziehen →
+  aufräumen.** `gw_close_instance` beendet nur Sammeln/Anmelden
+  (`closeGiveawayInstance`: `gOpen=false`, Fenster zu, Instanz bleibt in
+  `t:<team>:giveaways` und in `gw_list_giveaways` mit `closed:true`), der Topf
+  bleibt lesbar und ziehbar. Ein zweiter `gw_close_instance` räumt ab
+  (`cleanupGiveawayInstance`, Ack `instance_cleaned`; TicketBuy erst ohne
+  offene Preise). Panel: Knopf wechselt SCHLIESSEN ↔ AUFRÄUMEN, ★ bleibt
+  aktiv. Kampagne analog: `gw_close` lässt `gwSessionId` stehen, `gw_reset`
+  räumt.
 - **Gewinn ist Pflichtangabe je Giveaway** (`sessions.prize`, Server-Gate in
   `gw_open`/`gw_open_instance` — Ausnahme Los-Giveaway: dort je Preis,
   `giveaway_prizes.title/sponsor`), **Sponsor optional** (`sessions.sponsor`).
@@ -92,6 +119,12 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
   → Engine `previewEligible(teamId, {core, channels, minWatchSec})`: Kampagne
   = Follows+≥1 Coin, CV = Präsenz jetzt, TicketBuy = Ledger-Saldo>0, Contest
   = Follow+minWatch. Anzeige im Start-Modal (`iw-preflight`).
+- **Panel-Startzustand = Übersicht** (`updateMainView`, Klasse `ov-mode` an
+  `.gw-app`): ohne Auswahl zeigt die Hauptfläche Kacheln je laufendem Giveaway
+  (`renderOverview` aus `gw_list_giveaways`, inkl. `prize/sponsor/startedAt/
+  participants`), die Rail nur `#card-new` (＋ GIVEAWAY STARTEN), Aktionsleiste
+  und Statistik-Kacheln sind aus. Dropdown: leer = Übersicht,
+  `__campaign__` = laufende Kampagne (`campaignDrill`), sonst die Instanz.
 - **Panel-Konventionen:** Instanz-Start über das Modal (`iw-*`,
   Typ-Karten + Kanal-Chips), Instanz-Steuerung als Rail-Karten
   (`card-instant`/`card-ticketbuy`/`card-contest` — Sichtbarkeits-Matrix per

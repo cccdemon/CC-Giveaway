@@ -7,6 +7,103 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 9. August 2026
 
+### Startseite des Panels ist jetzt eine Übersicht
+
+Die Auswahl oben beginnt mit **ÜBERSICHT**. Dort steht keine Teilnehmertabelle
+mehr, sondern eine **Kachel je laufendem Giveaway**: Mechanik, Name oder Keyword,
+Gewinn, Kanäle, Teilnehmerzahl und Zustand (läuft / pausiert / geschlossen,
+ziehen). Ein Klick auf die Kachel wählt das Giveaway aus und blendet erst dann
+seine Bedienung ein.
+
+Solange nichts gewählt ist, bleibt die rechte Leiste leer bis auf eine Karte
+mit **＋ GIVEAWAY STARTEN** - keine Regeln, kein Setup, keine Aktionsleiste für
+etwas, das gar nicht ausgewählt ist. Eine laufende Kampagne ist ein eigener
+Eintrag in der Auswahl; ohne laufende Kampagne gibt es dort auch nichts zu
+bedienen.
+
+### Erst schliessen, dann ziehen - fuer jedes Giveaway
+
+Die Reihenfolge ist jetzt ueberall dieselbe: **schliessen, ziehen, aufraeumen.**
+Schliessen beendet nur das Sammeln beziehungsweise die Anmeldung; der Topf bleibt
+stehen und das Giveaway bleibt oben in der Auswahl (mit dem Hinweis
+"GESCHLOSSEN, ziehen!"). Der Knopf heisst danach **AUFRAEUMEN** und entfernt das
+Giveaway erst nach der Ziehung aus der Liste. Vorher war ein geschlossenes
+Giveaway sofort verschwunden - samt Topf.
+
+Beim Los-Giveaway heisst das: schliessen buchen die Zuschauzeit als Guthaben,
+die Preise koennen danach in Ruhe gezogen werden. Aufgeraeumt wird erst, wenn
+kein Preis mehr offen ist.
+
+### Sofortverlosung: das Keyword ist der Anwesenheitsnachweis
+
+Wer im offenen Anmeldefenster das Keyword schreibt, gilt als anwesend. Dazu
+kommen zwei Bedingungen, die sich nicht faelschen lassen: **Follow** auf einem
+beteiligten Kanal und eine **Mindest-Zuschauzeit** (Vorgabe 10 Minuten, beim
+Start einstellbar, 0 schaltet sie ab). Die Zuschauer-Meldungen aus Streamerbot
+entscheiden nicht mehr allein darueber, wer im Topf ist - sie liefern weiterhin
+die Zuschauzeit und die Spalte "Anwesend".
+
+### Sofortverlosung: sichtbare Warnung statt leerer Ziehung
+
+Am 9. August lief eine Sofortverlosung live ins Leere: 36 Anmeldungen im Chat,
+aber im Topf stand niemand und der Knopf zum Ziehen tat scheinbar nichts. Grund
+war, dass vom Kanal **keine Zuschauer-Meldungen** (Streamerbot-Aktion
+GW_ViewerTick) ankamen. Anwesenheit ist bei der Sofortverlosung Pflicht -
+Chat allein reicht bewusst nicht - also war der Topf korrekt leer, nur hat das
+niemand gesehen.
+
+Das ist jetzt nicht mehr still:
+
+- Oben im Panel steht ein Warnstreifen, sobald von einem Kanal seit ueber
+  10 Minuten keine Zuschauer-Meldung kam - inklusive Hinweis, welche
+  Streamerbot-Aktion fehlt.
+- Beim Oeffnen des Anmeldefensters und beim Schliessen kommt dieselbe Warnung.
+- Bleibt die Ziehung leer, erscheint ein Hinweisfenster mit den Zahlen:
+  wie viele angemeldet, wie viele davon anwesend, welcher Kanal stumm ist.
+- **Schliessen** fragt jetzt deutlich nach, wenn noch Anmeldungen im Topf sind
+  und kein Gewinner gezogen wurde.
+
+### Teilnehmerliste zeigt nur noch echte Teilnehmer
+
+Die Kampagnen-Tabelle listete jeden je gesehenen Zuschauer des Teams, auch mit
+lauter Nullen und auch bei geschlossener Kampagne. Jetzt steht dort nur, wer in
+diesem Giveaway angemeldet ist, Punkte, Zuschauzeit oder Nachrichten hat - oder
+gesperrt ist.
+
+### Ein Giveaway verlost genau einen Preis
+
+Bisher konnte ein Los-Giveaway beliebig viele Preise enthalten. Ab jetzt gilt
+ueberall dieselbe Regel: **eine Kampagne, ein Giveaway, ein Preis**. Wer mehrere
+Preise verlosen will, startet mehrere Los-Giveaways nebeneinander - das war
+vorher gesperrt und ist jetzt erlaubt.
+
+Was das im Betrieb heisst:
+
+- Die Preis-Karte nimmt einen Preis an; solange der offen ist, ist das Formular
+  zu (korrigieren und stornieren geht weiter).
+- Im Start-Fenster gibt es das Feld **Preis** statt einer Preis-Liste.
+- Auf der Seite **Lose setzen** steht jeder Preis in einem eigenen Block mit
+  eigenem Setz-Befehl. Das Guthaben bleibt team-weit und gilt fuer alle
+  Los-Giveaways.
+- Im Chat entscheidet die Preis-Nummer, welches Giveaway gemeint ist - auch wenn
+  zwei Giveaways denselben Befehl benutzen. Unbekannte Nummern bekommen eine
+  Antwort statt stiller Ablehnung.
+- Nur noch der Screenshot-Contest ist auf eine laufende Instanz je Team begrenzt.
+
+### Aufgeraeumte Steuerleiste im Panel
+
+Beim **Los-Giveaway** ist der Knopf **★ ZIEHEN (JE PREIS)** oben wieder da.
+Er zieht bewusst nicht selbst - beim Los-Giveaway hat jeder Preis seinen
+eigenen Einsatz-Topf - sondern springt zur Preis-Karte und hebt sie hervor,
+wo je Preis gezogen wird. Gezogen wird weiterhin ausschliesslich von Hand,
+in jeder Mechanik.
+
+Der **Viewtime-Boost** steht jetzt weit oben in der rechten Leiste, nicht mehr
+unter dem langen Preis-Formular des Los-Giveaways. Die Karte **Vergangene
+Giveaways** ist aus der Leiste verschwunden: sie gehoerte dort in keiner
+Mechanik hin und steht vollstaendig im Menue unter *Tools -> Vergangene
+Giveaways* (mit Dossier und Nachweis-Export).
+
 ### Eckige Klammern in eigenen Bedingungen blockieren den Start nicht mehr
 
 Bisher galt jeder Text in eckigen Klammern als unausgefuellter Platzhalter, auch

@@ -21,8 +21,36 @@
   .gw-app.core-contest #card-boost { display:none !important; }
   .gw-app.core-instant #btn-verify { display:none !important; }
   .gw-app:not(.core-instant) #card-instant { display:none !important; }
-  /* TicketBuy zieht je Preis (Buttons in der Preis-Karte), nicht global */
-  .gw-app.core-ticketbuy #btn-draw { display:none !important; }
+  /* TicketBuy zieht je Preis: ★ bleibt sichtbar und fuehrt zur Preis-Karte
+     (Ziehen ist IMMER ein bewusster Klick, nie ein Automatismus). */
+  /* Übersichtsmodus: rechte Leiste leer bis auf die Start-Karte, keine
+     Aktionsleiste — ohne gewähltes Giveaway gibt es nichts zu bedienen. */
+  .gw-app.ov-mode .gw-rail > .card { display:none !important; }
+  .gw-app.ov-mode #card-new { display:block !important; }
+  .gw-app.ov-mode .actionstrip { display:none !important; }
+  .gw-app.ov-mode .cb-stats { display:none !important; }   /* Kacheln brauchen eine Auswahl */
+  .gw-overview { display:grid; gap:10px; padding:10px;
+                 grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); align-content:start; }
+  .ov-card { border:1px solid var(--rdoc-border); border-radius:4px; padding:12px; cursor:pointer;
+             background:var(--rdoc-surface, transparent); display:flex; flex-direction:column; gap:6px; }
+  .ov-card:hover { border-color:var(--rdoc-accent, #C48A4A); }
+  .ov-card .ov-top { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; }
+  .ov-card .ov-ic { font-size:18px; }
+  .ov-card .ov-sub { font-size:11.5px; color:var(--rdoc-text-faint); }
+  .ov-card .ov-num { font-size:24px; font-variant-numeric:tabular-nums; }
+  .ov-card .ov-state { font-size:11px; letter-spacing:.06em; }
+  .ov-card .ov-state.run { color:var(--rdoc-success); }
+  .ov-card .ov-state.pause { color:var(--rdoc-warning); }
+  .ov-card .ov-state.closed { color:var(--rdoc-accent, #C48A4A); }
+  .ov-empty { padding:24px; color:var(--rdoc-text-faint); font-size:13px; }
+  .gw-ingest-warn { margin:8px 0; padding:8px 12px; border:1px solid var(--rdoc-warning,#C48A4A);
+                    border-radius:4px; font-size:12.5px; color:var(--rdoc-warning,#C48A4A);
+                    background:color-mix(in srgb, var(--rdoc-warning,#C48A4A) 12%, transparent); }
+  .card-flash { animation: card-flash 1.2s ease-out 2; }
+  @keyframes card-flash {
+    0%,100% { box-shadow:none; }
+    30%     { box-shadow:0 0 0 2px var(--rdoc-accent,#C48A4A); }
+  }
   /* Typ-Karten in der Rail nur bei passender Auswahl */
   .gw-app:not(.core-ticketbuy) #card-ticketbuy { display:none !important; }
   .gw-app:not(.core-contest) #card-contest { display:none !important; }
@@ -127,6 +155,10 @@
     </div>
   </div>
 
+  <!-- Ingest-Warnung: kommen viewer_tick an? Ohne Ticks ist niemand
+       „anwesend" — Sofortverlosung zieht dann ins Leere (9.8.26). -->
+  <div class="gw-ingest-warn" id="ingest-warn" style="display:none"></div>
+
   <!-- ── Primäraktionen ───────────────────────────────── -->
   <div class="actionstrip" data-help="Hauptaktionen für die aktuelle Auswahl: Gewinn (Pflicht) + Sponsor gelten beim ÖFFNEN der Kampagne · FOLLOWS PRÜFEN verifiziert Follows direkt bei Twitch · ★ zieht den Gewinner (das Los-Giveaway zieht stattdessen je Preis in der Preis-Karte) · 📸 BILDER PRÜFEN öffnet die Contest-Moderation · PAUSE stoppt nur das Sammeln, SCHLIESSEN beendet das gewählte Giveaway endgültig.">
     <input type="text" id="prize-input" class="vis-campaign-only" placeholder="Gewinn (Pflicht — z.B. Steam-Key)" maxlength="100">
@@ -148,9 +180,14 @@
     <!-- Teilnehmer -->
     <div class="gw-main" data-help="Teilnehmer der aktuellen Auswahl. Die Spalten passen sich der Mechanik an: Kampagne = Coins + Viewtime je Kanal · Sofortverlosung = Anwesend/Im Topf · Los-Giveaway = Einsatz/Guthaben · Contest = Screenshot/Punkte/Stimmen. Zeilen-Aktionen: ±1 Coin (nur Kampagne, wird auditiert) und BAN. Badges: LOSTOPF = alle Bedingungen erfüllt, VORGEMERKT = angemeldet, Bedingung fehlt noch.">
       <div class="gw-main-head">
-        <span class="panel-label">TEILNEHMER <em id="list-count">0</em></span>
+        <span class="panel-label" id="main-label">TEILNEHMER <em id="list-count">0</em></span>
+        <a href="#" id="ov-back" style="display:none" onclick="gwShowOverview();return false;">&larr; Übersicht</a>
         <input type="text" id="search" placeholder="Suche..." oninput="renderTable()">
       </div>
+      <!-- Übersicht: ohne gewähltes Giveaway stehen hier die laufenden
+           Giveaways als Kacheln (Auswahl per Klick) statt einer leeren
+           Teilnehmertabelle. -->
+      <div class="gw-overview" id="gw-overview" style="display:none"></div>
       <div class="gw-table-wrap">
         <table>
           <thead><tr id="thead-row">
@@ -167,6 +204,15 @@
 
     <!-- Steuer-Rail -->
     <div class="gw-rail">
+
+      <!-- Übersichtsmodus (kein Giveaway gewählt): die Leiste bleibt leer bis
+           auf diese Karte — ohne Auswahl gibt es nichts zu steuern. -->
+      <div class="card" id="card-new" style="display:none">
+        <div class="card-title">KEIN GIVEAWAY GEWÄHLT</div>
+        <div class="cfg-hint">Wähle links eine Kachel, um ein laufendes Giveaway zu steuern —
+        oder starte ein neues.</div>
+        <button class="btn btn-green btn-full mt-6" onclick="openInstance()">＋ GIVEAWAY STARTEN</button>
+      </div>
 
       <!-- Letzter Gewinner -->
       <div class="card winner-card" id="winner-card" style="display:none;">
@@ -212,12 +258,16 @@
         <div class="cfg-hint">Anlegen: ＋ oben → Felder ausfüllen → „ALS ENTWURF SPEICHERN".</div>
       </div>
 
-      <!-- Vergangene Giveaways: Kurzliste — Dossier/Export im Archiv -->
-      <div class="card" id="card-archive" data-help="Die letzten abgeschlossenen Giveaways (Datum, Keyword, Gewinner, Teilnehmer). Im Archiv gibt es je Sitzung das volle Dossier mit Ziehungs-Schnappschuss, die Kampagnen-Klammer über zusammengehörige Sitzungen und den tar.gz-Nachweis-Export (nur Owner).">
-        <div class="card-title">VERGANGENE GIVEAWAYS</div>
-        <div id="ar-card-list"><div class="wsc-empty">Lade…</div></div>
-        <div class="btn-group mt-6">
-          <a class="btn btn-gold btn-sm" href="/giveaway/archive.html" style="text-decoration:none">🗄 ARCHIV + NACHWEIS-EXPORT →</a>
+      <!-- Viewtime-Boost (nicht bei Sofortverlosung/Contest — kein Accrual) -->
+      <div class="card" id="card-boost" data-help="Viewtime-Boost: zeitlich begrenzter Multiplier (z. B. ×2 für 15 min) auf Zuschauzeit UND Chat-Bonus — wirkt auf die aktuelle Auswahl, Ablauf wird im Chat angesagt.">
+        <div class="card-title">VIEWTIME-BOOST <div id="mult-status">1× (aus)</div></div>
+        <div class="manual-row">
+          <input type="number" id="mult-factor" value="2" min="1" max="10" step="1" class="in-narrow" title="Faktor">
+          <span class="mr-lbl">× für</span>
+          <input type="number" id="mult-minutes" value="15" min="1" max="1440" class="in-narrow" title="Minuten">
+          <span class="mr-lbl">min</span>
+          <button class="btn btn-cyan btn-sm" onclick="startMultiplier()">START</button>
+          <button class="btn btn-gold btn-sm" onclick="stopMultiplier()">STOP</button>
         </div>
       </div>
 
@@ -233,14 +283,14 @@
       </div>
 
       <!-- Sofortverlosung: Anmeldefenster (Ziehung macht der Streamer mit ★) -->
-      <div class="card" id="card-instant" data-help="Sofortverlosung: FENSTER ÖFFNEN startet die Anmeldephase (mehrfach möglich — Teilnehmer bleiben angemeldet). Im Topf ist, wer das Keyword im offenen Fenster schreibt UND gerade wirklich zuschaut (Meldung ≤ 10 min alt). Jeder zählt mit Gewicht 1. Gezogen wird NICHT automatisch: ★ drückst du selbst — Anwesenheit zählt zum Ziehungszeitpunkt.">
+      <div class="card" id="card-instant" data-help="Sofortverlosung: FENSTER ÖFFNEN startet die Anmeldephase (mehrfach möglich — Teilnehmer bleiben angemeldet). Im Topf ist, wer das Keyword im offenen Fenster schreibt UND dem Kanal folgt UND die Mindest-Zuschauzeit hat (Vorgabe 10 Minuten, beim Start einstellbar). Das Keyword ist der Anwesenheitsnachweis; die Spalte „Anwesend" zeigt zusätzlich, von wem gerade Zuschauer-Meldungen kommen. Jeder zählt mit Gewicht 1. Gezogen wird NICHT automatisch: ★ drückst du selbst.">
         <div class="card-title">SOFORTVERLOSUNG // FENSTER <span class="ct-badge" id="cv-state">ZU</span></div>
         <div class="manual-row">
           <input type="number" id="cv-window" value="1" min="0.5" max="60" step="0.5" class="in-narrow" title="Minuten (0,5 = 30 Sekunden)">
           <span class="mr-lbl">min</span>
           <button class="btn btn-green btn-sm" id="cv-open-btn" onclick="cvOpenWindow()">FENSTER ÖFFNEN</button>
         </div>
-        <div class="cfg-hint">Das Fenster ist nur die <b>Anmeldephase</b> (Keyword + zuschauen). Es kann mehrfach
+        <div class="cfg-hint">Das Fenster ist nur die <b>Anmeldephase</b> (Keyword schreiben; dazu Follow + Mindest-Zuschauzeit). Es kann mehrfach
         geöffnet werden — Teilnehmer bleiben angemeldet. Gezogen wird <b>nicht automatisch</b>:
         wenn du bereit bist → <b>★ GEWINNER ZIEHEN</b>.</div>
         <label class="cfg-hint" style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-top:4px">
@@ -250,8 +300,8 @@
       </div>
 
       <!-- Los-Giveaway: Setz-Befehl, Preise, Ziehung je Preis -->
-      <div class="card" id="card-ticketbuy" data-help="Los-Giveaway: Zuschauzeit wird Los-Guthaben (Umrechnung in der Regeln-Karte). Preise anlegen (Titel, Sponsor, Beschreibung, Bild bis 7 MB, optionales Einsatz-Ende), ✎ korrigieren oder ✖ stornieren (Einsätze werden zurückgebucht). Gesetzt wird per Chat-Befehl oder Setz-Seite; Rücknahme bis zum Einsatz-Ende. ★ zieht je Preis, gewichtet nach Einsatz — danach sind die Einsätze ALLER Setzer dieses Preises verbraucht. SCHLIESSEN geht erst, wenn alle Preise gezogen oder storniert sind.">
-        <div class="card-title">LOS-GIVEAWAY // PREISE</div>
+      <div class="card" id="card-ticketbuy" data-help="Los-Giveaway: Zuschauzeit wird Los-Guthaben (Umrechnung in der Regeln-Karte). Ein Los-Giveaway verlost genau EINEN Preis (Titel, Sponsor, Beschreibung, Bild bis 7 MB, optionales Einsatz-Ende) — für einen weiteren Preis ein zweites Los-Giveaway starten (＋ oben). Preis ✎ korrigieren oder ✖ stornieren (Einsätze werden zurückgebucht). Gesetzt wird per Chat-Befehl oder Setz-Seite; Rücknahme bis zum Einsatz-Ende. ★ zieht gewichtet nach Einsatz — danach sind die Einsätze ALLER Setzer verbraucht. SCHLIESSEN geht erst, wenn der Preis gezogen oder storniert ist.">
+        <div class="card-title">LOS-GIVEAWAY // PREIS</div>
         <div class="card-sub">SETZ-BEFEHL</div>
         <div class="input-row">
           <input type="text" id="tb-wagercmd" placeholder="!setzen" maxlength="30">
@@ -284,7 +334,7 @@
           <button class="btn btn-gold btn-sm" id="tb-prize-save" onclick="tbAddPrize()">ANLEGEN</button>
           <button class="btn btn-sm" id="tb-prize-cancel-edit" style="display:none" onclick="tbCancelEdit()">ABBRUCH</button>
         </div>
-        <div class="card-sub mt-8">OFFENE PREISE <span class="link-cyan" onclick="tbLoadPrizes()">↻</span></div>
+        <div class="card-sub mt-8">PREIS DIESES GIVEAWAYS <span class="link-cyan" onclick="tbLoadPrizes()">↻</span></div>
         <div id="tb-prizes"><div class="wsc-empty">Lade…</div></div>
       </div>
 
@@ -342,19 +392,6 @@
           <input type="number" id="m-amount" value="1" min="1" max="99" class="in-narrow">
           <button class="btn btn-cyan btn-sm" onclick="manualAdd()">+</button>
           <button class="btn btn-gold btn-sm" onclick="manualSub()">–</button>
-        </div>
-      </div>
-
-      <!-- Viewtime-Boost (nicht bei Sofortverlosung/Contest — kein Accrual) -->
-      <div class="card" id="card-boost" data-help="Viewtime-Boost: zeitlich begrenzter Multiplier (z. B. ×2 für 15 min) auf Zuschauzeit UND Chat-Bonus — wirkt auf die aktuelle Auswahl, Ablauf wird im Chat angesagt.">
-        <div class="card-title">VIEWTIME-BOOST <div id="mult-status">1× (aus)</div></div>
-        <div class="manual-row">
-          <input type="number" id="mult-factor" value="2" min="1" max="10" step="1" class="in-narrow" title="Faktor">
-          <span class="mr-lbl">× für</span>
-          <input type="number" id="mult-minutes" value="15" min="1" max="1440" class="in-narrow" title="Minuten">
-          <span class="mr-lbl">min</span>
-          <button class="btn btn-cyan btn-sm" onclick="startMultiplier()">START</button>
-          <button class="btn btn-gold btn-sm" onclick="stopMultiplier()">STOP</button>
         </div>
       </div>
 
@@ -480,14 +517,13 @@
       <div class="iw-field" id="iw-f-minwatch">
         <label for="iw-minwatch">Mindest-Zuschauzeit (Minuten)</label>
         <input type="number" id="iw-minwatch" min="0" max="6000" step="5" value="10">
-        <div class="hint">Für Einsenden und Bewerten. 0 = aus — hält Vote-Bots draußen.</div>
+        <div class="hint" id="iw-minwatch-hint">Für Einsenden und Bewerten. 0 = aus — hält Vote-Bots draußen.</div>
       </div>
       <!-- P6: Preise schon im Entwurf — werden beim Start automatisch angelegt. -->
       <div class="iw-field" id="iw-f-prizes">
-        <label>Preise</label>
+        <label>Preis</label>
         <div id="iw-prize-list"></div>
-        <button type="button" class="btn btn-sm" onclick="iwAddPrizeRow()" style="margin-top:4px">+ PREIS HINZUFÜGEN</button>
-        <div class="hint">Sponsor und Einsatz-Ende sind optional (leer = offen bis zur Ziehung). Die Preise werden beim Start angelegt und im Chat angesagt; weitere gehen jederzeit über die Preis-Karte.</div>
+        <div class="hint">Ein Los-Giveaway verlost genau einen Preis. Sponsor und Einsatz-Ende sind optional (leer = offen bis zur Ziehung). Der Preis wird beim Start angelegt und im Chat angesagt. Mehr verlosen? Dann mehrere Los-Giveaways starten.</div>
       </div>
 
       <div class="iw-sec">KANÄLE</div>
