@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RDOC Giveaway: Doku</title>
+<link rel="stylesheet" href="/admin/rdoc.css">
+<link rel="stylesheet" href="/admin/doku.css">
+<script src="/admin/rdoc-theme.js"></script>
+<link rel="icon" href="/admin/favicon.ico" sizes="32x32">
+<link rel="icon" href="/admin/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/admin/icons/apple-touch-icon.png">
+<link rel="manifest" href="/admin/site.webmanifest">
+<meta name="theme-color" content="#121416" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F2F0" media="(prefers-color-scheme: light)">
+<!-- ERZEUGTE DATEI - nicht von Hand bearbeiten.
+     Quelle: docs/SOFTWARE-ARCHITEKTUR.md - Generator: tools/build-doc-page.js -->
+</head>
+<body data-app>
+<script src="/giveaway/cc-defs.js"></script>
+<script src="admin-shared.js"></script>
+
+<div class="dk-shell">
+  <aside class="dk-rail">
+    <div class="dk-railhead">ARCHITEKTUR-REFERENZ</div>
+    <nav class="dk-nav">
+      <a class="n2" href="#1-systemuberblick"><span class="k">1</span>Systemüberblick</a>
+      <a class="n2" href="#2-laufzeitsicht-prozesse-und-kanale"><span class="k">2</span>Laufzeitsicht: Prozesse und Kanäle</a>
+      <a class="n3" href="#21-ingest-von-aussen-nach-innen">2.1 Ingest (von außen nach innen)</a>
+      <a class="n3" href="#22-zeitkonto-ticker-60-s">2.2 Zeitkonto (Ticker, 60 s)</a>
+      <a class="n3" href="#23-panel-websocket">2.3 Panel (WebSocket)</a>
+      <a class="n2" href="#3-datenhaltung"><span class="k">3</span>Datenhaltung</a>
+      <a class="n3" href="#31-redis-live-zustand">3.1 Redis — Live-Zustand</a>
+      <a class="n3" href="#32-postgresql-nachweise-und-stammdaten">3.2 PostgreSQL — Nachweise und Stammdaten</a>
+      <a class="n2" href="#4-programmablauf"><span class="k">4</span>Programmablauf</a>
+      <a class="n3" href="#41-lebenszyklus-eines-giveaways">4.1 Lebenszyklus eines Giveaways</a>
+      <a class="n3" href="#42-chat-nachricht-der-heisseste-pfad">4.2 Chat-Nachricht: der heißeste Pfad</a>
+      <a class="n3" href="#43-ziehung">4.3 Ziehung</a>
+      <a class="n3" href="#44-berechtigung-je-mechanik">4.4 Berechtigung je Mechanik</a>
+      <a class="n2" href="#5-klassen-und-module"><span class="k">5</span>Klassen und Module</a>
+      <a class="n3" href="#modulkarte">Modulkarte</a>
+      <a class="n2" href="#6-funktionsreferenz"><span class="k">6</span>Funktionsreferenz</a>
+      <a class="n3" href="#61-watchtimeengine-konfiguration-und-zustand">6.1 `WatchtimeEngine` — Konfiguration und Zustand</a>
+      <a class="n3" href="#62-watchtimeengine-ereignisse-und-konten">6.2 `WatchtimeEngine` — Ereignisse und Konten</a>
+      <a class="n3" href="#63-watchtimeengine-giveaways">6.3 `WatchtimeEngine` — Giveaways</a>
+      <a class="n3" href="#64-watchtimeengine-los-giveaway">6.4 `WatchtimeEngine` — Los-Giveaway</a>
+      <a class="n3" href="#65-watchtimeengine-screenshot-contest">6.5 `WatchtimeEngine` — Screenshot-Contest</a>
+      <a class="n3" href="#66-creditledger-creditjsservicesgiveawaycreditjs">6.6 `CreditLedger` ([credit.js](../services/giveaway/credit.js))</a>
+      <a class="n3" href="#67-core-vertrag-coresservicesgiveawaycores">6.7 Core-Vertrag ([cores/](../services/giveaway/cores/))</a>
+      <a class="n3" href="#68-ki-bewertung-coreschat-aijsservicesgiveawaycoreschat-aijs">6.8 KI-Bewertung ([cores/chat-ai.js](../services/giveaway/cores/chat-ai.js))</a>
+      <a class="n3" href="#69-weitere-module">6.9 Weitere Module</a>
+      <a class="n3" href="#610-prozess-funktionen-servicesgiveawayserverjs">6.10 Prozess-Funktionen `services/giveaway/server.js`</a>
+      <a class="n3" href="#611-panel-client-servicesgiveawaypublicgiveaway-adminjs">6.11 Panel-Client `services/giveaway/public/giveaway-admin.js`</a>
+      <a class="n2" href="#7-schnittstellen"><span class="k">7</span>Schnittstellen</a>
+      <a class="n3" href="#71-ingest-streamerbot-bridge">7.1 Ingest (Streamerbot → bridge)</a>
+      <a class="n3" href="#72-rest-cc-giveaway-giveawayapi">7.2 REST `cc-giveaway` (`/giveaway/api/...`)</a>
+      <a class="n3" href="#73-websocket-cc-giveaway">7.3 WebSocket `cc-giveaway`</a>
+      <a class="n3" href="#74-rest-cc-admin-adminapi-auth-unter-adminauth">7.4 REST `cc-admin` (`/admin/api/...`, Auth unter `/admin/auth/...`)</a>
+      <a class="n3" href="#75-authentifizierung-und-rollen">7.5 Authentifizierung und Rollen</a>
+      <a class="n2" href="#8-konfiguration"><span class="k">8</span>Konfiguration</a>
+      <a class="n2" href="#9-invarianten-was-nicht-gebrochen-werden-darf"><span class="k">9</span>Invarianten (was nicht gebrochen werden darf)</a>
+      <a class="n2" href="#anhang-a-vollstandige-funktionslisten-je-datei"><span class="k">·</span>Anhang A — vollständige Funktionslisten je Datei</a>
+      <a class="n3" href="#a1-servicesbridgeserverjs-ingest">A.1 `services/bridge/server.js` — Ingest</a>
+      <a class="n3" href="#a2-servicesadminserverjs-auth-teams-recht-plattform">A.2 `services/admin/server.js` — Auth, Teams, Recht, Plattform</a>
+      <a class="n3" href="#a3-servicesgiveawayserverjs-restliche-funktionen">A.3 `services/giveaway/server.js` — restliche Funktionen</a>
+      <a class="n3" href="#a4-browser-skripte">A.4 Browser-Skripte</a>
+      <a class="n3" href="#a5-streamerbot-actions-servicesadminactionscs">A.5 Streamerbot-Actions (`services/admin/actions/*.cs`)</a>
+      <a class="n3" href="#a6-tests">A.6 Tests</a>
+    </nav>
+    <div class="dk-railfoot">Quelle im Repo:<br>
+      <a href="https://github.com/cccdemon/CC-Giveaway/blob/main/docs/SOFTWARE-ARCHITEKTUR.md" target="_blank" rel="noopener">docs/SOFTWARE-ARCHITEKTUR.md</a>
+    </div>
+  </aside>
+  <main class="dk-main">
+<h1 class="doc-title">Software-Architektur und Referenz</h1>
+<p>Vollständige Übersicht über Aufbau, Schnittstellen, Klassen und Funktionen von CC-Giveaway. Stand: 10. August 2026 (Commit <code>bfa62ff</code>).</p>
+<p>Dieses Dokument beschreibt <strong>was es gibt und wie es zusammenhängt</strong>. Die fachlichen Regeln stehen in <a href="https://github.com/cccdemon/CC-Giveaway/blob/main/CLAUDE.md" target="_blank" rel="noopener">CLAUDE.md</a> (verbindlich), <a href="https://github.com/cccdemon/CC-Giveaway/blob/main/FEATURES.md" target="_blank" rel="noopener">FEATURES.md</a> (Einstellungen) und <a href="https://github.com/cccdemon/CC-Giveaway/blob/main/docs/ARCHITEKTUR-CORES.md" target="_blank" rel="noopener">docs/ARCHITEKTUR-CORES.md</a> (Mechanik-Verträge).</p>
+<section id="1-systemuberblick">
+<h2><span class="num">1</span>Systemüberblick</h2>
+<p>Acht Container: sechs tragende Dienste plus zwei Helfer (<code>cc-backup</code>, tägliche Sicherung 03:00, und <code>cc-redis-ui</code>, nur auf dem Loopback). Ein Datenstrom kommt von außen (Streamerbot der Kanäle), einer geht zurück (Chat-Antworten). Alles andere ist interne Kommunikation.</p>
+<figure class="dia"><pre class="mermaid">flowchart TB
+    subgraph EXT["Außenwelt"]
+        SB["Streamerbot je Kanal&lt;br/&gt;(WebSocket-Client)"]
+        TW["Twitch Helix API&lt;br/&gt;(OAuth, Follows)"]
+        AI["KI-Anbieter&lt;br/&gt;(Anthropic/OpenAI/Gemini)"]
+        DC["Discord-Webhook&lt;br/&gt;(Rückmeldungen)"]
+        BR["Browser&lt;br/&gt;(Streamer, Zuschauer)"]
+    end
+
+    subgraph EDGE["Edge"]
+        CADDY["cc-web (Caddy)&lt;br/&gt;TLS, forward_auth, CSP, Routing"]
+    end
+
+    subgraph APP["Anwendungsdienste"]
+        BRIDGE["cc-bridge :3000&lt;br/&gt;Ingest-Endpunkt"]
+        GW["cc-giveaway :3001&lt;br/&gt;Engine, REST, WS, Ticker"]
+        ADMIN["cc-admin :3005&lt;br/&gt;Auth, Teams, Recht, Plattform"]
+    end
+
+    subgraph DATA["Datenhaltung"]
+        REDIS[("cc-redis&lt;br/&gt;Live-Zustand")]
+        PG[("cc-postgres&lt;br/&gt;Nachweise, Stammdaten")]
+    end
+
+    SB -- "wss /ingest (Token je Kanal)" --&gt; CADDY
+    BR -- "https" --&gt; CADDY
+    CADDY --&gt; BRIDGE
+    CADDY --&gt; GW
+    CADDY --&gt; ADMIN
+    CADDY -. "forward_auth /auth/verify" .-&gt; ADMIN
+
+    BRIDGE -- "publish ch:giveaway" --&gt; REDIS
+    REDIS -- "subscribe ch:giveaway" --&gt; GW
+    GW -- "publish ch:chat_reply" --&gt; REDIS
+    REDIS -- "subscribe ch:chat_reply" --&gt; BRIDGE
+    BRIDGE -- "WS-Nachricht" --&gt; SB
+
+    GW &lt;--&gt; REDIS
+    GW &lt;--&gt; PG
+    ADMIN &lt;--&gt; PG
+    ADMIN -- "X-Internal-Key" --&gt; GW
+    GW --&gt; TW
+    GW --&gt; AI
+    ADMIN --&gt; TW
+    ADMIN --&gt; DC</pre></figure>
+<p><strong>Warum diese Aufteilung</strong></p>
+<div class="tw"><table><thead><tr><th>Dienst</th><th>Aufgabe</th><th>Warum getrennt</th></tr></thead><tbody><tr><td><code>bridge</code></td><td>nimmt Streamerbot-Verbindungen an, prüft Kanal-Token, leitet Ereignisse weiter</td><td>Der Ingest ist der einzige Weg von außen in den Zustand. Getrennter Prozess heißt: eigene Drosselung, eigener Absturzradius.</td></tr><tr><td><code>giveaway</code></td><td>Engine, Zeitkonto, Ziehung, Preise, Contest, Audit</td><td>Enthält den gesamten Live-Zustand und ist der einzige Dienst mit Redis-Zugriff.</td></tr><tr><td><code>admin</code></td><td>Login, Teams, Rechtstexte, DSGVO, Plattform-Verwaltung</td><td>Kennt Personen und Rechtstexte; hat bewusst <strong>kein</strong> Redis.</td></tr><tr><td><code>cc-web</code> (Caddy)</td><td>TLS, Pfad-Routing, <code>forward_auth</code>, Security-Header</td><td>Authentifizierung genau einmal, vor allen Diensten.</td></tr><tr><td><code>redis</code></td><td>Live-Zustand + Pub/Sub</td><td>Zustand, der pro Sekunde wächst, gehört nicht in die Nachweis-Datenbank.</td></tr><tr><td><code>postgres</code></td><td>Nachweise, Stammdaten, Protokolle</td><td>Alles, was revisionssicher bleiben muss.</td></tr></tbody></table></div>
+</section>
+<section id="2-laufzeitsicht-prozesse-und-kanale">
+<h2><span class="num">2</span>Laufzeitsicht: Prozesse und Kanäle</h2>
+<h3 id="21-ingest-von-aussen-nach-innen">2.1 Ingest (von außen nach innen)</h3>
+<figure class="dia"><pre class="mermaid">sequenceDiagram
+    participant SB as Streamerbot
+    participant BR as cc-bridge
+    participant R as Redis Pub/Sub
+    participant GW as cc-giveaway
+    participant PG as PostgreSQL
+
+    SB-&gt;&gt;BR: WS connect + {event:"ingest_auth", token}
+    BR-&gt;&gt;BR: Token → (teamId, channel) auflösen
+    Note over BR: Kanal kommt aus dem Token,&lt;br/&gt;nie aus dem Payload
+    SB-&gt;&gt;BR: {event:"viewer_tick", user}
+    BR-&gt;&gt;R: PUBLISH ch:giveaway {teamId, channel, ...}
+    R-&gt;&gt;GW: Nachricht
+    GW-&gt;&gt;GW: handleViewerTick() → Präsenz + Puls
+    GW-&gt;&gt;PG: watchtime_events (bei Buchung)
+    GW--&gt;&gt;R: PUBLISH ch:chat_reply (nur wenn Antwort nötig)
+    R--&gt;&gt;BR: chat_reply
+    BR--&gt;&gt;SB: WS-Nachricht → Twitch-Chat</pre></figure>
+<p>Ereignisse auf <code>ch:giveaway</code>: <code>viewer_tick</code>, <code>chat_msg</code>, <code>time_cmd</code>, <code>giveaway_cmd</code>, <code>stream_online</code>, <code>stream_offline</code>, <code>cc_debug</code>. Rückkanal <code>ch:chat_reply</code>: <code>{event:'chat_reply', channel, message}</code>.</p>
+<h3 id="22-zeitkonto-ticker-60-s">2.2 Zeitkonto (Ticker, 60 s)</h3>
+<figure class="dia"><pre class="mermaid">flowchart LR
+    T["Ticker 60s"] --&gt; A["listOpenTeams()"]
+    A --&gt; B["_activeGiveaways(team)"]
+    B --&gt; C{"Core mit&lt;br/&gt;accrual ≠ none?"}
+    C -- nein --&gt; X["überspringen&lt;br/&gt;(Sofortverlosung, Contest)"]
+    C -- ja --&gt; D{"Zuschauer präsent&lt;br/&gt;+ Follow erlaubt?"}
+    D -- nein --&gt; X
+    D -- ja --&gt; E["tickDelta = 60s × Multiplier"]
+    E --&gt; F["INCRBYFLOAT Zeitkonto je Kanal+Giveaway"]
+    F --&gt; G["watchtime_events schreiben"]
+    G --&gt; H["wt_update an das Panel"]</pre></figure>
+<h3 id="23-panel-websocket">2.3 Panel (WebSocket)</h3>
+<p>Das Admin-Panel hält eine WS-Verbindung zu <code>cc-giveaway</code>. Identität kommt aus dem Header <code>X-Auth-User</code>, den Caddy nach <code>forward_auth</code> setzt — der Client kann sie nicht behaupten.</p>
+<figure class="dia"><pre class="mermaid">sequenceDiagram
+    participant P as Panel (Browser)
+    participant C as Caddy
+    participant GW as cc-giveaway
+
+    P-&gt;&gt;C: WS /giveaway/ws
+    C-&gt;&gt;C: forward_auth → Session prüfen
+    C-&gt;&gt;GW: Upgrade + X-Auth-User
+    P-&gt;&gt;GW: {event:"gw_get_all", teamId, giveawayId?}
+    GW-&gt;&gt;GW: isMember(user, team)?
+    GW--&gt;&gt;P: {event:"gw_data", participants, coreMeta, ingestPulse, ...}
+    P-&gt;&gt;GW: {event:"gw_cmd", cmd:"gw_draw_winner", ...}
+    GW-&gt;&gt;GW: handleAdminCmd → Rechte, Ausführung, audit_log
+    GW--&gt;&gt;P: {event:"gw_ack", type:"winner_drawn", ...}</pre></figure>
+</section>
+<section id="3-datenhaltung">
+<h2><span class="num">3</span>Datenhaltung</h2>
+<h3 id="31-redis-live-zustand">3.1 Redis — Live-Zustand</h3>
+<p>Namensraum <code>t:&lt;teamId&gt;:…</code> (team-weit) und <code>t:&lt;teamId&gt;:g:&lt;sessionId&gt;:…</code> (je Giveaway). Konstruiert wird jeder Schlüssel über die Tabelle <code>K</code> in <a href="https://github.com/cccdemon/CC-Giveaway/blob/main/services/giveaway/watchtime.js" target="_blank" rel="noopener">watchtime.js</a> — <strong>nie per String-Konkatenation im Aufrufer</strong>.</p>
+<div class="tw"><table><thead><tr><th>Schlüssel</th><th>Typ</th><th>Bedeutung</th></tr></thead><tbody><tr><td><code>gw:open_teams</code></td><td>Set</td><td>global: Teams mit laufendem Giveaway (Ticker-Kandidaten)</td></tr><tr><td><code>t:&lt;T&gt;:gw_open</code> / <code>gw_paused</code></td><td>String</td><td>Kampagne offen / pausiert</td></tr><tr><td><code>t:&lt;T&gt;:gw_keyword</code>, <code>gw_session_id</code></td><td>String</td><td>Keyword und Sitzungs-ID der Kampagne</td></tr><tr><td><code>t:&lt;T&gt;:gw:channels</code></td><td>String (JSON)</td><td>Kanal-Cache aus PG</td></tr><tr><td><code>t:&lt;T&gt;:gw:users</code></td><td>Set</td><td>alle je gesehenen Zuschauer des Teams</td></tr><tr><td><code>t:&lt;T&gt;:gw:online</code></td><td>Set</td><td>aktuell live gemeldete Kanäle (<code>stream_online</code>)</td></tr><tr><td><code>t:&lt;T&gt;:gw:cfg:*</code></td><td>String</td><td><strong>Vorgaben</strong> für das nächste Giveaway</td></tr><tr><td><code>t:&lt;T&gt;:gw:registered:&lt;u&gt;</code>, <code>gw_banned:&lt;u&gt;</code></td><td>String</td><td>Opt-in / Sperre (team-weit)</td></tr><tr><td>`t:&lt;T&gt;:gw:ch:&lt;C&gt;:watch\</td><td>msgs\</td><td>chat_ts:&lt;u&gt;`</td><td>String</td><td>Legacy-Kampagnenkonto je Kanal</td></tr><tr><td><code>t:&lt;T&gt;:gw:ch:&lt;C&gt;:present:&lt;u&gt;</code></td><td>String, TTL 600 s</td><td>Anwesenheit (Tick oder Chat)</td></tr><tr><td><code>t:&lt;T&gt;:gw:ch:&lt;C&gt;:last_tick:&lt;u&gt;</code></td><td>String</td><td>Zeitpunkt des letzten <code>viewer_tick</code></td></tr><tr><td><code>t:&lt;T&gt;:gw:ch:&lt;C&gt;:pulse</code></td><td>String</td><td>letzter Tick <strong>des Kanals</strong> (Ingest-Diagnose)</td></tr><tr><td><code>t:&lt;T&gt;:gw:ch:&lt;C&gt;:index</code></td><td>Set</td><td>Zuschauer je Kanal</td></tr><tr><td><code>t:&lt;T&gt;:giveaways</code></td><td>Set</td><td>aktive und geschlossene, noch nicht aufgeräumte Instanzen</td></tr><tr><td>`t:&lt;T&gt;:g:&lt;S&gt;:open\</td><td>paused\</td><td>keyword\</td><td>channels\</td><td>core\</td><td>name`</td><td>String</td><td>Zustand der Instanz</td></tr><tr><td><code>t:&lt;T&gt;:g:&lt;S&gt;:win_end</code></td><td>String</td><td>Ende des Anmeldefensters (Sofortverlosung)</td></tr><tr><td><code>t:&lt;T&gt;:g:&lt;S&gt;:wager_cmd</code>, <code>min_watch</code>, <code>vote_state</code>, <code>announce</code></td><td>String</td><td>Core-spezifische Einstellungen</td></tr><tr><td><code>t:&lt;T&gt;:g:&lt;S&gt;:cfg:*</code></td><td>String</td><td><strong>Kopie</strong> der Regeln beim Öffnen (Copy-on-Open)</td></tr><tr><td>`t:&lt;T&gt;:g:&lt;S&gt;:ch:&lt;C&gt;:watch\</td><td>msgs\</td><td>chat_ts:&lt;u&gt;<code>, </code>registered:&lt;u&gt;<code>, </code>mult`</td><td>String</td><td>Konto der Instanz</td></tr><tr><td>`t:&lt;T&gt;:gw:abuse:hist\</td><td>times:&lt;u&gt;`</td><td>List</td><td>Anti-Abuse-Fenster</td></tr><tr><td><code>ingest:tokens</code>, <code>ingest:team_tokens</code></td><td>Hash</td><td>Ingest-Token ↔ (Team, Kanal)</td></tr></tbody></table></div>
+<h3 id="32-postgresql-nachweise-und-stammdaten">3.2 PostgreSQL — Nachweise und Stammdaten</h3>
+<p><code>ensureSchema()</code> beim Start ist die Quelle der Wahrheit; <code>postgres/init.sql</code> legt nur das Grundgerüst eines frischen Volumes an.</p>
+<figure class="dia"><pre class="mermaid">erDiagram
+    teams ||--o{ team_members : "hat"
+    teams ||--o{ streamers : "Kanäle (channel)"
+    teams ||--o{ sessions : "Giveaways"
+    teams ||--o{ terms_versions : "Bedingungen-Fassungen"
+    sessions ||--o{ session_participants : "Teilnahme"
+    sessions ||--o{ giveaway_draws : "Ziehungen"
+    sessions ||--o{ giveaway_prizes : "Preise (TicketBuy)"
+    sessions ||--o{ contest_entries : "Einsendungen"
+    sessions ||--o{ participation_consents : "Kenntnisnahmen"
+    giveaway_prizes ||--o{ prize_wagers : "Einsätze"
+    contest_entries ||--o{ contest_votes : "Stimmen"
+    giveaway_draws ||--o| draw_claims : "Gewinnermeldung"
+    users ||--o{ watchtime_events : "Buchungen"
+    users ||--o{ campaign_participation : "Stand je Kanal"
+    users ||--o{ credit_ledger : "Los-Guthaben"</pre></figure>
+<div class="tw"><table><thead><tr><th>Tabelle</th><th>Zweck</th><th>Besonderheit</th></tr></thead><tbody><tr><td><code>teams</code>, <code>team_members</code>, <code>streamers</code></td><td>Team, Mitglieder, Kanäle und Twitch-Token</td><td><code>teams.deactivated_at</code> statt DELETE; <code>streamers.banned_at</code> = Login-Sperre</td></tr><tr><td><code>sessions</code></td><td>eine Zeile je Giveaway (Kampagne oder Instanz)</td><td><code>core</code>, <code>core_config</code>, <code>status</code>, <code>terms_version</code>, <code>prize</code>, <code>sponsor</code></td></tr><tr><td><code>watchtime_events</code></td><td>jede Zeitbuchung</td><td>Grundlage jeder Nachrechnung</td></tr><tr><td><code>campaign_participation</code></td><td>Stand je (Sitzung, Nutzer, Kanal)</td><td>wird beim Schließen geschrieben</td></tr><tr><td><code>giveaway_draws</code></td><td>jede Ziehung mit Snapshot</td><td><code>eligible_snapshot</code>, <code>rand_value</code>, <code>reroll_of</code> — <strong>nie löschen</strong></td></tr><tr><td><code>draw_claims</code></td><td>Gewinnermeldung</td><td>einzige Klardaten (Name/Anschrift), Löschfrist 12 Monate</td></tr><tr><td><code>credit_ledger</code></td><td>Los-Guthaben</td><td>append-only, nur Gegenbuchungen</td></tr><tr><td><code>giveaway_prizes</code>, <code>prize_wagers</code></td><td>Preise und Einsätze</td><td>append-only, Rücknahme = negative Zeile</td></tr><tr><td><code>contest_entries</code>, <code>contest_votes</code></td><td>Screenshots und Stimmen</td><td>Bild als <code>BYTEA</code>, Zugriff nur über <code>image_token</code></td></tr><tr><td><code>participation_consents</code></td><td>Kenntnisnahme je Aktion</td><td>register / wager / contest_entry / contest_vote</td></tr><tr><td><code>terms_versions</code>, <code>tos_acceptances</code></td><td>Teilnahmebedingungen, Nutzungsbedingungen</td><td>versioniert, append-only</td></tr><tr><td><code>audit_log</code></td><td>jede zustandsändernde Aktion</td><td>append-only, wird nur anonymisiert</td></tr><tr><td><code>abuse_flags</code>, <code>platform_warnings</code>, <code>feedback</code>, <code>debug_log</code></td><td>Auffälligkeiten, Verwarnungen, Rückmeldungen, Streamerbot-Debug</td><td></td></tr></tbody></table></div>
+</section>
+<section id="4-programmablauf">
+<h2><span class="num">4</span>Programmablauf</h2>
+<h3 id="41-lebenszyklus-eines-giveaways">4.1 Lebenszyklus eines Giveaways</h3>
+<p>Für <strong>alle</strong> Mechaniken gilt seit 9.8.2026: schließen → ziehen → aufräumen.</p>
+<figure class="dia"><pre class="mermaid">stateDiagram-v2
+    [*] --&gt; Entwurf: gw_save_draft (optional)
+    Entwurf --&gt; Offen: gw_open_instance (draftId)
+    [*] --&gt; Offen: gw_open / gw_open_instance
+    Offen --&gt; Pausiert: gw_pause (auch automatisch, Stream offline)
+    Pausiert --&gt; Offen: gw_resume
+    Offen --&gt; Geschlossen: gw_close_instance / gw_close
+    Pausiert --&gt; Geschlossen: gw_close_instance
+    Geschlossen --&gt; Gezogen: gw_draw_winner (immer manuell)
+    Gezogen --&gt; Gezogen: gw_draw_winner (weiterer Preis, TicketBuy)
+    Gezogen --&gt; Aufgeräumt: gw_close_instance (2. Aufruf) / gw_reset
+    Geschlossen --&gt; Aufgeräumt: gw_close_instance (ohne Ziehung, mit Warnung)
+    Aufgeräumt --&gt; [*]
+
+    note right of Geschlossen
+        Sammeln/Anmelden endet,
+        der Topf bleibt lesbar.
+        listGiveaways liefert closed:true
+    end note
+    note right of Gezogen
+        giveaway_draws + draw_claims
+        entstehen, Chat-Ansage geht raus
+    end note</pre></figure>
+<p><strong>Start-Gates</strong> vor jedem Öffnen, in dieser Reihenfolge:</p>
+<figure class="dia"><pre class="mermaid">flowchart TD
+    S["gw_open / gw_open_instance"] --&gt; T{"Team aktiv?"}
+    T -- nein --&gt; X1["abgelehnt: team_inactive"]
+    T -- ja --&gt; U{"Owner hat Nutzungs-&lt;br/&gt;bedingungen akzeptiert?"}
+    U -- nein --&gt; X2["abgelehnt: TOS_HINT"]
+    U -- ja --&gt; V{"Impressum hinterlegt?"}
+    V -- nein --&gt; X3["abgelehnt: IMPRINT_HINT"]
+    V -- ja --&gt; W{"Gewinn eingetragen?&lt;br/&gt;(außer Los-Giveaway)"}
+    W -- nein --&gt; X4["abgelehnt: no_prize"]
+    W -- ja --&gt; Y{"Platzhalter '{{…}}'&lt;br/&gt;in den Bedingungen?"}
+    Y -- ja --&gt; X5["abgelehnt: terms_placeholders"]
+    Y -- nein --&gt; Z{"Bedingungen-Fassung&lt;br/&gt;einfrierbar?"}
+    Z -- nein --&gt; X6["abgebrochen: terms_snapshot_failed"]
+    Z -- ja --&gt; OK["Sitzung angelegt, Ansage im Chat"]</pre></figure>
+<h3 id="42-chat-nachricht-der-heisseste-pfad">4.2 Chat-Nachricht: der heißeste Pfad</h3>
+<figure class="dia"><pre class="mermaid">flowchart TD
+    A["chat_msg (Kanal, Nutzer, Text, follows)"] --&gt; B{"aktive Giveaways&lt;br/&gt;für diesen Kanal?"}
+    B -- keine --&gt; E1["Ende"]
+    B -- ja --&gt; C["Präsenz + Follow merken,&lt;br/&gt;Nutzer indizieren"]
+    C --&gt; D{"Setz-Befehl&lt;br/&gt;(Los-Giveaway)?"}
+    D -- ja --&gt; D1["Preis-Nr → Instanz auflösen"]
+    D1 --&gt; D2["placeWager() in einer TX"]
+    D2 --&gt; D3["Chat-Antwort, ENDE&lt;br/&gt;(zählt nicht als Chat)"]
+    D -- nein --&gt; F{"Keyword einer Instanz?"}
+    F -- ja --&gt; F1{"Sofortverlosung?&lt;br/&gt;Fenster offen?"}
+    F1 -- nein --&gt; E2["ignorieren"]
+    F1 -- ja --&gt; F2["_tryRegister + recordConsent"]
+    F2 --&gt; F3["Anmelde-Antwort im Chat"]
+    F -- nein --&gt; G{"gebannt?"}
+    G -- ja --&gt; E3["Ende"]
+    G -- nein --&gt; H["Nachricht zählen (msgs++)"]
+    H --&gt; I{"sinnvoll?&lt;br/&gt;Wortregel oder KI"}
+    I -- nein --&gt; E4["Ende"]
+    I -- ja --&gt; J{"Cooldown abgelaufen?"}
+    J -- nein --&gt; E5["Ende"]
+    J -- ja --&gt; K["Bonus = bonusSec × Multiplier&lt;br/&gt;auf jedes Accrual-Giveaway"]
+    K --&gt; L["watchtime_events + wt_update"]</pre></figure>
+<p>Die KI-Bewertung ist <strong>fail-open</strong>: Timeout (4 s) oder Fehler fallen auf die Wortregel zurück, der Chat blockiert nie.</p>
+<h3 id="43-ziehung">4.3 Ziehung</h3>
+<figure class="dia"><pre class="mermaid">flowchart TD
+    A["gw_draw_winner"] --&gt; B["Follows via Helix nachprüfen"]
+    B --&gt; C{"Ersatzziehung?"}
+    C -- ja --&gt; C1{"alter Gewinn&lt;br/&gt;schon abgewickelt?"}
+    C1 -- ja --&gt; X1["blockiert (reroll_blocked)"]
+    C1 -- nein --&gt; D
+    C -- nein --&gt; D["Core der Sitzung bestimmen"]
+    D --&gt; E{"welcher Core?"}
+    E -- Watchtime --&gt; P1["alle Teilnehmer, Gewicht = Coins"]
+    E -- CurrentViewers --&gt; P2["Angemeldete, Gewicht 1"]
+    E -- TicketBuy --&gt; P3["prizeId Pflicht, gehört sie zur Sitzung?&lt;br/&gt;Gewicht = Einsatz"]
+    E -- Contest --&gt; P4["Voting schließen,&lt;br/&gt;nur Führende, Gewicht 1"]
+    P1 &amp; P2 &amp; P3 &amp; P4 --&gt; F["buildPool() des Cores"]
+    F --&gt; G{"Pool leer?"}
+    G -- ja --&gt; X2["null → no_winner mit Begründung"]
+    G -- nein --&gt; H["randomInt → gewichtete Auswahl"]
+    H --&gt; I["TX: giveaway_draws + Snapshot&lt;br/&gt;+ users.times_won&lt;br/&gt;+ afterDraw (Preis 'drawn')"]
+    I --&gt; J["draw_claims (Frist 14 Tage)"]
+    J --&gt; K["Chat-Ansage + winner_drawn ans Panel"]</pre></figure>
+<h3 id="44-berechtigung-je-mechanik">4.4 Berechtigung je Mechanik</h3>
+<figure class="dia"><pre class="mermaid">flowchart LR
+    subgraph K["Kampagne"]
+        K1["Keyword geschrieben"] --&gt; K2["Follows ≥ followMin"] --&gt; K3["≥ 1 Coin"] --&gt; KE["im Lostopf"]
+    end
+    subgraph C["Sofortverlosung"]
+        C1["Keyword im offenen Fenster&lt;br/&gt;= Anwesenheitsnachweis"] --&gt; C2["Follow auf einem Kanal"] --&gt; C3["Viewtime ≥ minWatchSec&lt;br/&gt;(Vorgabe 10 min)"] --&gt; CE["im Topf, Gewicht 1"]
+    end
+    subgraph T["Los-Giveaway"]
+        T1["Guthaben aus Zuschauzeit"] --&gt; T2["Einsatz auf DIESEN Preis"] --&gt; TE["Gewicht = Einsatz"]
+    end
+    subgraph S["Contest"]
+        S1["Follow + Mindest-Viewtime"] --&gt; S2["Einsendung freigegeben"] --&gt; S3["höchste Punktsumme"] --&gt; SE["Sieger, Gleichstand wird gelost"]
+    end</pre></figure>
+</section>
+<section id="5-klassen-und-module">
+<h2><span class="num">5</span>Klassen und Module</h2>
+<figure class="dia"><pre class="mermaid">classDiagram
+    class WatchtimeEngine {
+        +redis
+        +pg
+        +credit: CreditLedger
+        +aiJudge: fn
+        +handleViewerTick(...)
+        +handleChatMessage(...)
+        +tickPresentUsers()
+        +drawWinner(...)
+        +openGiveaway(...)
+        +openGiveawayInstance(...)
+        +closeGiveawayInstance(...)
+        +cleanupGiveawayInstance(...)
+        +placeWager(...)
+        +submitContestEntry(...)
+        +getIngestPulse(...)
+    }
+    class CreditLedger {
+        +pg
+        +balance(team,user,client) number
+        +book(team,user,type,amount,opts) row
+        +statement(team,user,limit) rows
+        +expireInactive(months) count
+    }
+    class Helix {
+        +appToken() string
+        +resolveUserMeta(login) obj
+        +validOwnerToken(login) string
+        +userFollowsChannel(ch,user) bool
+        +getFollowerIds(token,id) Set
+    }
+    class Core {
+        &lt;&lt;interface&gt;&gt;
+        +id
+        +label
+        +accrual
+        +config
+        +aggregate(input) row
+        +buildPool(rows) entries
+        +display
+    }
+    class CORE_WatchtimeChatActivity
+    class CORE_CurrentViewers
+    class CORE_TicketBuy
+    class CORE_ScreenshotContest
+
+    WatchtimeEngine --&gt; CreditLedger : bucht über
+    WatchtimeEngine --&gt; Core : fragt Regeln
+    Core &lt;|.. CORE_WatchtimeChatActivity
+    Core &lt;|.. CORE_CurrentViewers
+    Core &lt;|.. CORE_TicketBuy
+    Core &lt;|.. CORE_ScreenshotContest
+    WatchtimeEngine ..&gt; Helix : Follow-Abgleich (im Server verdrahtet)</pre></figure>
+<h3 id="modulkarte">Modulkarte</h3>
+<div class="tw"><table><thead><tr><th>Modul</th><th>Art</th><th>Abhängigkeiten</th><th>Testbar ohne Infrastruktur</th></tr></thead><tbody><tr><td><code>services/giveaway/watchtime.js</code></td><td>Klasse <code>WatchtimeEngine</code></td><td>redis, pg, Cores, CreditLedger</td><td>ja (Mocks)</td></tr><tr><td><code>services/giveaway/credit.js</code></td><td>Klasse <code>CreditLedger</code></td><td>pg</td><td>ja</td></tr><tr><td><code>services/giveaway/cores/index.js</code></td><td>Registry</td><td>Core-Module</td><td>ja</td></tr><tr><td><code>services/giveaway/cores/*.js</code></td><td>reine Funktionen je Mechanik</td><td>—</td><td>ja</td></tr><tr><td><code>services/giveaway/cores/chat-ai.js</code></td><td>KI-Bewertung + Krypto</td><td>fetch (stubbar)</td><td>ja</td></tr><tr><td><code>services/giveaway/terms.js</code></td><td>Fassungs-Snapshot</td><td>pg, fetch</td><td>ja</td></tr><tr><td><code>services/giveaway/claim-rules.js</code></td><td>Ersatzziehungs-Regeln</td><td>—</td><td>ja</td></tr><tr><td><code>services/giveaway/targz.js</code></td><td>ustar-Writer</td><td>—</td><td>ja</td></tr><tr><td><code>services/giveaway/helix.js</code></td><td>Klasse <code>Helix</code></td><td>fetch, pg, redis</td><td>nein (Netz)</td></tr><tr><td><code>services/giveaway/server.js</code></td><td>Prozess: REST, WS, Ticker, Audit</td><td>alles</td><td>nein</td></tr><tr><td><code>services/admin/auth.js</code></td><td>reine Auth-Helfer</td><td>bcrypt, crypto</td><td>ja</td></tr><tr><td><code>services/admin/server.js</code></td><td>Prozess: Auth, Teams, Recht, Plattform</td><td>pg, fetch</td><td>nein</td></tr><tr><td><code>services/bridge/server.js</code></td><td>Prozess: Ingest</td><td>redis, ws</td><td>nein</td></tr></tbody></table></div>
+</section>
+<section id="6-funktionsreferenz">
+<h2><span class="num">6</span>Funktionsreferenz</h2>
+<p>Konventionen: <code>T</code> = Team-ID (<code>team_&lt;hex&gt;</code>), <code>S</code>/<code>gid</code> = Sitzungs-ID (<code>sess_&lt;ms&gt;</code>), <code>u</code> = Twitch-Login (klein, <code>[a-z0-9_]</code>, max 25), <code>ch</code> = Kanal. Alle <code>async</code>-Funktionen liefern ein Promise. Fehler werden fast überall als <code>{ error: '&lt;code&gt;' }</code> <strong>zurückgegeben</strong> statt geworfen; geworfen wird nur, wo ein Abbruch zwingend ist (siehe Spalte).</p>
+<h3 id="61-watchtimeengine-konfiguration-und-zustand">6.1 <code>WatchtimeEngine</code> — Konfiguration und Zustand</h3>
+<div class="tw"><table><thead><tr><th>Methode</th><th>Parameter</th><th>Rückgabe</th></tr></thead><tbody><tr><td><code>constructor(redis, pg, aiJudge=null)</code></td><td>Redis-Client, PG-Pool, optionale KI-Funktion `(teamId,msg)→bool\</td><td>null`</td><td>Instanz; legt <code>this.credit = new CreditLedger(pg)</code> an</td></tr><tr><td><code>getChannels(T)</code></td><td>—</td><td><code>string[]</code> Kanäle des Teams (Redis-Cache, sonst aus <code>streamers</code>)</td></tr><tr><td><code>resolveChannel(T, ch)</code></td><td>Kanalname</td><td>`string\</td><td>null<code> — normalisiert, </code>null` wenn nicht zum Team gehörend</td></tr><tr><td><code>getMultiplier(T, gid?)</code></td><td>—</td><td><code>number</code> (1 = aus); Instanz vor Team</td></tr><tr><td><code>setMultiplier(T, factor, seconds, gid?)</code></td><td>Faktor 1–10, Dauer</td><td><code>{ factor, until }</code></td></tr><tr><td><code>multiplierState(T, gid?)</code></td><td>—</td><td><code>{ factor, secondsLeft }</code></td></tr><tr><td><code>getFollowMin(T, gid?)</code> / <code>setFollowMin(T, n, gid?)</code></td><td>Anzahl Kanäle</td><td><code>number</code> / <code>void</code></td></tr><tr><td><code>getCoinBaseSec(T, gid?)</code> / <code>setCoinBaseSec(T, sec, gid?)</code></td><td>Sekunden je Coin</td><td><code>number</code> / <code>void</code></td></tr><tr><td><code>getDrawMinSec</code> / <code>setDrawMinSec</code></td><td>Alias auf Coin-Basis</td><td>wie oben</td></tr><tr><td><code>getChatConfig(T, gid?)</code> / <code>setChatConfig(T, cfg, gid?)</code></td><td><code>{minWords, bonusSec, cooldown}</code></td><td>Objekt / <code>void</code></td></tr><tr><td><code>copyCfgToInstance(T, gid)</code></td><td>—</td><td><code>void</code> — Copy-on-Open der Accrual-Regeln</td></tr><tr><td><code>isOpen/isPaused/isActive(T, gid?)</code></td><td>—</td><td><code>boolean</code></td></tr><tr><td><code>setPaused(T, paused, gid?)</code></td><td>—</td><td><code>void</code></td></tr><tr><td><code>getSessionId(T)</code></td><td>—</td><td>`string\</td><td>null` (Kampagne)</td></tr><tr><td><code>listOpenTeams()</code></td><td>—</td><td><code>string[]</code></td></tr><tr><td><code>getUserTeams(u)</code></td><td>—</td><td><code>string[]</code></td></tr><tr><td><code>getCoreId(T, gid)</code></td><td>—</td><td>Core-ID, Fallback <code>CORE_WatchtimeChatActivity</code></td></tr><tr><td><code>validateSessionId(id)</code></td><td>—</td><td>wirft <code>Error('Invalid sessionId')</code> bei Formatverstoß</td></tr></tbody></table></div>
+<h3 id="62-watchtimeengine-ereignisse-und-konten">6.2 <code>WatchtimeEngine</code> — Ereignisse und Konten</h3>
+<div class="tw"><table><thead><tr><th>Methode</th><th>Parameter</th><th>Rückgabe</th></tr></thead><tbody><tr><td><code>handleViewerTick(T, ch, u, follows)</code></td><td>Präsenzmeldung</td><td><code>null</code>; setzt <code>last_tick</code>, <code>pulse</code>, <code>present</code>, Follow-Flag, Index</td></tr><tr><td><code>tickPresentUsers()</code></td><td>—</td><td><code>Array&lt;{teamId, giveawayId, primary, username, channel, watchSec, coins}&gt;</code> — eine Zeile je Buchung</td></tr><tr><td><code>handleChatMessage(T, ch, u, msg, follows)</code></td><td>Chatzeile</td><td><code>null</code> · <code>{chatReply, channel}</code> (Setz-Befehl/Antwort) · <code>{...agg, registered, isNew}</code> (Anmeldung) · <code>{added, channel, watchSec, coins}</code> (Bonus)</td></tr><tr><td><code>recordConsent(T, gid, u, action, source='chat')</code></td><td>Aktion `register\</td><td>wager\</td><td>contest_entry\</td><td>contest_vote`</td><td><code>void</code>, idempotent je (Sitzung, Nutzer, Aktion)</td></tr><tr><td><code>registerUser(T, u)</code></td><td>—</td><td><code>{registered:true}</code></td></tr><tr><td><code>unregisterUser(T, u, gid?)</code></td><td>Opt-in zurückziehen</td><td><code>{ok:true, giveawayId}</code> · `{error:'not_registered'\</td><td>'bad_request'}`</td></tr><tr><td><code>adjustWatch(T, u, ch, deltaSec)</code></td><td>manuelle Korrektur</td><td><code>{username, channel, watchSec}</code></td></tr><tr><td><code>setBanned(T, u, banned)</code></td><td>—</td><td><code>void</code></td></tr><tr><td><code>getUserAggregate(T, u, gid?)</code></td><td>—</td><td>Core-<code>aggregate</code>-Objekt: <code>{username, perChannel, totalWatchSec, totalCoins, channelsFollowed, registered, banned, eligible, coins, watchSec, msgs, …}</code></td></tr><tr><td><code>getAllParticipants(T, gid?)</code></td><td>—</td><td><code>Array&lt;aggregate &amp; {flags}&gt;</code>, absteigend nach Coins</td></tr><tr><td><code>flagUser(T, u, reason, detail)</code></td><td>Auffälligkeit</td><td><code>void</code> (Upsert mit Zähler)</td></tr><tr><td><code>getFlagsMap(T)</code></td><td>—</td><td><code>{ [username]: Array&lt;{reason, count}&gt; }</code></td></tr><tr><td><code>getIngestPulse(T, channels?)</code></td><td>Diagnose</td><td>`Array&lt;{channel, lastTickAgo\</td><td>null, present, online, silent, stale}&gt;<code> — </code>stale` nur wenn <strong>Stream online und trotzdem still</strong></td></tr></tbody></table></div>
+<h3 id="63-watchtimeengine-giveaways">6.3 <code>WatchtimeEngine</code> — Giveaways</h3>
+<div class="tw"><table><thead><tr><th>Methode</th><th>Parameter</th><th>Rückgabe / Wirkung</th></tr></thead><tbody><tr><td><code>openGiveaway(T, keyword, sessionId)</code></td><td>Kampagne öffnen</td><td><code>void</code>; setzt Redis-Zustand, kopiert Regeln</td></tr><tr><td><code>openGiveawayInstance(T, gid, opts)</code></td><td><code>opts = {keyword, channels, core, windowSec, wagerCmd, minWatchSec, announce, name}</code></td><td><code>void</code>; <strong>wirft</strong> <code>Error('duplicate_core')</code> bei zweitem Contest</td></tr><tr><td><code>listGiveaways(T, {stats})</code></td><td><code>stats</code> lädt Zusatzdaten</td><td><code>Array&lt;{gid, primary, closed, core, paused, keyword, channels, windowEndsAt, announce, name, startedAt?, prize?, sponsor?, participants?}&gt;</code></td></tr><tr><td><code>openInstantWindow(T, gid, windowSec)</code></td><td>Anmeldefenster</td><td><code>{windowSec, endsAt}</code></td></tr><tr><td><code>closeGiveawayInstance(T, gid)</code></td><td>Schritt 1</td><td><code>void</code>; <code>open=false</code>, Fenster zu, <strong>Topf bleibt</strong></td></tr><tr><td><code>cleanupGiveawayInstance(T, gid)</code></td><td>Schritt 3</td><td><code>void</code>; löscht alle <code>g:&lt;gid&gt;:*</code>-Schlüssel und den Set-Eintrag</td></tr><tr><td><code>closeGiveaway(T, sessionId)</code></td><td>Kampagne schließen</td><td><code>void</code>; schreibt <code>campaign_participation</code>, Sitzung bleibt ziehbar</td></tr><tr><td><code>resetGiveaway(T)</code></td><td>—</td><td><code>{wipedParticipants, wipedCoins, wipedEligible, sessionBefore}</code></td></tr><tr><td><code>drawWinner(T, sessionId, opts)</code></td><td><code>opts = {test, prize, prizeId, rerollOf, rerollReason, excludeWinner}</code></td><td><code>null</code> bei leerem Pool, sonst <code>{winner, coins, watchSec, drawId, drawIndex, sessionId, eligibleCount, total, rand, isTest, prize, prizeId, core, msgs}</code>; <strong>wirft</strong> bei fehlender <code>prizeId</code> (TicketBuy) und bei <code>prize_not_in_giveaway</code></td></tr><tr><td><code>previewEligible(T, {core, channels, minWatchSec})</code></td><td>Vorschau vor dem Start</td><td><code>{count, basis, …}</code> mit <code>basis</code> = `campaign\</td><td>present\</td><td>credit\</td><td>contest`</td></tr><tr><td><code>getInstantParticipants(T, gid)</code></td><td>Sofortverlosung</td><td><code>Array&lt;aggregate &amp; {present, watchOk, followOk, minWatchSec}&gt;</code></td></tr><tr><td><code>getTicketBuyParticipants(T, gid)</code></td><td>Los-Giveaway</td><td><code>Array&lt;{username, balance, stake, banned, registered, eligible}&gt;</code></td></tr><tr><td><code>getContestParticipants(T, gid)</code></td><td>Contest</td><td><code>Array&lt;{username, title, status, score, votes, …}&gt;</code></td></tr><tr><td><code>exportTeam(T)</code> / <code>importTeam(T, data, opts)</code></td><td>Backup</td><td>JSON-Objekt / <code>{imported, skipped, mode}</code></td></tr></tbody></table></div>
+<h3 id="64-watchtimeengine-los-giveaway">6.4 <code>WatchtimeEngine</code> — Los-Giveaway</h3>
+<div class="tw"><table><thead><tr><th>Methode</th><th>Parameter</th><th>Rückgabe</th></tr></thead><tbody><tr><td><code>addPrize(T, gid, {title, description, wagerEndTs})</code></td><td>—</td><td><code>number</code> (Preis-ID); <strong>wirft</strong> <code>Error('prize_exists')</code>, wenn die Instanz schon einen offenen Preis hat</td></tr><tr><td><code>listPrizes(T, {openOnly=true, gid=null})</code></td><td>—</td><td><code>Array&lt;{id, session_id, title, description, wager_end, status, sponsor, has_image, image_token, total_stake}&gt;</code></td></tr><tr><td><code>prizeGiveawayId(T, prizeId)</code></td><td>—</td><td>`string\</td><td>null` — Instanz, zu der der Preis gehört</td></tr><tr><td><code>openPrizeCount(T, gid)</code></td><td>—</td><td><code>number</code></td></tr><tr><td><code>editPrize(T, prizeId, felder)</code></td><td>nur offene Preise</td><td><code>{prize}</code> · `{error:'not_open'\</td><td>'no_prize'}`</td></tr><tr><td><code>cancelPrize(T, prizeId)</code></td><td>—</td><td><code>{refundedTotal, refundedUsers}</code> · <code>{error}</code>; Gegenzeilen + <code>refund</code> im Ledger</td></tr><tr><td><code>placeWager(T, gid, u, prizeId, amount, {source})</code></td><td><code>amount=0</code> = Rücknahme</td><td><code>{amount, stake, prizeTitle, balance}</code> · <code>{refunded, prizeTitle, balance}</code> · `{error:'no_prize'\</td><td>'wager_closed'\</td><td>'no_credit'\</td><td>'nothing_to_refund'}<code>; atomar mit </code>pg_advisory_xact_lock`</td></tr><tr><td><code>prizeStake(prizeId, u)</code></td><td>—</td><td><code>number</code></td></tr><tr><td><code>getPrizeStakes(T, prizeId)</code></td><td>—</td><td><code>Array&lt;{username, stake}&gt;</code></td></tr><tr><td><code>availableCredit(T, u)</code></td><td>Ledger + laufender Stand</td><td><code>number</code></td></tr><tr><td><code>settleTicketBuyInstance(T, gid)</code></td><td>beim Schließen</td><td><code>{users, total}</code>; bucht <code>earn</code>, räumt <strong>nicht</strong> auf</td></tr></tbody></table></div>
+<h3 id="65-watchtimeengine-screenshot-contest">6.5 <code>WatchtimeEngine</code> — Screenshot-Contest</h3>
+<div class="tw"><table><thead><tr><th>Methode</th><th>Parameter</th><th>Rückgabe</th></tr></thead><tbody><tr><td><code>submitContestEntry(T, gid, u, {title, mime, image, confirmReplace})</code></td><td>Bild als Buffer</td><td><code>{ok, replaced}</code> · `{error:'contest_closed'\</td><td>'banned'\</td><td>'not_following'\</td><td>'not_enough_watchtime'\</td><td>'votes_would_be_lost'}`</td></tr><tr><td><code>withdrawContestEntry(T, gid, u)</code></td><td>Einsender zieht zurück</td><td><code>{ok, entryId}</code> · <code>{error}</code></td></tr><tr><td><code>reviewContestEntry(T, entryId, approve)</code></td><td>Owner-Freigabe</td><td><code>{ok, …}</code> · <code>{error:'no_entry'}</code></td></tr><tr><td><code>deleteContestEntry(T, entryId)</code></td><td>endgültig</td><td><code>{ok, …}</code> · <code>{error:'no_entry'}</code></td></tr><tr><td><code>setContestVoting(T, gid, state)</code> / <code>getContestVoting(T, gid)</code></td><td>`open\</td><td>paused\</td><td>closed`</td><td><code>string</code></td></tr><tr><td><code>castContestVote(T, gid, voter, entryId, score)</code></td><td>1–10</td><td><code>{ok:true, score}</code> · `{error:'voting_not_open'\</td><td>'banned'\</td><td>'not_enough_watchtime'\</td><td>'no_entry'\</td><td>'own_entry'}`</td></tr><tr><td><code>getContestStandings(T, gid, {all})</code></td><td>—</td><td><code>Array&lt;{entryId, username, title, status, score, votes}&gt;</code></td></tr></tbody></table></div>
+<h3 id="66-creditledger-creditjsservicesgiveawaycreditjs">6.6 <code>CreditLedger</code> (<a href="https://github.com/cccdemon/CC-Giveaway/blob/main/services/giveaway/credit.js" target="_blank" rel="noopener">credit.js</a>)</h3>
+<p>Einzige Buchungsstelle für Los-Guthaben. Typen erzwingen das Vorzeichen — <code>transfer</code> und <code>purchase</code> existieren bewusst nicht.</p>
+<div class="tw"><table><thead><tr><th>Methode</th><th>Parameter</th><th>Rückgabe</th></tr></thead><tbody><tr><td><code>balance(T, u, client=null)</code></td><td>optionaler TX-Client</td><td><code>number</code> (auf 4 Nachkommastellen gerundet)</td></tr><tr><td><code>book(T, u, type, amount, {refSession, refPrize, detail, client})</code></td><td><code>type ∈ {earn +, refund +, wager −, debit −, expire −, erase −}</code></td><td>eingefügte Zeile; <strong>wirft</strong> bei unbekanntem Typ oder falschem Vorzeichen</td></tr><tr><td><code>statement(T, u, limit=100)</code></td><td>—</td><td><code>Array&lt;{entry_type, amount, ref_session, ref_prize, created_at}&gt;</code></td></tr><tr><td><code>expireInactive(months=12)</code></td><td>Verfall</td><td><code>number</code> betroffener Konten</td></tr></tbody></table></div>
+<h3 id="67-core-vertrag-coresservicesgiveawaycores">6.7 Core-Vertrag (<a href="https://github.com/cccdemon/CC-Giveaway/blob/main/services/giveaway/cores/" target="_blank" rel="noopener">cores/</a>)</h3>
+<p>Jeder Core exportiert dasselbe Grundgerüst. Die Engine ruft nur diese Felder auf.</p>
+<div class="tw"><table><thead><tr><th>Feld</th><th>Typ</th><th>Bedeutung</th></tr></thead><tbody><tr><td><code>id</code>, <code>label</code></td><td>string</td><td>Kennung und Klartext</td></tr><tr><td><code>accrual</code></td><td>`'watchtime' \</td><td>'none'`</td><td>ob Ticker und Chat-Bonus für diese Instanz buchen</td></tr><tr><td><code>config</code></td><td>Objekt</td><td>einstellbare Werte <code>{type, min, max, def, label}</code></td></tr><tr><td><code>aggregate(input)</code></td><td>fn</td><td>rohe Zählwerte → Teilnehmerzeile inkl. <code>eligible</code></td></tr><tr><td><code>buildPool(rows)</code></td><td>fn</td><td>Teilnehmerzeilen → <code>Array&lt;{username, weight, meta}&gt;</code></td></tr><tr><td><code>display</code></td><td>Objekt</td><td><code>{css, icon, unit, winnerStat, drawKind, emptyPool, columns, tiles, panelCard}</code></td></tr><tr><td>Textfunktionen</td><td>fn</td><td><code>infoText</code>, <code>statusLine</code>, <code>winnerText</code>, <code>emptyDrawText</code>, …</td></tr></tbody></table></div>
+<p>Zusätzlich je Core:</p>
+<div class="tw"><table><thead><tr><th>Core</th><th>Besondere Exporte</th><th>Ziehungsart</th></tr></thead><tbody><tr><td><code>CORE_WatchtimeChatActivity</code></td><td><code>coinsFromSec</code>, <code>chatMeaningful</code>, <code>tickDelta</code>, <code>chatDelta</code>, <code>joinReply</code>, <code>statusText</code>, <code>fmtDur</code></td><td><code>weighted</code> (nach Coins)</td></tr><tr><td><code>CORE_CurrentViewers</code></td><td><code>MIN_WATCH_DEF</code>, <code>prepText</code>, <code>fmtWindow</code></td><td><code>equal</code> (Gewicht 1)</td></tr><tr><td><code>CORE_TicketBuy</code></td><td><code>parseWager</code>, <code>helpText</code>, <code>wagerOkText</code>, <code>retractOkText</code>, <code>wagerErrText</code></td><td><code>perPrize</code></td></tr><tr><td><code>CORE_ScreenshotContest</code></td><td><code>clampScore</code></td><td><code>score</code> (Zufall nur bei Gleichstand)</td></tr></tbody></table></div>
+<p><code>getCore(id)</code> liefert das Modul oder den Standard-Core; <code>listCores()</code> alle.</p>
+<p><strong><code>parseWager(message, cmd)</code></strong> → <code>null</code> (kein Treffer) · <code>{help:true}</code> · <code>{prizeId:number, amount:number}</code> (0 = Rücknahme).</p>
+<h3 id="68-ki-bewertung-coreschat-aijsservicesgiveawaycoreschat-aijs">6.8 KI-Bewertung (<a href="https://github.com/cccdemon/CC-Giveaway/blob/main/services/giveaway/cores/chat-ai.js" target="_blank" rel="noopener">cores/chat-ai.js</a>)</h3>
+<div class="tw"><table><thead><tr><th>Funktion</th><th>Parameter</th><th>Rückgabe</th></tr></thead><tbody><tr><td><code>judgeMessage(cfg, message, opts)</code></td><td><code>cfg = {provider, model, apiKey}</code></td><td><code>true</code> (sinnvoll) · <code>false</code> · <code>null</code> bei Timeout/Fehler → Aufrufer fällt auf die Wortregel zurück</td></tr><tr><td><code>listModels(cfg, opts)</code></td><td>—</td><td><code>string[]</code> Modellnamen</td></tr><tr><td><code>encryptKey(plain, secret)</code> / <code>decryptKey(stored, secret)</code></td><td>AES-GCM</td><td><code>string</code></td></tr><tr><td>Konstanten</td><td><code>PROVIDERS</code>, <code>SYSTEM_PROMPT</code>, <code>TIMEOUT_MS</code> (4000)</td><td></td></tr></tbody></table></div>
+<h3 id="69-weitere-module">6.9 Weitere Module</h3>
+<div class="tw"><table><thead><tr><th>Funktion</th><th>Datei</th><th>Rückgabe</th></tr></thead><tbody><tr><td><code>snapshotTermsVersion(pg, T, {adminUrl})</code></td><td><code>terms.js</code></td><td><code>number &gt; 0</code>; <strong>wirft</strong> <code>TermsSnapshotError</code> — hartes Start-Gate</td></tr><tr><td><code>rerollBlocked(claim)</code></td><td><code>claim-rules.js</code></td><td><code>null</code> oder Grund (<code>claimed</code>, <code>contacted</code>, <code>shipped</code>, <code>done</code>)</td></tr><tr><td><code>tar(files, mtime)</code> / <code>targz(files, mtime)</code></td><td><code>targz.js</code></td><td><code>Buffer</code></td></tr><tr><td><code>Helix.appToken()</code></td><td><code>helix.js</code></td><td>App-Token (gecacht)</td></tr><tr><td><code>Helix.resolveUserMeta(login)</code></td><td></td><td><code>{id, display, avatar}</code></td></tr><tr><td><code>Helix.validOwnerToken(login)</code></td><td></td><td>gültiger Nutzer-Token (erneuert bei Ablauf) oder <code>null</code></td></tr><tr><td><code>Helix.userFollowsChannel(ch, u)</code></td><td></td><td>`boolean\</td><td>null<code> (</code>null` = nicht feststellbar → permissiv)</td></tr><tr><td><code>Helix.getFollowerIds(token, id)</code></td><td></td><td><code>Set&lt;string&gt;</code></td></tr><tr><td><code>signToken/verifyToken(payload, secret, ttl)</code></td><td><code>admin/auth.js</code></td><td>signiertes Cookie / Payload oder <code>null</code></td></tr><tr><td><code>hashPassword/verifyPassword</code></td><td></td><td>bcrypt-Hash / <code>boolean</code></td></tr><tr><td><code>sanitizeUserName</code>, <code>sanitizeRole</code>, <code>parseCookies</code>, <code>serializeSessionCookie</code>, <code>clearSessionCookie</code></td><td></td><td>jeweils bereinigter Wert</td></tr></tbody></table></div>
+<h3 id="610-prozess-funktionen-servicesgiveawayserverjs">6.10 Prozess-Funktionen <code>services/giveaway/server.js</code></h3>
+<p>Auswahl der tragenden Teile (vollständige Liste per <code>grep -n "^async function" </code>):</p>
+<div class="tw"><table><thead><tr><th>Funktion</th><th>Aufgabe</th><th>Rückgabe</th></tr></thead><tbody><tr><td><code>handleClientMessage(meta, msg)</code></td><td>WS-Verteiler: <code>gw_get_all</code>, <code>gw_cmd</code>, Sim-Events</td><td><code>void</code></td></tr><tr><td><code>handleAdminCmd(send, msg, meta)</code></td><td><strong>Audit-Choke-Point</strong>: Rechte prüfen, <code>runAdminCmd</code> ausführen, Ergebnis protokollieren</td><td><code>void</code></td></tr><tr><td><code>runAdminCmd(send, msg, meta, ctx)</code></td><td>der eigentliche Befehlsbaum (alle <code>gw_*</code>)</td><td><code>void</code>, füllt <code>ctx.outcome</code> fürs Audit</td></tr><tr><td><code>sendTeamData(meta, gid)</code></td><td>Panel-Datenpaket</td><td><code>void</code> → <code>gw_data</code></td></tr><tr><td><code>audit(entry)</code></td><td>Schreibt ins <code>audit_log</code></td><td><code>void</code></td></tr><tr><td><code>verifyFollows(T)</code></td><td>Helix-Abgleich vor der Ziehung</td><td><code>{verified, mismatches, unverified}</code></td></tr><tr><td><code>startChecks(T)</code></td><td>Blocker/Warnungen vor dem Start</td><td><code>{blockers[], warnings[], placeholders[]}</code></td></tr><tr><td><code>findTermsPlaceholders(terms)</code></td><td>Platzhalter-Erkennung</td><td><code>{blocking[], suspect[]}</code></td></tr><tr><td><code>openGiveaway/closeGiveaway/pauseGiveaway/resumeGiveaway(T, …)</code></td><td>Kampagnensteuerung inkl. Ansage</td><td><code>void</code></td></tr><tr><td><code>handleStreamOnline/Offline(T, ch)</code></td><td>Auto-Start/Pause</td><td><code>void</code></td></tr><tr><td><code>createClaim(T, result)</code></td><td>Gewinnermeldung anlegen</td><td><code>void</code></td></tr><tr><td><code>archiveDossier(T, S, withContact)</code></td><td>vollständiges Ziehungs-Dossier</td><td>Objekt</td></tr><tr><td><code>runRetention()</code></td><td>Fristen: löschen, anonymisieren, pseudonymisieren</td><td><code>void</code></td></tr><tr><td><code>rateLimit(key, seconds)</code></td><td>Redis <code>NX EX</code></td><td><code>boolean</code> (frei / gesperrt)</td></tr><tr><td><code>trackIngestAnomaly(T, ch, u)</code></td><td>Zuschauersprung erkennen</td><td><code>void</code></td></tr><tr><td><code>broadcastTeam(T, obj)</code></td><td>an alle Panels des Teams</td><td><code>void</code></td></tr></tbody></table></div>
+<h3 id="611-panel-client-servicesgiveawaypublicgiveaway-adminjs">6.11 Panel-Client <code>services/giveaway/public/giveaway-admin.js</code></h3>
+<p>150 Funktionen; die tragenden Zustandsstücke:</p>
+<div class="tw"><table><thead><tr><th>Funktion</th><th>Aufgabe</th></tr></thead><tbody><tr><td><code>updateMainView()</code></td><td>Übersicht (Kacheln) oder Teilnehmertabelle; setzt <code>ov-mode</code></td></tr><tr><td><code>renderOverview()</code></td><td>Kachel je laufendem Giveaway aus <code>giveawayList</code></td></tr><tr><td><code>gwPickGiveaway(gid)</code> / <code>gwShowOverview()</code></td><td>Auswahl wechseln</td></tr><tr><td><code>updateTicketBuyButtons()</code></td><td>Core-Klassen an <code>.gw-app</code> → CSS-Sichtbarkeitsmatrix</td></tr><tr><td><code>updateActionButtons()</code></td><td>Aktivierung und Beschriftung der Aktionsleiste</td></tr><tr><td><code>renderIngestWarn(pulse)</code></td><td>drei Zustände: Störfall / kein Stream / still</td></tr><tr><td><code>renderTable()</code>, <code>renderHead()</code>, <code>updateStats()</code></td><td>Teilnehmerliste und Kacheln, gesteuert über <code>coreMeta</code></td></tr><tr><td><code>drawWinner()</code>, <code>tbDrawPrize(id)</code>, <code>rerollConfirm()</code></td><td>Ziehungen</td></tr><tr><td><code>gwCloseSmart()</code></td><td>schließen bzw. aufräumen, je Zustand</td></tr></tbody></table></div>
+<p>Gemeinsame Bibliotheken: <code>CC.validate.*</code> (Eingabeprüfung, WS-Payload-Whitelist), <code>CC.audit.summary</code> (Protokollzeilen in Klartext), <code>CC.defs</code> (einzige Quelle der Event- und Befehlslisten, fail-closed).</p>
+</section>
+<section id="7-schnittstellen">
+<h2><span class="num">7</span>Schnittstellen</h2>
+<h3 id="71-ingest-streamerbot-bridge">7.1 Ingest (Streamerbot → bridge)</h3>
+<p>WebSocket <code>wss://&lt;host&gt;/ingest</code>. Erste Nachricht: <code>{event:'ingest_auth', token}</code>. Danach:</p>
+<div class="tw"><table><thead><tr><th>Event</th><th>Nutzlast</th><th>Wirkung</th></tr></thead><tbody><tr><td><code>viewer_tick</code></td><td><code>{user, ts}</code></td><td>Präsenz + Puls</td></tr><tr><td><code>chat_msg</code></td><td><code>{user, message, follows}</code></td><td>Bonus, Keyword, Setz-Befehl</td></tr><tr><td><code>time_cmd</code></td><td><code>{user}</code></td><td>Statuszeile im Chat</td></tr><tr><td><code>giveaway_cmd</code></td><td><code>{user}</code></td><td>Infozeile im Chat</td></tr><tr><td><code>stream_online</code> / <code>stream_offline</code></td><td><code>{}</code></td><td>Auto-Start/Pause, Kanal-Onlinezustand</td></tr><tr><td><code>cc_debug</code></td><td><code>{source, stage, user, info}</code></td><td><code>debug_log</code></td></tr></tbody></table></div>
+<p>Kanal und Team kommen <strong>aus dem Token</strong>, nie aus der Nutzlast. Grenzen: 128 KiB je Nachricht, 500 Nachrichten je 10 s, Obergrenze unauthentifizierter Verbindungen.</p>
+<h3 id="72-rest-cc-giveaway-giveawayapi">7.2 REST <code>cc-giveaway</code> (<code>/giveaway/api/...</code>)</h3>
+<p>Alle Pfade hinter <code>forward_auth</code>; Identität aus <code>X-Auth-User</code>.</p>
+<div class="tw"><table><thead><tr><th>Methode</th><th>Pfad</th><th>Zugriff</th><th>Antwort</th></tr></thead><tbody><tr><td>GET</td><td><code>participants</code>, <code>sessions</code>, <code>draws</code>, <code>abuse</code></td><td>Mitglied</td><td>Listen</td></tr><tr><td>GET</td><td><code>audit</code>, <code>audit/stats</code>, <code>audit/archive</code></td><td>Mitglied</td><td>Protokoll, Verdichtung, tar.gz</td></tr><tr><td>GET</td><td><code>archive</code>, <code>archive/campaign</code>, <code>archive/:sid</code>, <code>archive/:sid/export</code></td><td>Mitglied / Owner</td><td>Sitzungen, Dossier, Nachweis-Export</td></tr><tr><td>GET</td><td><code>my-status</code></td><td>eingeloggt</td><td>eigener Stand über alle Mechaniken</td></tr><tr><td>GET/POST</td><td><code>claim/mine</code>, <code>claim</code></td><td>nur der Gewinner</td><td>Meldung und Korrektur</td></tr><tr><td>GET/POST</td><td><code>claims</code>, <code>claims/handling</code>, <code>claims/external</code>, <code>claims/purge</code></td><td>nur Owner</td><td>Abwicklung</td></tr><tr><td>GET/POST</td><td><code>wager/state</code>, <code>wager</code></td><td>eingeloggt</td><td>ein Block je Los-Giveaway; Einsatz setzen/zurücknehmen</td></tr><tr><td>GET/POST</td><td><code>contest/state</code>, <code>contest/entry</code>, <code>contest/vote</code>, <code>contest/withdraw</code>, <code>contest/image/:token</code></td><td>eingeloggt</td><td>Contest</td></tr><tr><td>POST/GET</td><td><code>prize/image</code>, <code>prize/image/:token</code></td><td>Mitglied / eingeloggt</td><td>Preisbild (PNG/JPG, max 7 MB, Magic-Bytes-Prüfung)</td></tr><tr><td>POST</td><td><code>participation/withdraw</code></td><td>eingeloggt</td><td>Opt-in zurückziehen</td></tr><tr><td>GET</td><td><code>export</code> / POST <code>import</code></td><td>Owner</td><td>Backup</td></tr><tr><td>GET</td><td><code>/internal/ingest-pulse</code></td><td><code>X-Internal-Key</code></td><td>Ingest-Puls aller Teams</td></tr><tr><td>POST</td><td><code>/internal/team/cleanup</code></td><td><code>X-Internal-Key</code></td><td>Live-Zustand eines Teams räumen</td></tr></tbody></table></div>
+<h3 id="73-websocket-cc-giveaway">7.3 WebSocket <code>cc-giveaway</code></h3>
+<p><strong>Client → Server</strong></p>
+<div class="tw"><table><thead><tr><th>Event</th><th>Nutzlast</th><th>Antwort</th></tr></thead><tbody><tr><td><code>gw_get_all</code></td><td><code>{teamId, giveawayId?}</code></td><td><code>gw_data</code></td></tr><tr><td><code>gw_cmd</code></td><td><code>{cmd, …}</code></td><td><code>gw_ack</code> je Befehl</td></tr><tr><td><code>viewer_tick</code> / <code>chat_msg</code> / <code>time_cmd</code></td><td>Simulation der Test-Console</td><td>nur wenn <code>ALLOW_SIM=true</code>, immer auditiert</td></tr></tbody></table></div>
+<p><strong>Server → Client</strong></p>
+<div class="tw"><table><thead><tr><th>Event</th><th>Inhalt</th></tr></thead><tbody><tr><td><code>gw_data</code></td><td>Teilnehmer, <code>coreMeta</code>, Kanäle, <code>ingestPulse</code>, Zustand</td></tr><tr><td><code>gw_status</code></td><td>`open\</td><td>paused\</td><td>closed`</td></tr><tr><td><code>gw_ack</code></td><td><code>{type, …}</code> — u. a. <code>winner_drawn</code>, <code>no_winner</code>, <code>open_blocked</code>, <code>open_warnings</code>, <code>instance_opened</code>, <code>instance_closed</code>, <code>instance_cleaned</code>, <code>prizes</code>, <code>entries</code>, <code>preflight</code>, <code>giveaways</code>, <code>drafts</code></td></tr><tr><td><code>gw_join</code>, <code>wt_update</code>, <code>gw_multiplier</code>, <code>gw_keyword</code></td><td>Live-Aktualisierungen</td></tr></tbody></table></div>
+<p><strong>Befehle</strong> (<code>gw_cmd.cmd</code>): siehe <code>ALLOWED_CMDS</code> in <a href="https://github.com/cccdemon/CC-Giveaway/blob/main/services/giveaway/public/cc-defs.js" target="_blank" rel="noopener">cc-defs.js</a> — 40 Befehle von <code>gw_open</code> bis <code>gw_preflight</code>. Nur-Lese-Befehle stehen in <code>AUDIT_SKIP</code>, Team-Mitglieder-Befehle in <code>MEMBER_CMDS</code>.</p>
+<h3 id="74-rest-cc-admin-adminapi-auth-unter-adminauth">7.4 REST <code>cc-admin</code> (<code>/admin/api/...</code>, Auth unter <code>/admin/auth/...</code>)</h3>
+<div class="tw"><table><thead><tr><th>Bereich</th><th>Pfade</th><th>Zugriff</th></tr></thead><tbody><tr><td>Auth</td><td><code>GET /auth/verify</code>, <code>/auth/verify-superadmin</code>, <code>/auth/me</code>, <code>/auth/twitch</code>, <code>/auth/twitch/callback</code>, <code>POST /auth/login</code>, <code>/auth/logout</code></td><td>Caddy bzw. öffentlich</td></tr><tr><td>Teams</td><td><code>POST /api/teams</code>, <code>GET /api/teams/mine</code>, <code>/api/teams/:id</code>, <code>POST /api/teams/join</code>, <code>:id/invite</code>, <code>:id/leave</code>, <code>:id/transfer</code>, <code>:id/invites</code>, <code>PUT :id/name</code>, <code>:id/channel</code>, <code>POST :id/deactivate</code>, <code>:id/reactivate</code>, <code>DELETE :id/members/:login</code></td><td>Mitglied / Owner</td></tr><tr><td>Recht</td><td><code>GET/PUT /api/teams/:id/terms</code>, <code>:id/imprint</code>, <code>GET :id/terms/history</code>, <code>GET/POST /api/tos/status</code>, <code>/api/tos/accept</code></td><td>Owner / eingeloggt</td></tr><tr><td>DSGVO</td><td><code>GET /api/me/data</code>, <code>POST /api/me/delete</code>, <code>GET /api/gdpr/subject/:u</code>, <code>POST /api/gdpr/subject/:u/delete</code></td><td>Betroffener / Superadmin</td></tr><tr><td>Rückmeldung</td><td><code>POST /api/feedback</code></td><td>eingeloggt</td></tr><tr><td>Plattform</td><td>`GET /api/platform/stats\</td><td>teams\</td><td>streamers\</td><td>warnings\</td><td>activity\</td><td>errors\</td><td>ingest\</td><td>debuglog\</td><td>feedback<code>, </code>POST /api/platform/warn<code>, </code>teams/:id/deactivate\</td><td>reactivate<code>, </code>streamers/:login/ban\</td><td>unban`</td><td><strong>nur Superadmin</strong></td></tr><tr><td>Öffentlich</td><td><code>GET /pub/doc/:name</code>, <code>/pub/actions</code>, <code>/pub/team/:id</code>, <code>/sitemap.xml</code>, <code>/robots.txt</code>, <code>/healthz</code></td><td>ohne Login</td></tr><tr><td>Betrieb</td><td><code>GET /health</code></td><td>Superadmin</td></tr></tbody></table></div>
+<p><code>POST /api/feedback</code> nimmt <code>{kind: 'bug'|'idea'|'question', message, page}</code>, schreibt nach <code>feedback</code>, postet ein Discord-Embed und antwortet <code>{ok:true, delivered:boolean, id}</code> — eine Meldung je Minute und Person.</p>
+<h3 id="75-authentifizierung-und-rollen">7.5 Authentifizierung und Rollen</h3>
+<figure class="dia"><pre class="mermaid">flowchart LR
+    A["Anfrage"] --&gt; B{"Pfad öffentlich?"}
+    B -- ja --&gt; Z["direkt an den Dienst"]
+    B -- nein --&gt; C["forward_auth → /auth/verify"]
+    C --&gt; D{"Session gültig?"}
+    D -- nein --&gt; L["302 → Login (Twitch OAuth)"]
+    D -- ja --&gt; E{"Login gesperrt?"}
+    E -- ja --&gt; L2["Cookie löschen, 302 → Login"]
+    E -- nein --&gt; F{"Superadmin-Pfad?"}
+    F -- nein --&gt; Z2["Dienst + X-Auth-User"]
+    F -- ja --&gt; G["/auth/verify-superadmin"]
+    G --&gt; H{"role = superadmin?"}
+    H -- nein --&gt; X["403"]
+    H -- ja --&gt; Z3["Dienst + X-Auth-User/-Role"]</pre></figure>
+<p>Rollen: <strong>Superadmin</strong> (<code>streamers.is_platform_admin</code>, Bootstrap über <code>PLATFORM_ADMINS</code>) · <strong>Team-Owner</strong> (<code>teams.owner_login</code>) · <strong>Team-Mitglied</strong> (<code>team_members</code>) · <strong>Zuschauer</strong> (eingeloggt) · <strong>anonym</strong>. Bewusste Entscheidung: kein feineres Rollenmodell innerhalb eines Teams — jedes Mitglied darf steuern und ziehen (<code>MEMBER_CMDS</code>).</p>
+</section>
+<section id="8-konfiguration">
+<h2><span class="num">8</span>Konfiguration</h2>
+<div class="tw"><table><thead><tr><th>Variable</th><th>Dienst</th><th>Wirkung</th></tr></thead><tbody><tr><td><code>PG_*</code>, <code>REDIS_*</code></td><td>alle</td><td>Datenbanken; <code>REDIS_DB=0</code> Produktion, <code>1</code> für Tests gegen echtes Redis</td></tr><tr><td><code>SESSION_SECRET</code></td><td>admin</td><td>HMAC der Sitzungs-Cookies</td></tr><tr><td><code>INTERNAL_API_KEY</code></td><td>admin + giveaway</td><td>interne Endpunkte; leer = Endpunkte tot</td></tr><tr><td><code>PLATFORM_ADMINS</code></td><td>admin</td><td>Superadmins beim Bootstrap</td></tr><tr><td><code>TWITCH_CLIENT_ID/SECRET</code></td><td>admin + giveaway</td><td>OAuth und Helix</td></tr><tr><td><code>DISCORD_FEEDBACK_WEBHOOK</code></td><td>admin</td><td>Ziel der Rückmeldungen; leer = nur speichern</td></tr><tr><td><code>ALLOW_SIM</code></td><td>giveaway</td><td>Test-Console darf Ereignisse einspeisen (Produktion: aus)</td></tr><tr><td><code>MAX_PARALLEL_GIVEAWAYS</code></td><td>giveaway</td><td>Obergrenze gleichzeitiger Giveaways je Team (Vorgabe 4)</td></tr><tr><td><code>CLAIM_DEADLINE_DAYS</code>, <code>CLAIM_RETENTION_DAYS</code></td><td>giveaway</td><td>Meldefrist (14) und Löschfrist der Kontaktdaten (365)</td></tr><tr><td><code>CHAT_MIN_WORDS</code>, <code>CHAT_BONUS_SEC</code></td><td>giveaway</td><td>Vorgaben des Chat-Bonus</td></tr><tr><td><code>TOS_VERSION</code></td><td>admin <strong>und</strong> giveaway</td><td>Fassung der Nutzungsbedingungen — bei Textänderung <strong>beide</strong> erhöhen</td></tr><tr><td><code>PUBLIC_URL</code>, <code>ADMIN_PUBLIC_URL</code></td><td>beide</td><td>Adressen in Chat-Ansagen und Weiterleitungen</td></tr></tbody></table></div>
+</section>
+<section id="9-invarianten-was-nicht-gebrochen-werden-darf">
+<h2><span class="num">9</span>Invarianten (was nicht gebrochen werden darf)</h2>
+<ol><li><strong>Ziehen ist nie automatisch.</strong> Einzige Ziehungsstelle ist <code>gw_draw_winner</code>, ausgelöst durch einen Klick. Kein Timer zieht.</li><li><strong>Reihenfolge: schließen → ziehen → aufräumen</strong> — für jede Mechanik.</li><li><strong>Das Audit-Log wird nie gelöscht.</strong> <code>runRetention()</code> anonymisiert nur. Gleiches gilt für <code>giveaway_draws</code>.</li><li><strong>Jede zustandsändernde Admin-Aktion läuft durch <code>handleAdminCmd</code>.</strong> Zweiter Pfad ist die Test-Console-Simulation — die hat einen eigenen <code>audit()</code>-Aufruf und hängt an <code>ALLOW_SIM</code>.</li><li><strong>Kanal und Team kommen aus dem Ingest-Token</strong>, nie aus der Nutzlast.</li><li><strong>Guthaben wird ausschließlich über <code>CreditLedger</code> gebucht</strong>; es gibt keine Buchungstypen für Kauf oder Übertragung.</li><li><strong>Ein Giveaway verlost genau einen Preis.</strong> Mehr Preise heißt: mehrere Los-Giveaways.</li><li><strong>Regeln gelten je Giveaway</strong> (Copy-on-Open); Team-Werte sind nur Vorgaben.</li><li><strong>Ohne eingefrorene Bedingungen-Fassung startet kein Giveaway.</strong></li><li><strong>Neue personenbezogene Spalte?</strong> Dann in <code>collectSubjectData()</code> <strong>und</strong> <code>eraseSubject()</code> mitziehen, sonst ist die Auskunft unvollständig und die Löschung wirkungslos.</li><li><strong>Neue Superadmin-Seite?</strong> In die <code>@superadmin path</code>-Liste in <code>caddy/Caddyfile.team</code> eintragen, sonst reicht ein normaler Login.</li><li><strong>Neue öffentliche Seite?</strong> In die <code>@needsauth not path</code>-Liste eintragen, sonst verlangt Caddy Login.</li></ol>
+</section>
+<section id="anhang-a-vollstandige-funktionslisten-je-datei">
+<h2>Anhang A — vollständige Funktionslisten je Datei</h2>
+<p>Kurzform: Name, Zweck, Rückgabe. Reine Formathelfer (<code>esc</code>, <code>fmt*</code>) sind zusammengefasst, weil sie überall dasselbe tun: Zeichenkette rein, sichere Zeichenkette raus.</p>
+<h3 id="a1-servicesbridgeserverjs-ingest">A.1 <code>services/bridge/server.js</code> — Ingest</h3>
+<div class="tw"><table><thead><tr><th>Funktion</th><th>Zweck</th><th>Rückgabe</th></tr></thead><tbody><tr><td><code>log/logErr(tag, …)</code></td><td>Protokollzeile mit Präfix</td><td><code>void</code></td></tr><tr><td><code>redisReady()</code></td><td>wartet beim Start auf Redis</td><td><code>Promise&lt;void&gt;</code></td></tr><tr><td><code>unauthedCount()</code></td><td>offene Verbindungen ohne Auth (Obergrenze gegen Flut)</td><td><code>number</code></td></tr><tr><td><code>connectedChannels()</code></td><td>aktuell verbundene Kanäle</td><td><code>string[]</code></td></tr><tr><td><code>safeSend(ws, obj)</code></td><td>sendet nur auf offener Verbindung</td><td><code>void</code></td></tr><tr><td><code>subscribeToReplies()</code></td><td>abonniert <code>ch:chat_reply</code>, stellt an den richtigen Bot zu</td><td><code>void</code></td></tr><tr><td><code>wss.on('connection')</code></td><td>Auth, Drosselung, Weiterleitung nach <code>ch:giveaway</code></td><td>—</td></tr><tr><td><code>GET /health</code></td><td>Zustand inklusive verbundener Kanäle</td><td>JSON</td></tr><tr><td><code>main()</code></td><td>Startreihenfolge</td><td><code>Promise&lt;void&gt;</code></td></tr></tbody></table></div>
+<h3 id="a2-servicesadminserverjs-auth-teams-recht-plattform">A.2 <code>services/admin/server.js</code> — Auth, Teams, Recht, Plattform</h3>
+<div class="tw"><table><thead><tr><th>Funktion</th><th>Zweck</th><th>Rückgabe</th></tr></thead><tbody><tr><td><code>sessionFromReq(req)</code></td><td>Cookie prüfen</td><td><code>{user, role}</code> oder <code>null</code></td></tr><tr><td><code>refreshBannedLogins()</code></td><td>Sperrliste in den Cache</td><td><code>void</code></td></tr><tr><td><code>loginKey/loginBlocked/loginFailed</code></td><td>Login-Bremse (5 Fehlversuche → 15 min)</td><td><code>string</code> / <code>boolean</code> / <code>void</code></td></tr><tr><td><code>requireSession(req,res)</code> · <code>requireSuperadmin(req,res)</code></td><td>Zugriffsschutz je Endpunkt</td><td>Session oder <code>null</code> (Antwort ist dann schon geschrieben)</td></tr><tr><td><code>requireTos(req,res,sess)</code></td><td>erzwingt aktuelle Nutzungsbedingungen (HTTP 451)</td><td><code>boolean</code></td></tr><tr><td><code>issueSession(res, login, role)</code></td><td>Cookie setzen</td><td><code>void</code></td></tr><tr><td><code>tosAcceptedVersion(login)</code></td><td>zuletzt akzeptierte Fassung</td><td><code>number</code></td></tr><tr><td><code>genId(prefix)</code> · <code>genCode()</code></td><td>Team-ID · Einladungscode</td><td><code>string</code></td></tr><tr><td><code>isTeamOwner/isTeamMember(teamId, login)</code></td><td>Rechteprüfung</td><td><code>boolean</code></td></tr><tr><td><code>auditTeam(...)</code> · <code>auditGdpr(...)</code> (= <code>auditPlatform</code>)</td><td>Protokolleintrag</td><td><code>void</code></td></tr><tr><td><code>giveawayCleanup(teamId, channel?)</code></td><td>ruft den internen Endpunkt des giveaway-Dienstes</td><td><code>{ok}</code> oder <code>{error}</code></td></tr><tr><td><code>teamHasOpenGiveaway(teamId)</code></td><td>Sperre für Kanalwechsel und Deaktivierung</td><td><code>boolean</code></td></tr><tr><td><code>joinLimited(ip)</code></td><td>Beitritts-Bremse (20/h)</td><td><code>boolean</code></td></tr><tr><td><code>splitSections(md)</code> · <code>changedSections(a,b)</code></td><td>Textvergleich der Bedingungen</td><td><code>string[]</code></td></tr><tr><td><code>currentTermsVersion(teamId)</code></td><td>geltende Fassung</td><td><code>number</code></td></tr><tr><td><code>sanitizeViewer(v)</code> · <code>sanitizeTeamIdParam(v)</code></td><td>Eingabeprüfung</td><td><code>string</code></td></tr><tr><td><code>collectSubjectData(u)</code></td><td>DSGVO-Auskunft über alle Tabellen</td><td>Objekt</td></tr><tr><td><code>eraseSubject(u, actor, action)</code></td><td>DSGVO-Löschung, Nachweise werden pseudonymisiert</td><td>Objekt mit Zählern</td></tr><tr><td><code>ensureSchema()</code></td><td>Quelle der Wahrheit für das Schema</td><td><code>void</code></td></tr><tr><td><code>pgReady()</code> · <code>main()</code></td><td>Start</td><td><code>Promise&lt;void&gt;</code></td></tr></tbody></table></div>
+<h3 id="a3-servicesgiveawayserverjs-restliche-funktionen">A.3 <code>services/giveaway/server.js</code> — restliche Funktionen</h3>
+<p>Die tragenden Teile stehen in Abschnitt 6.10; hier der Rest:</p>
+<div class="tw"><table><thead><tr><th>Funktion</th><th>Zweck</th><th>Rückgabe</th></tr></thead><tbody><tr><td><code>loadMasterSecret()</code> · <code>rotateMasterSecret()</code></td><td>Schlüssel für <code>app_secrets</code></td><td><code>string</code> · <code>{reencrypted, unreadable}</code></td></tr><tr><td><code>getAiConfig(T)</code> · <code>invalidateAiConfig(T)</code></td><td>KI-Einstellungen je Team (entschlüsselt, gecacht)</td><td>Objekt · <code>void</code></td></tr><tr><td><code>aiJudge(T, message)</code></td><td>Brücke Engine → <code>chat-ai.js</code></td><td><code>boolean</code> oder <code>null</code></td></tr><tr><td><code>ownsTeam/isMember/memberChannel(login, T)</code></td><td>Rechte und Kanalzuordnung</td><td><code>boolean</code> · <code>string</code>/<code>null</code></td></tr><tr><td><code>validGid(s)</code></td><td>Formatprüfung der Sitzungs-ID</td><td><code>string</code> oder <code>null</code></td></tr><tr><td><code>auditDetail(msg)</code> · <code>auditTarget(msg)</code></td><td>was ins Protokoll darf (nie Tokens)</td><td>Objekt · <code>string</code>/<code>null</code></td></tr><tr><td><code>hasImprint/teamActive/ownerAcceptedTos(T)</code></td><td>Start-Gates</td><td><code>boolean</code></td></tr><tr><td><code>chatHost()</code> · <code>publicHost()</code></td><td>Adressen für Chat-Ansagen</td><td><code>string</code></td></tr><tr><td><code>secondaryStatusLines(T, ch)</code> · <code>giveawayInfoText(T)</code></td><td>Antwort auf <code>!los</code> · <code>!giveaway</code></td><td><code>string[]</code> · <code>string</code></td></tr><tr><td><code>prizeLine(prize, sponsor)</code></td><td>Gewinn-Zeile in Ansagen</td><td><code>string</code></td></tr><tr><td><code>snapshotCoreConfig(T)</code></td><td>Regel-Schnappschuss für <code>sessions.core_config</code></td><td>Objekt</td></tr><tr><td><code>setSessionStatus(T, status)</code> · <code>setSessionStatusById(gid, status)</code></td><td>Sitzungsstatus</td><td><code>void</code></td></tr><tr><td><code>placeholderBlockMsg(found)</code></td><td>Klartext für das Platzhalter-Gate</td><td><code>string</code></td></tr><tr><td><code>announceTeam/announceChannels(T, …)</code></td><td>Ansage an alle bzw. ausgewählte Kanäle</td><td><code>number</code></td></tr><tr><td><code>watchBoostExpiry()</code> · <code>seedBoostWatch()</code></td><td>Ablauf des Multipliers ansagen</td><td><code>void</code></td></tr><tr><td><code>shouldLogDeny(T, actor, cmd)</code></td><td>Drosselung für Ablehnungen (5-Minuten-Fenster)</td><td><code>boolean</code></td></tr><tr><td><code>reqUser(req)</code></td><td>Login aus <code>X-Auth-User</code></td><td><code>string</code></td></tr><tr><td><code>auditFilters(q)</code></td><td>Filter der Audit-Seite in SQL übersetzen</td><td><code>{where, params}</code></td></tr><tr><td><code>viewerTeams(user, coreId)</code></td><td>Teams, die für diesen Zuschauer zählen</td><td><code>string[]</code></td></tr><tr><td><code>sniffImage(buf)</code> · <code>imageDims(buf, mime)</code></td><td>Magic Bytes · Bildmaße</td><td><code>string</code>/<code>null</code> · <code>{w,h}</code>/<code>null</code></td></tr><tr><td><code>contestInstance(T)</code> · <code>teamName(T)</code></td><td>Nachschlagen</td><td>Objekt · <code>string</code></td></tr><tr><td><code>helixFollowFallback(T, gid, u)</code></td><td>Follow-Prüfung, wenn das Live-Flag fehlt</td><td><code>boolean</code> oder <code>null</code></td></tr><tr><td><code>subscribeToGiveaway()</code></td><td>abonniert <code>ch:giveaway</code> und verteilt Ereignisse</td><td><code>void</code></td></tr><tr><td><code>startWatchtimeTicker()</code> · <code>startInstantWatcher()</code> · <code>startRetentionJob()</code></td><td>Hintergrundschleifen (60 s · 5 s · 24 h)</td><td><code>void</code></td></tr><tr><td><code>closeInstantWindow(T, g)</code></td><td>Fenster schließen, Ansage, Puls mitschicken</td><td><code>void</code></td></tr><tr><td><code>ensureSchema()</code> · <code>main()</code></td><td>Schema und Start</td><td><code>void</code></td></tr></tbody></table></div>
+<h3 id="a4-browser-skripte">A.4 Browser-Skripte</h3>
+<div class="tw"><table><thead><tr><th>Datei</th><th>Umfang</th><th>Aufgabe</th></tr></thead><tbody><tr><td><code>giveaway/public/giveaway-admin.js</code></td><td>150 Funktionen</td><td>Panel: Übersicht, Teilnehmer, Regeln, Preise, Contest, Ziehung, Protokoll</td></tr><tr><td><code>giveaway/public/giveaway-shared.js</code></td><td>Bibliothek</td><td><code>CC.validate.*</code>, <code>CC.audit.summary</code>, Navigation</td></tr><tr><td><code>giveaway/public/cc-defs.js</code></td><td>Konstanten</td><td>einzige Quelle der Event- und Befehlslisten (fail-closed)</td></tr><tr><td><code>giveaway/public/archive.js</code></td><td>24</td><td>Archiv, Dossier, Nachweis-Export</td></tr><tr><td><code>giveaway/public/audit.js</code></td><td>18</td><td>Protokollseite mit Filtern und Verdichtung</td></tr><tr><td><code>giveaway/public/claims.js</code> · <code>claim.js</code></td><td>13 · 7</td><td>Gewinn-Abwicklung (Owner) · Gewinnermeldung (Gewinner)</td></tr><tr><td><code>giveaway/public/wager.js</code></td><td>11</td><td>Lose setzen, ein Block je Los-Giveaway</td></tr><tr><td><code>giveaway/public/contest.js</code></td><td>9</td><td>Einsenden und Bewerten</td></tr><tr><td><code>admin/public/admin-shared.js</code></td><td>Bibliothek</td><td><code>CC.validate</code>, Navigation, TOS-Overlay, Verwarnungs-Banner</td></tr><tr><td><code>admin/public/teams.js</code></td><td>29</td><td>Team-Verwaltung, Rechtstexte, Ingest-Kanäle</td></tr><tr><td><code>admin/public/platform.js</code></td><td>20</td><td>Plattform-Verwaltung (Teams, Streamer, Verwarnungen)</td></tr><tr><td><code>admin/public/betrieb.js</code></td><td>13</td><td>Betrieb und Diagnose</td></tr><tr><td><code>admin/public/giveaway-test.js</code></td><td>28</td><td>Test-Console (Simulation, nur mit <code>ALLOW_SIM</code>)</td></tr><tr><td><code>admin/public/users.js</code>, <code>index.js</code>, <code>feedback.js</code>, <code>pub-doc.js</code>, <code>rdoc-theme.js</code></td><td>2–5</td><td>Benutzer, Startseite, Rückmeldung, Rechtstexte, Theme</td></tr></tbody></table></div>
+<h3 id="a5-streamerbot-actions-servicesadminactionscs">A.5 Streamerbot-Actions (<code>services/admin/actions/*.cs</code>)</h3>
+<p>Einzige Quelle; der admin-Dienst liefert sie über <code>GET /pub/actions</code> zum Kopieren aus.</p>
+<div class="tw"><table><thead><tr><th>Action</th><th>Trigger in Streamerbot</th><th>Sendet</th></tr></thead><tbody><tr><td><code>CC_IngestConnect</code></td><td>Core → WebSocket → Client → Opened</td><td><code>ingest_auth</code> mit dem Kanal-Token</td></tr><tr><td><code>CC_ChatReply</code></td><td>Core → WebSocket → Client → Message</td><td>schreibt die Antwort in den Twitch-Chat</td></tr><tr><td><code>GW_ViewerTick</code></td><td>Twitch → General → Present Viewers</td><td><code>viewer_tick</code> (nur bei laufendem OBS-Stream)</td></tr><tr><td><code>GW_ChatMessage</code></td><td>Twitch → Chat → Message</td><td><code>chat_msg</code> (nur bei laufendem OBS-Stream)</td></tr><tr><td><code>GW_StatusCmd</code></td><td>Command <code>!los</code> und Aliase</td><td><code>time_cmd</code></td></tr><tr><td><code>GW_GiveawayCmd</code></td><td>Command <code>!giveaway</code> (Alias <code>!gw</code>)</td><td><code>giveaway_cmd</code></td></tr><tr><td><code>GW_StreamOnline</code> · <code>GW_StreamOffline</code></td><td>Twitch → Channel → Stream Online/Offline</td><td><code>stream_online</code> · <code>stream_offline</code></td></tr></tbody></table></div>
+<p>Alle senden über <code>CPH.WebsocketSend(payload, 0)</code>; der Kanal steckt im Token, nie in der Nutzlast.</p>
+<h3 id="a6-tests">A.6 Tests</h3>
+<div class="tw"><table><thead><tr><th>Suite</th><th>Datei</th><th>Deckt ab</th></tr></thead><tbody><tr><td>Engine</td><td><code>services/giveaway/tests/watchtime.test.js</code></td><td>Zeitkonto, Anmeldung, Instanzen, Ziehung, Preise, Contest, Kenntnisnahme, Ingest-Puls, Lebenszyklus</td></tr><tr><td>Cores</td><td><code>services/giveaway/tests/cores.test.js</code></td><td>Gleichheit gegen die eingefrorene Alt-Logik</td></tr><tr><td>Guthaben</td><td><code>services/giveaway/tests/credit.test.js</code></td><td>Vorzeichen, Saldo, Verfall</td></tr><tr><td>KI</td><td><code>services/giveaway/tests/chat-ai.test.js</code></td><td>Anbieter, Timeout, fail-open, Zwischenspeicher</td></tr><tr><td>Archiv</td><td><code>services/giveaway/tests/targz.test.js</code></td><td>ustar-Format</td></tr><tr><td>Fassungen</td><td><code>services/giveaway/tests/terms.test.js</code></td><td>Start-Gate der Bedingungen-Fassung</td></tr><tr><td>Ersatzziehung</td><td><code>services/giveaway/tests/claim-rules.test.js</code></td><td>wann ein Ersatz blockiert ist</td></tr><tr><td>Protokolltexte</td><td><code>services/giveaway/tests/audit-summary.test.js</code></td><td>Klartext je Protokollzeile</td></tr><tr><td>Auth</td><td><code>services/admin/tests/auth.test.js</code></td><td>Token, Cookies, Passwörter</td></tr><tr><td>Sperrliste</td><td><code>services/admin/tests/ban-cache.test.js</code></td><td>Login-Sperre im Cache</td></tr><tr><td>Browser</td><td><code>services/admin/public/tests/test-suite.js</code></td><td>Panel-Logik im Browser</td></tr></tbody></table></div>
+<p>Alle Node-Suiten laufen <strong>ohne Infrastruktur</strong>: Redis und PostgreSQL sind In-Memory-Nachbauten, <code>fetch</code> ist gestubbt.</p>
+</section>
+  </main>
+</div>
+
+<script src="/admin/vendor/mermaid.min.js"></script>
+<script src="/admin/doku.js"></script>
+</body>
+</html>

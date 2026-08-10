@@ -1,0 +1,209 @@
+/* ══════════════════════════════════════════════════════════
+   Doku-Seite (/admin/doku.html) — Leseansicht der Architektur-Referenz.
+   Farben, Schriften und Abstände kommen aus rdoc.css; hier steht nur, was
+   diese Seite zusätzlich braucht: zweispaltiges Gerüst mit stehender
+   Abschnittsleiste, Tabellen, Code und Diagramme.
+   ══════════════════════════════════════════════════════════ */
+
+.dk-shell {
+  display: grid;
+  grid-template-columns: 266px minmax(0, 1fr);
+  align-items: start;
+  gap: 0;
+}
+
+/* ── Abschnittsleiste ──────────────────────────────────── */
+.dk-rail {
+  position: sticky;
+  top: 0;
+  max-height: 100vh;
+  overflow-y: auto;
+  padding: 22px 16px 26px;
+  border-right: 1px solid var(--rdoc-border);
+  background: var(--rdoc-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.dk-railhead {
+  font-family: var(--rdoc-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--rdoc-text-muted);
+}
+.dk-nav { display: flex; flex-direction: column; gap: 1px; }
+.dk-nav a {
+  display: block;
+  padding: 5px 9px;
+  border-radius: 3px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--rdoc-text-muted);
+  text-decoration: none;
+}
+.dk-nav a:hover { background: var(--rdoc-tint-accent); color: var(--rdoc-text); }
+.dk-nav a.active { background: var(--rdoc-tint-accent); color: var(--rdoc-accent); }
+.dk-nav .n2 {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 8px;
+  align-items: baseline;
+  margin-top: 11px;
+  color: var(--rdoc-text);
+  font-weight: 600;
+}
+.dk-nav .n2 .k {
+  font-family: var(--rdoc-font-mono);
+  font-size: 11px;
+  color: var(--rdoc-accent);
+  font-variant-numeric: tabular-nums;
+}
+.dk-nav .n3 { padding-left: 37px; font-size: 12.5px; }
+.dk-railfoot {
+  margin-top: auto;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--rdoc-text-faint);
+}
+.dk-railfoot a { color: var(--rdoc-text-muted); }
+
+/* ── Lesespalte ────────────────────────────────────────── */
+.dk-main { padding: 40px 44px 120px; max-width: 1180px; }
+.dk-main .doc-title {
+  font-family: var(--rdoc-font-display);
+  font-weight: 400;
+  font-size: clamp(22px, 3vw, 34px);
+  line-height: 1.2;
+  margin: 0 0 14px;
+  text-wrap: balance;
+}
+.dk-main > p:first-of-type { font-size: 16.5px; color: var(--rdoc-text-muted); max-width: 66ch; }
+.dk-main section {
+  padding-top: 34px;
+  margin-top: 34px;
+  border-top: 1px solid var(--rdoc-border);
+}
+.dk-main h2 {
+  font-family: var(--rdoc-font-display);
+  font-weight: 400;
+  font-size: clamp(17px, 1.9vw, 22px);
+  line-height: 1.3;
+  margin: 0 0 20px;
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  text-wrap: balance;
+}
+.dk-main h2 .num {
+  font-family: var(--rdoc-font-mono);
+  font-size: 13px;
+  color: var(--rdoc-accent);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.dk-main h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 34px 0 12px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--rdoc-line-on-surface);
+  text-wrap: balance;
+}
+.dk-main h4 { font-size: 13.5px; font-weight: 600; margin: 22px 0 8px; color: var(--rdoc-text-muted); }
+.dk-main p { margin: 0 0 14px; max-width: 74ch; line-height: 1.62; }
+.dk-main ul, .dk-main ol { margin: 0 0 16px; padding-left: 20px; max-width: 74ch; }
+.dk-main li { margin-bottom: 6px; line-height: 1.58; }
+.dk-main li::marker { color: var(--rdoc-accent); }
+.dk-main blockquote {
+  margin: 0 0 16px;
+  padding: 10px 16px;
+  border-left: 2px solid var(--rdoc-accent);
+  background: var(--rdoc-tint-accent);
+  color: var(--rdoc-text-muted);
+  max-width: 74ch;
+}
+.dk-main code {
+  font-family: var(--rdoc-font-mono);
+  font-size: 0.855em;
+  background: var(--rdoc-tint-accent);
+  padding: 1px 5px;
+  border-radius: 3px;
+  overflow-wrap: anywhere;
+}
+.dk-main h2 code, .dk-main h3 code { background: none; padding: 0; }
+.dk-main pre.code {
+  background: var(--rdoc-surface);
+  border: 1px solid var(--rdoc-border);
+  border-radius: 4px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 0 0 18px;
+}
+.dk-main pre.code code { background: none; padding: 0; font-size: 12.5px; line-height: 1.6; }
+
+/* ── Tabellen ──────────────────────────────────────────── */
+.dk-main .tw {
+  overflow-x: auto;
+  margin: 0 0 22px;
+  border: 1px solid var(--rdoc-border);
+  border-radius: 4px;
+}
+.dk-main table { border-collapse: collapse; width: 100%; font-size: 13.5px; min-width: 520px; }
+.dk-main thead th {
+  text-align: left;
+  font-family: var(--rdoc-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--rdoc-text-muted);
+  font-weight: 400;
+  padding: 11px 14px;
+  background: var(--rdoc-surface);
+  border-bottom: 1px solid var(--rdoc-border);
+  white-space: nowrap;
+}
+.dk-main tbody td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--rdoc-line-on-surface);
+  vertical-align: top;
+  line-height: 1.5;
+}
+.dk-main tbody tr:last-child td { border-bottom: 0; }
+.dk-main tbody tr:hover td { background: var(--rdoc-tint-accent); }
+.dk-main td code { white-space: nowrap; }
+
+/* ── Diagramme ─────────────────────────────────────────── */
+.dk-main figure.dia {
+  margin: 0 0 24px;
+  padding: 20px;
+  background: var(--rdoc-surface);
+  border: 1px solid var(--rdoc-border);
+  border-left: 2px solid var(--rdoc-accent);
+  border-radius: 4px;
+  overflow-x: auto;
+}
+.dk-main figure.dia pre.mermaid {
+  margin: 0;
+  background: none;
+  border: 0;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  min-width: min-content;
+}
+/* Vor dem Rendern bleibt der Quelltext verborgen — sonst blitzt er auf. */
+.dk-main pre.mermaid:not([data-processed]) { visibility: hidden; }
+.dk-main figure.dia svg { max-width: 100%; height: auto; }
+
+@media (max-width: 1000px) {
+  .dk-shell { grid-template-columns: 1fr; }
+  .dk-rail {
+    position: static;
+    max-height: none;
+    border-right: 0;
+    border-bottom: 1px solid var(--rdoc-border);
+    padding: 16px 18px;
+  }
+  .dk-nav { max-height: 240px; overflow-y: auto; }
+  .dk-main { padding: 26px 18px 90px; }
+}

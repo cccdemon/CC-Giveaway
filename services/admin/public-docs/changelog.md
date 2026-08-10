@@ -7,6 +7,14 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 10. August 2026
 
+### Doku direkt in der Oberflaeche
+
+Neuer Menuepunkt **DOKU**: die vollstaendige Architektur-Referenz mit
+gerenderten Diagrammen, Funktions- und Schnittstellenuebersicht, mit
+Abschnittsleiste zum Springen. Quelle ist das Dokument im Repo
+(`docs/SOFTWARE-ARCHITEKTUR.md`) - die Seite wird daraus erzeugt, damit beides
+nicht auseinanderlaeuft.
+
 ### OBS-Overlays entfallen
 
 Gewinner-Overlay und Join-Animation sind ersatzlos entfernt. Sie liefen im

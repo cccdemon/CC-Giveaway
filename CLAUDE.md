@@ -185,6 +185,11 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 - `services/admin/public/status.html` — Zuschauer-Status (`/viewer/status`) inkl. Rechtslinks
 - `services/admin/public/giveaway-test.js` + `public/tests/test-suite.js` — Browser-Test-Console (Sim-Events, hängt an `ALLOW_SIM`)
 - `tools/make-og-preview.js` — OG-Preview-Bild generieren (Node-Script, kein Service)
+- `tools/build-doc-page.js` — erzeugt `services/admin/public/doku.html` aus
+  `docs/SOFTWARE-ARCHITEKTUR.md` (Menüpunkt **DOKU**). **Markdown ändern → Generator
+  laufen lassen**, sonst laufen Repo-Doku und Website auseinander. Die HTML-Datei ist
+  erzeugt und wird nicht von Hand bearbeitet; Diagramme rendert `doku.js` mit dem
+  vendorierten `services/admin/public/vendor/mermaid.min.js` (CSP lässt nur eigene Skripte)
 - `services/admin/public-docs/*.md` — öffentliche Rechtstexte
 - `caddy/Caddyfile` (HTTP) · `caddy/Caddyfile.team` (prod, TLS DNS-01) · `caddy/Caddyfile.ssl`
 
