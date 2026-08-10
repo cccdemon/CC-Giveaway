@@ -312,6 +312,8 @@ Caddy Login. Secrets (KI-API-Keys) verschlüsselt in `app_secrets`, nie in ENV/R
 ## Docs
 `README.md` (Überblick/Stack) · `FEATURES.md` (was einstellbar ist, mit Defaults +
 Wertebereichen — Referenz bei Config-Fragen) · `docs/BETRIEB.md` ·
+`docs/SOFTWARE-ARCHITEKTUR.md` (Klassen/Funktionen/Schnittstellen, Ablauf- und
+Architekturdiagramme — Nachschlagewerk) ·
 `docs/RECHT-UND-DATENSCHUTZ.md` · `docs/PROJEKTHISTORIE.md` ·
 `docs/ANLEITUNG-TEILNEHMER.md` · `docs/TEILNAHMEBEDINGUNGEN.md` ·
 `docs/ARCHITEKTUR-CORES.md` (Entwurf austauschbarer Mechaniken) ·
