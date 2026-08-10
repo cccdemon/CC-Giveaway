@@ -46,7 +46,7 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
   der Watcher (5 s) schließt abgelaufene Fenster nur mit Ansage. **Ziehung
   immer manuell** (★, auch Member); Anwesenheit zählt zum Ziehungszeitpunkt.
   Aufräumen beim Schließen der Instanz.
-- `CORE_TicketBuy` — Los-Einsatz: Zuschauzeit → team-weites Guthaben
+- `CORE_TicketBuy` (**BETA**, kaum Live-Erfahrung) — Los-Einsatz: Zuschauzeit → team-weites Guthaben
   (`credit_ledger`, append-only, **einzige Buchungsstelle
   `services/giveaway/credit.js`**, Typen erzwingen Vorzeichen; transfer/purchase
   existieren nicht). Preise (`giveaway_prizes`) + Einsätze (`prize_wagers`,
@@ -64,7 +64,7 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
   Preise korrigierbar (`editPrize`, nur offene) und stornierbar
   (`cancelPrize` = Gegenzeilen in `prize_wagers` + `refund` im Ledger, dann
   `status='cancelled'`). Verfall nach 12 Monaten Inaktivität (`runRetention`).
-- `CORE_ScreenshotContest` — Community-Wettbewerb: Einsendungen (nur Follow +
+- `CORE_ScreenshotContest` (**BETA**, kaum Live-Erfahrung) — Community-Wettbewerb: Einsendungen (nur Follow +
   Mindest-Viewtime, 1/Person, `BYTEA` in PG, **Freigabe-Pflicht** durch den
   Owner), Voting 1–10 (`UNIQUE(entry, voter)`, Re-Vote überschreibt, eigene
   Einsendung tabu, Viewtime-Schwelle + Rate-Limit gegen Votebots).
@@ -73,6 +73,15 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
   (`buildPool` = nur Führende, weight 1; Gleichstand wird gelost). Ersetzen
   der eigenen Einsendung löscht deren Stimmen (Warn-Handshake
   `votes_would_be_lost` + `confirmReplace`). Seite `/giveaway/contest.html`.
+- **BETA-Kennzeichnung** kommt aus dem Core-Vertrag (`display.beta` →
+  `gw_list_giveaways.coreBeta`): Start-Modal, Auswahl, Übersichtskachel und
+  Rail-Karte zeigen den Chip. Neuer Core startet mit `beta: true`, raus kommt es
+  erst nach echtem Livebetrieb.
+- **Geplant: `CORE_Quiz` (Rätsel)** — erste richtige Antwort im Chat bekommt einen
+  Punkt, höchste Punktzahl gewinnt. Langläufer, Fragenzahl bleibt geheim, Fragen
+  kommen laufend dazu, genau eine Frage offen. Entwurf in
+  `docs/ARCHITEKTUR-CORES.md` §5.5 (Datenmodell `quiz_questions`/`quiz_points`,
+  Chat-Zweig vor dem Keyword, Antwortliste nie an den Client).
 - **Parallelbetrieb:** Accrual-Zustand je Giveaway unter `t:<team>:g:<sid>:*`
   (Lazy-Migration vom Legacy-Bestand, nur fürs Primary). Sekundär-Instanzen via
   `openGiveawayInstance` (eigenes Keyword/Kanalliste/Pause/Multiplier, strikt

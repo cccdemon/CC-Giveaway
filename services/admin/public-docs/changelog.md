@@ -7,6 +7,14 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 10. August 2026
 
+### Los-Giveaway und Screenshot-Contest sind als BETA gekennzeichnet
+
+Beide Mechaniken sind fertig gebaut und durchgetestet, aber im echten Stream
+noch kaum gelaufen. Damit niemand ueberrascht wird, steht **BETA** jetzt dort,
+wo man die Mechanik waehlt und steuert: im Start-Fenster, in der Auswahl oben,
+auf der Uebersichtskachel und auf der Steuerkarte. Benutzbar sind sie
+vollstaendig — wenn etwas hakt, bitte ueber *Fehler melden* schicken.
+
 ### Doku direkt in der Oberflaeche
 
 Neuer Menuepunkt **DOKU**: die vollstaendige Architektur-Referenz mit

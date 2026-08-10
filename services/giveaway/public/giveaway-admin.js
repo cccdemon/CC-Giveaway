@@ -213,7 +213,8 @@ function renderOverview() {
     var start = fmtGwStart(g.startedAt);
     if (start) sub.push('seit ' + start);
     return '<div class="ov-card" onclick="gwPickGiveaway(\'' + esc(g.primary ? '' : g.gid) + '\')">'
-      + '<div class="ov-top"><span class="ov-ic">' + esc(icon) + '</span>' + esc(title) + '</div>'
+      + '<div class="ov-top"><span class="ov-ic">' + esc(icon) + '</span>' + esc(title)
+      + (coreIsBeta(g) ? ' <span class="beta-chip">BETA</span>' : '') + '</div>'
       + '<div class="ov-num">' + (g.participants !== undefined && g.participants !== null ? g.participants : '–')
       + ' <span class="ov-sub">Teilnehmer</span></div>'
       + (g.prize ? '<div class="ov-sub">🎁 ' + esc(g.prize)
@@ -249,6 +250,13 @@ var PANEL_CARD_LOADERS = {
 };
 var PANEL_CARD_FALLBACK = { CORE_TicketBuy: 'ticketbuy', CORE_ScreenshotContest: 'contest',
                             CORE_CurrentViewers: 'instant' };
+// BETA kommt aus dem Core-Vertrag (coreBeta); die Liste ist nur Fallback
+// fuer aeltere Server-Antworten.
+var CORE_BETA_FALLBACK = { CORE_TicketBuy: true, CORE_ScreenshotContest: true };
+function coreIsBeta(g) {
+  if (!g) return false;
+  return g.coreBeta !== undefined ? !!g.coreBeta : !!CORE_BETA_FALLBACK[g.core];
+}
 function updateTicketBuyButtons() {
   var core = selectedCore();
   var g = selectedGiveaway();
@@ -617,6 +625,7 @@ function renderGiveawaySelect() {
               + (g.name ? g.name + ' ' : (g.keyword ? '„' + g.keyword + '" ' : ''))
               + g.gid.replace(/^sess_/, '#')
               + (meta.length ? ' (' + meta.join(' · ') + ')' : '')
+              + (coreIsBeta(g) ? ' · BETA' : '')
               + (g.closed ? ' — GESCHLOSSEN, ziehen!' : (g.paused ? ' ⏸' : ''));
     opts.push('<option value="' + esc(g.gid) + '">' + esc(label) + '</option>');
   });

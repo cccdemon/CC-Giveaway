@@ -110,6 +110,10 @@
   .iw-card .nm { font-size:11px; font-weight:600; letter-spacing:1.6px; color:var(--rdoc-text); display:block; margin-bottom:3px; }
   .iw-card.sel .nm { color:var(--rdoc-text); }
   .iw-card .ds { font-size:10px; color:var(--rdoc-text-muted); line-height:1.5; display:block; }
+  /* BETA: im Livebetrieb noch kaum erprobt — sichtbar, aber nicht laut. */
+  .beta-chip { font-family:var(--rdoc-font-mono); font-size:8.5px; letter-spacing:.14em;
+               color:var(--rdoc-warning); border:1px solid var(--rdoc-warning);
+               border-radius:3px; padding:1px 4px; margin-left:6px; vertical-align:1px; }
   .iw-sec { font-size:9px; letter-spacing:1.6px; color:var(--rdoc-text-muted); text-transform:uppercase; margin:12px 0 6px; }
   .iw-field { margin-bottom:9px; }
   .iw-field label { display:block; font-size:9px; letter-spacing:1.4px; color:var(--rdoc-text-muted);
@@ -303,7 +307,7 @@
 
       <!-- Los-Giveaway: Setz-Befehl, Preise, Ziehung je Preis -->
       <div class="card" id="card-ticketbuy" data-help="Los-Giveaway: Zuschauzeit wird Los-Guthaben (Umrechnung in der Regeln-Karte). Ein Los-Giveaway verlost genau EINEN Preis (Titel, Sponsor, Beschreibung, Bild bis 7 MB, optionales Einsatz-Ende) — für einen weiteren Preis ein zweites Los-Giveaway starten (＋ oben). Preis ✎ korrigieren oder ✖ stornieren (Einsätze werden zurückgebucht). Gesetzt wird per Chat-Befehl oder Setz-Seite; Rücknahme bis zum Einsatz-Ende. ★ zieht gewichtet nach Einsatz — danach sind die Einsätze ALLER Setzer verbraucht. SCHLIESSEN geht erst, wenn der Preis gezogen oder storniert ist.">
-        <div class="card-title">LOS-GIVEAWAY // PREIS</div>
+        <div class="card-title">LOS-GIVEAWAY // PREIS <span class="beta-chip">BETA</span></div>
         <div class="card-sub">SETZ-BEFEHL</div>
         <div class="input-row">
           <input type="text" id="tb-wagercmd" placeholder="!setzen" maxlength="30">
@@ -342,7 +346,7 @@
 
       <!-- Screenshot-Contest: Voting-Steuerung + Einsendungen -->
       <div class="card" id="card-contest" data-help="Screenshot-Contest: Einsenden dürfen Follower mit Mindest-Zuschauzeit (1 Bild/Person, PNG/JPG, 1080p–4K, max 7 MB). Jede Einsendung braucht deine Freigabe (✓) — Ablehnen (✗) sperrt nur die Anzeige, 🗑 löscht endgültig. Voting ÖFFNEN/PAUSE/BEENDEN steuert die 1–10-Bewertung (eine Stimme je Bild und Person, Re-Vote überschreibt). Nach BEENDEN: ★ — höchste Punktsumme gewinnt, Gleichstand wird ausgelost.">
-        <div class="card-title">CONTEST // VOTING <span class="ct-badge" id="sc-voting-state">GESCHLOSSEN</span></div>
+        <div class="card-title">CONTEST // VOTING <span class="beta-chip">BETA</span> <span class="ct-badge" id="sc-voting-state">GESCHLOSSEN</span></div>
         <div class="btn-group">
           <button class="btn btn-green btn-sm" onclick="scVoting('open')">ÖFFNEN</button>
           <button class="btn btn-gold btn-sm"  onclick="scVoting('pause')">PAUSE</button>
@@ -469,12 +473,12 @@
         <span class="ds">Keyword im Zeitfenster + echte Anwesenheit. Gleiche Chance für alle — gezogen wird manuell (★), auch mehrere Fenster möglich.</span>
       </button>
       <button type="button" class="iw-card" data-type="ticketbuy" onclick="iwSelect('ticketbuy')">
-        <span class="ic">🎟</span><span class="nm">LOS-GIVEAWAY</span>
-        <span class="ds">Zuschauzeit wird Los-Guthaben. Einsatz auf Preise per Chat-Befehl oder Web — Ziehung je Preis.</span>
+        <span class="ic">🎟</span><span class="nm">LOS-GIVEAWAY<span class="beta-chip">BETA</span></span>
+        <span class="ds">Zuschauzeit wird Los-Guthaben. Einsatz auf Preise per Chat-Befehl oder Web — Ziehung je Preis. Im Livebetrieb noch wenig erprobt.</span>
       </button>
       <button type="button" class="iw-card" data-type="contest" onclick="iwSelect('contest')">
-        <span class="ic">📸</span><span class="nm">SCREENSHOT-CONTEST</span>
-        <span class="ds">Zuschauer senden Screenshots ein, die Community bewertet 1–10. Höchste Punktsumme gewinnt.</span>
+        <span class="ic">📸</span><span class="nm">SCREENSHOT-CONTEST<span class="beta-chip">BETA</span></span>
+        <span class="ds">Zuschauer senden Screenshots ein, die Community bewertet 1–10. Höchste Punktsumme gewinnt. Im Livebetrieb noch wenig erprobt.</span>
       </button>
     </div>
 

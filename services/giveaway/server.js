@@ -953,7 +953,8 @@ async function runAdminCmd(send, msg, meta, ctx) {
         return { ...g, coreLabel: g.coreLabel || g.core || 'Kampagne',
                  coreIcon: d.icon || '🎁', coreCss: d.css || 'core-watchtime',
                  coreUnit: d.unit !== undefined ? d.unit : 'Punkte', drawKind: d.drawKind || 'weighted',
-                 corePanelCard: d.panelCard !== undefined ? d.panelCard : null };
+                 corePanelCard: d.panelCard !== undefined ? d.panelCard : null,
+                 coreBeta: !!d.beta };
       });
       send({ event: 'gw_ack', type: 'giveaways', giveaways: gwList,
              maxParallel: MAX_PARALLEL_GIVEAWAYS });

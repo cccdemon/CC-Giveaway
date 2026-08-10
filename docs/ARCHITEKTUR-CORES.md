@@ -233,7 +233,7 @@ kann damit gar nicht versehentlich in ein fremdes Giveaway schreiben.
 
 ---
 
-## 5 Die drei Cores
+## 5 Die Cores
 
 ### 5.1 CORE_WatchtimeChatActivity
 
@@ -245,7 +245,10 @@ Die heutige Mechanik, unverändert übernommen. Der Umbau darf ihr Verhalten
 - `buildPool`: alle mit ≥1 Coin, Keyword geschrieben, ≥`followMin` Kanälen
   folgend. Gewicht = Coins.
 
-### 5.2 CORE_TicketBuy
+### 5.2 CORE_TicketBuy — BETA
+
+> **BETA (10.8.2026):** umgesetzt und getestet, aber im Livebetrieb noch kaum
+> gelaufen. Die Oberflaeche kennzeichnet das (`display.beta`).
 
 Zuschauzeit erzeugt Guthaben wie gehabt. Neu ist, dass Guthaben **gezielt auf
 einen Preis gesetzt** wird.
@@ -319,7 +322,10 @@ ziehen.
 
 ---
 
-### 5.4 CORE_ScreenshotContest
+### 5.4 CORE_ScreenshotContest — BETA
+
+> **BETA (10.8.2026):** umgesetzt und getestet, aber im Livebetrieb noch kaum
+> gelaufen. Die Oberflaeche kennzeichnet das (`display.beta`).
 
 Wettbewerb statt Verlosung: die Community sendet Screenshots ein und bewertet
 sie; die höchste **Punktsumme** gewinnt (Entscheidung §10.5).
@@ -361,6 +367,170 @@ sie; die höchste **Punktsumme** gewinnt (Entscheidung §10.5).
 > `confirmReplace`), REST + `/giveaway/contest.html`, Panel-Typ 4 mit 🖼/🗳,
 > Rechtstexte § 4d + Nutzungsbedingungen § 5-Zusatz, DSGVO komplett,
 > 6 Engine-Tests).
+
+### 5.5 CORE_Quiz — Rätsel (geplant)
+
+Wettbewerb auf Wissen und Tempo statt auf Zuschauzeit: der Veranstalter legt
+Fragen an, die erste **richtige Antwort im Chat** bekommt einen Punkt. Wer am
+Ende die meisten Punkte hat, gewinnt. Die Ziehung bleibt wie beim Contest ein
+Klick des Streamers — gewonnen hat, wer vorne steht, gelost wird nur bei
+Gleichstand.
+
+**Warum das ein eigener Core ist:** die Punkte entstehen weder aus Zeit
+(Kampagne) noch aus Einsatz (Los) noch aus Fremdbewertung (Contest), sondern
+aus einem Ereignis mit genau einem Gewinner je Frage. Die Auswertung passiert
+im Chat-Pfad, in der Reihenfolge des Eintreffens.
+
+#### Ablauf
+
+```
+Frage anlegen  ──►  Frage öffnen  ──►  Antworten im Chat  ──►  erste richtige
+   (Panel)          (Ansage)            (Engine prüft)         Antwort = 1 Punkt
+                                                                     │
+                          weitere Fragen jederzeit ◄─────────────────┘
+                                                                     │
+                        Giveaway schließen ──► ★ ziehen ──► aufräumen
+```
+
+- **Langläufer.** Ein Rätsel-Giveaway kann über Wochen laufen; Fragen kommen
+  laufend dazu. Es gibt kein festes Ende und keine feste Fragenzahl.
+- **Die Fragenzahl ist nicht öffentlich.** Weder Chat-Ansagen noch die
+  Zuschauer-Seite nennen, wie viele Fragen es gibt oder noch kommen — sonst
+  könnte man ausrechnen, ob sich Mitmachen noch lohnt. Öffentlich sind nur:
+  laufende Frage, eigener Punktestand, Rangliste.
+- **Genau eine Frage ist gleichzeitig offen.** Das hält die Zuordnung
+  Antwort → Frage eindeutig und die Chat-Auswertung billig.
+
+#### Regeln
+
+- **Ein Punkt je Frage**, an die **erste** richtige Antwort. Die Engine
+  entscheidet in Eintreffreihenfolge; die Frage wird in derselben Transaktion
+  geschlossen, in der der Punkt gebucht wird (kein zweiter Gewinner bei
+  gleichzeitigen Nachrichten).
+- **Teilnahmebedingung wie bei der Kampagne:** Follow auf einem Instanz-Kanal
+  und Mindest-Zuschauzeit (konfigurierbar, Vorgabe wie Contest 10 Minuten).
+  Ohne diese Hürde gewinnt der schnellste Wegwerf-Account.
+- **Antwortprüfung** normalisiert beide Seiten: klein schreiben, Satzzeichen
+  und Mehrfach-Leerzeichen weg, Umlaute wahlweise entfalten (ae/oe/ue/ss).
+  Je Frage sind **mehrere gültige Antworten** hinterlegbar (Synonyme,
+  Schreibweisen). Optional: Tippfehler-Toleranz über Levenshtein-Abstand ≤1 ab
+  einer Mindestlänge — abschaltbar, weil sie bei kurzen Antworten schadet.
+- **Wer schon einen Punkt auf diese Frage hat, kann sie nicht nochmal gewinnen**
+  (trivial, da die Frage sofort schließt) — aber ein Zuschauer kann über die
+  Laufzeit beliebig viele Fragen gewinnen.
+- **Antworten zählen nicht als Chat-Bonus.** Wie der Setz-Befehl beim
+  Los-Giveaway ist eine Antwort ein Kommando, keine Unterhaltung.
+- **Gleichstand am Ende** löst die Engine wie beim Contest: `buildPool`
+  liefert nur die Führenden mit `weight = 1`, der Zufall entscheidet unter
+  ihnen. Ein eindeutiger Führender gewinnt deterministisch.
+
+#### Was der Veranstalter steuert
+
+| Aktion | Wirkung |
+|---|---|
+| Frage anlegen | Text + Antwortliste + optionaler Hinweis; landet als `draft` |
+| Frage öffnen | genau eine offene Frage; Ansage im Chat (ohne Fragenzahl) |
+| Frage schließen ohne Gewinner | niemand hat es geraten — Punkt verfällt, Ansage optional mit Auflösung |
+| Frage korrigieren | nur solange sie nicht gewonnen wurde |
+| Frage löschen | nur `draft`; gewonnene Fragen bleiben (Nachweis) |
+| Punkt zurücknehmen | Korrektur mit Grund, auditiert (z. B. Antwort war doch falsch) |
+| Rangliste ansagen | Top 5 in den Chat, ohne Restfragen zu verraten |
+
+#### Chat
+
+| Ereignis | Ansage |
+|---|---|
+| Frage offen | „🧩 Rätsel: `<Frage>` — erste richtige Antwort im Chat bekommt einen Punkt." |
+| Treffer | „🧩 @name hat es: `<Antwort>` — 1 Punkt (Stand: `<n>`)." |
+| Frage zu, ungelöst | „🧩 Keiner drauf gekommen. Die Antwort war `<Antwort>`." |
+| `!raetsel` | laufende Frage + eigener Punktestand + Bedingungen. Nie die Fragenzahl. |
+
+#### Datenmodell
+
+```sql
+quiz_questions (
+  id BIGSERIAL PRIMARY KEY,
+  team_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,          -- die Instanz
+  prompt TEXT NOT NULL,              -- Frage
+  answers JSONB NOT NULL,            -- ["antwort", "synonym", ...] normalisiert
+  hint TEXT,
+  status TEXT NOT NULL,              -- draft | open | solved | closed
+  opened_at TIMESTAMPTZ,
+  closed_at TIMESTAMPTZ,
+  winner TEXT,                       -- wer den Punkt bekam
+  created_by TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)
+
+quiz_points (                        -- append-only, wie das Guthaben-Journal
+  id BIGSERIAL PRIMARY KEY,
+  team_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  question_id BIGINT REFERENCES quiz_questions(id),
+  username TEXT NOT NULL,
+  points INT NOT NULL,               -- +1, Korrektur = -1 mit Grund
+  reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)
+```
+
+Redis je Instanz: `t:<team>:g:<sid>:quiz:open` (ID der offenen Frage) und
+`t:<team>:g:<sid>:quiz:answers` (normalisierte Antwortliste als JSON) — damit
+die Chat-Auswertung ohne Datenbankzugriff entscheidet, ob eine Nachricht
+überhaupt in Frage kommt. Punkt buchen und Frage schließen laufen danach in
+einer Transaktion.
+
+**Antwortliste nie an den Client.** Weder `gw_data` noch die Zuschauer-Seite
+liefern `answers` aus; das Panel zeigt sie nur dem Team über einen eigenen
+Befehl. Sonst steht die Lösung im Netzwerk-Tab.
+
+#### Core-Vertrag
+
+| Feld | Wert |
+|---|---|
+| `id` / `label` | `CORE_Quiz` / „Rätsel" |
+| `accrual` | `'none'` — Zeit spielt keine Rolle, die Schwellen lesen den Kampagnenstand |
+| `config` | `minWatchSec` (Vorgabe 600), `answerCmd` (leer = jede Nachricht zählt als Antwortversuch), `typoTolerance` (an/aus), `announceSolution` (an/aus) |
+| `aggregate` | `{username, points, questionsWon, eligible}` — `eligible` = Follow + Mindest-Viewtime |
+| `buildPool` | nur die Führenden, `weight = 1` (Gleichstand wird gelost) |
+| `display.drawKind` | `'score'` wie der Contest |
+| `display.unit` | `'Punkte'` |
+| `display.columns` | Punkte · gewonnene Fragen · Berechtigt |
+| `display.tiles` | Fragen offen/gelöst (nur intern), Teilnehmer mit Punkten, Führender |
+| `display.panelCard` | `'quiz'` — neue Rail-Karte: Fragenliste, Frage öffnen/schließen, Rangliste |
+| `display.emptyPool` | „Noch niemand hat eine Frage richtig beantwortet." |
+| `display.beta` | `true` bis zum ersten echten Durchlauf |
+
+#### Engine-Berührungspunkte
+
+1. `handleChatMessage` bekommt vor dem Keyword-Zweig einen Quiz-Zweig — analog
+   zum Setz-Befehl: gibt es eine offene Frage für eine Instanz dieses Kanals,
+   wird die Nachricht normalisiert und gegen die Antwortliste geprüft. Treffer
+   → `awardQuizPoint()`, Antwort im Chat, **Ende** (kein Chat-Bonus).
+2. Neue Engine-Methoden: `addQuizQuestion`, `openQuizQuestion`,
+   `closeQuizQuestion`, `editQuizQuestion`, `deleteQuizQuestion`,
+   `awardQuizPoint`, `revokeQuizPoint`, `getQuizStandings`,
+   `getQuizParticipants`.
+3. `cleanupGiveawayInstance` räumt die beiden Redis-Schlüssel mit ab; die
+   Tabellen bleiben (Nachweis).
+4. DSGVO: `quiz_points` und `quiz_questions.winner` sind personenbezogen →
+   `collectSubjectData()` und `eraseSubject()` (pseudonymisieren, nicht
+   löschen — der Punktestand ist Teil des Ergebnisnachweises).
+
+#### Offene Punkte
+
+- **Wettlauf bei gleichzeitigen Nachrichten:** die Engine verarbeitet
+  Chat-Ereignisse sequenziell je Prozess. Sobald mehrere Instanzen des
+  giveaway-Dienstes laufen, braucht der Punkt eine Sperre
+  (`pg_advisory_xact_lock` auf die Frage-ID) — bis dahin reicht die
+  Transaktion mit `UPDATE … WHERE status='open'`.
+- **Antwort im Chat sichtbar:** wer schnell liest, sieht die richtige Antwort
+  eines anderen. Das ist bei einem Chat-Rätsel systemimmanent; die Frage
+  schließt ja sofort. Falls das stört, wäre eine stille Variante über die
+  Zuschauer-Seite denkbar — dann aber ohne Chat-Charme.
+- **Moderation:** Antworten stehen im öffentlichen Chat; das System speichert
+  nur den Treffer, nicht die Fehlversuche.
 
 ## 6 Parallelbetrieb: die Giveaway-Dimension
 

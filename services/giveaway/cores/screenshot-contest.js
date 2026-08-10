@@ -91,6 +91,7 @@ module.exports = {
   // UI-Vertrag (P5): gemeinsame Oberflächen lesen NUR diese Deklaration.
   display: {
     css:        'core-contest',
+    beta:       true,          // noch kaum im Livebetrieb erprobt — UI kennzeichnet das
     icon:       '📸',
     unit:       'Punkte',
     winnerStat: 'score',       // winner_coins = Punktsumme aus dem Voting

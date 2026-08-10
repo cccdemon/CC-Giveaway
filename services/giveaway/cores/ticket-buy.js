@@ -121,6 +121,7 @@ module.exports = {
   // diese Deklaration statt auf Core-IDs zu verzweigen.
   display: {
     css:        'core-ticketbuy',
+    beta:       true,          // noch kaum im Livebetrieb erprobt — UI kennzeichnet das
     icon:       '🎟',
     unit:       'Lose',        // Gewichtseinheit in Anzeigen
     winnerStat: 'stake',       // Bedeutung von winner_coins: Einsatz auf den Preis

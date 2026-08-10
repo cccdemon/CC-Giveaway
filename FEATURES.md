@@ -38,7 +38,10 @@ Für den **Einzelstreamer-Betrieb** setzt du die Follow-Bedingung auf `1` (nur
 deinem eigenen Kanal folgen) oder `0` (Follow spielt keine Rolle). Alles andere
 funktioniert unverändert.
 
-## Drei Mechaniken, parallel kombinierbar
+## Vier Mechaniken, parallel kombinierbar
+
+> **BETA** heißt: gebaut und getestet, im Livebetrieb aber noch kaum gelaufen.
+> Benutzbar — rechne mit Ecken und melde, was hakt.
 
 Neben der Kampagne kannst du **Zusatz-Giveaways** parallel starten (Dashboard:
 Giveaway-Auswahl neben der Team-Auswahl, ＋/✕). Maximal 4 gleichzeitig je Team.
@@ -49,8 +52,8 @@ jemand schaut.
 |---|---|---|---|
 | **Kampagne** (Zuschauzeit & Chat) | Keyword + Follows + ≥1 Los | gesammelte Lose | das klassische Langzeit-Giveaway |
 | **Sofortverlosung** | Keyword im Zeitfenster (= Anwesenheitsnachweis) **und** Follow **und** Mindest-Zuschauzeit | gleich für alle | Anmeldefenster 10 s – 1 h, mehrfach öffenbar; Mindest-Zuschauzeit Vorgabe 10 min, beim Start einstellbar (0 = aus, nötig wenn keine Kampagne läuft); Ziehung macht der Streamer selbst (★) nach dem Schließen; Chat-Ansagen je Instanz schaltbar (Default an, Gewinner-Ansage immer) |
-| **Los-Giveaway** | wer Lose auf einen Preis setzt | Einsatz auf diesen Preis | Zuschauzeit wird Guthaben (bleibt teamweit erhalten, verfällt nach 12 Monaten Inaktivität); genau ein Preis je Los-Giveaway (mehrere Preise = mehrere Los-Giveaways parallel), Einsatz-Ende optional; Setzen per Chat-Befehl (Standard `!setzen`, umbenennbar) oder Seite „Lose setzen"; Rücknahme bis Einsatz-Ende; Ziehung je Preis, danach sind alle Einsätze des Preises verbraucht |
-| **Screenshot-Contest** | eingesendete Screenshots echter Zuschauer (Follow + Mindest-Viewtime, 1 pro Person) | höchste Punktsumme gewinnt (kein Zufall; Gleichstand wird ausgelost) | Freigabe jeder Einsendung durch den Streamer; Community-Voting 1–10 (eine Stimme je Person und Bild, Re-Vote überschreibt, eigenes Bild nicht wertbar, Viewtime-Schwelle gegen Votebots); Voting öffnen/pausieren/fortsetzen/schließen; Ersetzen der eigenen Einsendung verwirft deren Stimmen (mit Warnung) |
+| **Los-Giveaway** (BETA) | wer Lose auf einen Preis setzt | Einsatz auf diesen Preis | Zuschauzeit wird Guthaben (bleibt teamweit erhalten, verfällt nach 12 Monaten Inaktivität); genau ein Preis je Los-Giveaway (mehrere Preise = mehrere Los-Giveaways parallel), Einsatz-Ende optional; Setzen per Chat-Befehl (Standard `!setzen`, umbenennbar) oder Seite „Lose setzen"; Rücknahme bis Einsatz-Ende; Ziehung je Preis, danach sind alle Einsätze des Preises verbraucht |
+| **Screenshot-Contest** (BETA) | eingesendete Screenshots echter Zuschauer (Follow + Mindest-Viewtime, 1 pro Person) | höchste Punktsumme gewinnt (kein Zufall; Gleichstand wird ausgelost) | Freigabe jeder Einsendung durch den Streamer; Community-Voting 1–10 (eine Stimme je Person und Bild, Re-Vote überschreibt, eigenes Bild nicht wertbar, Viewtime-Schwelle gegen Votebots); Voting öffnen/pausieren/fortsetzen/schließen; Ersetzen der eigenen Einsendung verwirft deren Stimmen (mit Warnung) |
 
 ---
 
