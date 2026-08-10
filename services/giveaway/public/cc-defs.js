@@ -23,7 +23,7 @@
   }
 
   var ALLOWED_EVENTS = [
-    'gw_get_all', 'gw_cmd', 'gw_overlay', 'gw_join',
+    'gw_get_all', 'gw_cmd', 'gw_join',
     'gw_ack', 'gw_data', 'gw_status', 'gw_keyword',
     'gw_multiplier', 'wt_update',
     'chat_msg', 'viewer_tick',

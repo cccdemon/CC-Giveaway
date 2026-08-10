@@ -4,7 +4,7 @@
 implementiert, dazu der **CORE-UI-Vertrag** (`display` mit
 css/icon/unit/winnerStat/drawKind/emptyPool/columns/tiles/panelCard):
 Panel-Spalten, Statistik-Kacheln (STAT_TILES-Registry), Rail-Karten,
-Ziehungs-Payloads, Historie, Claim-Seite, Overlay und Archiv lesen ihre
+Ziehungs-Payloads, Historie, Claim-Seite und Archiv lesen ihre
 CORE-Semantik aus dieser Deklaration. Das Dokument bleibt die verbindliche
 Referenz für den Core-Vertrag (Abschnitt 4), die Abgrenzung Engine/Core
 (Abschnitt 3) und die getroffenen Entscheidungen (Abschnitt 10). Die
@@ -78,7 +78,7 @@ Tabelle `abuse_flags`).
 | Datenbank | `watchtime_events` ist als reines Viewtime-Journal gebaut (`delta_sec`, `event_type`). `campaign_participation` und `giveaway_draws` tragen `coins`/`watch_sec` fest im Schema. |
 | `chat-ai.js` | Existiert ausschließlich wegen des Chat-Bonus. Gehört damit fachlich zu `CORE_WatchtimeChatActivity`, nicht in die Engine. |
 | **DSGVO-Pfade** ([admin/server.js](../services/admin/server.js)) | `collectSubjectData()` (:572) und `eraseSubject()` (:607) lesen `campaign_participation` (`watch_sec`, `msgs`, `coins`, `follows`) und `giveaway_draws.winner_coins`; die Feld-Labels stehen in [meine-daten.html:88-92](../services/admin/public/meine-daten.html). Jede neue core-eigene personenbezogene Spalte (z.B. `prize_wagers`) muss hier mitgezogen werden, sonst ist die Auskunft unvollständig und die Löschung wirkungslos. |
-| **Anzeigepfade ausserhalb des Panels** | [giveaway-overlay.js:29](../services/giveaway/public/giveaway-overlay.js) (OBS-Overlay zeigt `msg.coins`; lädt die Shared-Lib **bewusst nicht** — generisches Panel-Rendering hilft hier nicht), [claim.js:57](../services/giveaway/public/claim.js) (`winner_coins` als „Punkte"), [archive.js](../services/giveaway/public/archive.js) (Dossier + tar.gz-Export mit `total_coins`/`winner_coins`/`watch_sec`/`msgs`/`follows`-Spalten), [status.html:164](../services/admin/public/status.html) (Zuschauer-Status rechnet mit `drawMinSec`/`watchSec`), [giveaway-shared.js:191](../services/giveaway/public/giveaway-shared.js) (`auditSummary()` formuliert `coinsAtBan`). |
+| **Anzeigepfade ausserhalb des Panels** | [claim.js:57](../services/giveaway/public/claim.js) (`winner_coins` als „Punkte"), [archive.js](../services/giveaway/public/archive.js) (Dossier + tar.gz-Export mit `total_coins`/`winner_coins`/`watch_sec`/`msgs`/`follows`-Spalten), [status.html:164](../services/admin/public/status.html) (Zuschauer-Status rechnet mit `drawMinSec`/`watchSec`), [giveaway-shared.js:191](../services/giveaway/public/giveaway-shared.js) (`auditSummary()` formuliert `coinsAtBan`). |
 | **Test-Console-Sim** ([giveaway-test.js](../services/admin/public/giveaway-test.js) + `public/tests/test-suite.js`) | Zweiter zustandsändernder Pfad **an `handleAdminCmd` vorbei**, erzeugt echte `watchtime_events` (`ALLOW_SIM` + eigener `audit()`). Muss künftig wissen, an welches Giveaway ein Sim-Event geht, und durch dieselbe Verteilfunktion laufen wie der echte Ingest. |
 | **Redis-Backup** (`exportTeam`/`importTeam` in watchtime.js) | Sichert die mechanikbezogenen Schlüssel (`chWatch`, `chMsgs`, `chFollows`) direkt und muss die Giveaway-Dimension sowie core-eigene Schlüssel mitnehmen — sonst stellt ein Restore nur das Kampagnen-Giveaway wieder her. |
 
@@ -509,7 +509,7 @@ Reihenfolge innerhalb der Phase, vom Kern nach aussen:
    `infoText`/`joinReply` des Cores (inkl. `fmtDur`/`kw2`); server.js
    sammelt nur noch Daten.
 
-Die Anzeigepfade ausserhalb des Panels (OBS-Overlay, `claim.js`, `archive.js`,
+Die Anzeigepfade ausserhalb des Panels (`claim.js`, `archive.js`,
 `status.html`, `auditSummary()`) bleiben in Phase 1 bewusst unverändert
 coin-geprägt — sie wandern erst mit der generischen Anzeige (Phase 2/3) auf
 `display`/`auditText`. Sie hier schon anzufassen, verletzte das
@@ -677,7 +677,6 @@ neuen Mechaniken aus Zuschauersicht.
 | Neue personenbezogene Daten (`prize_wagers`) fehlen in Auskunft und Löschung. | Pflichtpunkt in Phase 4 mit eigenem Abnahmekriterium; Regel in Abschnitt 7. |
 | Die Test-Console-Sim umgeht die neue Ingest-Verteilung und schreibt am Giveaway vorbei. | Sim-Events tragen die Giveaway-ID und laufen durch dieselbe Verteilfunktion wie der echte Ingest; `ALLOW_SIM` + `sim_*`-Audit bleiben. |
 | Geschlossene Giveaways hinterlassen Redis-Leichen unter `g:<id>`. | Close/Reset räumt `t:<team>:g:<id>:*` vollständig; Abnahmekriterium in Phase 2. |
-| Das OBS-Overlay lädt keine Shared-Lib und bleibt coin-verdrahtet. | Ziehungs-Events an das Overlay werden core-neutral (`weight` + `weightLabel` statt `coins`); Umstellung zusammen mit der generischen Anzeige. |
 | Bei der Migration der Coin-Basis fällt ein Team still auf den Default 7200 zurück. | Alt-Schlüssel `cfgDrawMinSec` wird beim Anlegen der `core_config` gelesen und übernommen; Abnahmekriterium in Phase 2. |
 
 ---

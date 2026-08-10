@@ -1020,17 +1020,24 @@ test('phase6: Contest ohne bewertete Einsendungen zieht nicht', async () => {
   assert.equal(await e.drawWinner(TEAM, 'sess_9', {}), null);
 });
 
-test('ingest: Puls je Kanal meldet fehlende viewer_tick', async () => {
+test('ingest: Puls je Kanal meldet fehlende viewer_tick nur bei laufendem Stream', async () => {
   const e = engine();
-  // Noch nie ein Tick: stale, kein Zeitstempel, niemand anwesend.
+  // Stream offline und still: normal, kein Stoerfall.
   let pulse = await e.getIngestPulse(TEAM, ['justcallmedeimos']);
-  assert.equal(pulse[0].stale, true);
+  assert.equal(pulse[0].silent, true);
+  assert.equal(pulse[0].online, false);
+  assert.equal(pulse[0].stale, false);
   assert.equal(pulse[0].lastTickAgo, null);
   assert.equal(pulse[0].present, 0);
+  // Stream online, aber immer noch keine Ticks: das ist der Stoerfall.
+  await e.redis.sadd(K.gwOnline(TEAM), 'justcallmedeimos');
+  pulse = await e.getIngestPulse(TEAM, ['justcallmedeimos']);
+  assert.equal(pulse[0].stale, true);
   // Nach einem Tick lebt der Kanal.
   await e.handleViewerTick(TEAM, 'justcallmedeimos', 'bob', true);
   pulse = await e.getIngestPulse(TEAM, ['justcallmedeimos']);
   assert.equal(pulse[0].stale, false);
+  assert.equal(pulse[0].silent, false);
   assert.ok(pulse[0].lastTickAgo !== null && pulse[0].lastTickAgo < 5);
   assert.equal(pulse[0].present, 1);
   // Chat allein setzt keinen Puls — genau daran scheiterte die Ziehung.
@@ -1042,7 +1049,7 @@ test('ingest: Puls je Kanal meldet fehlende viewer_tick', async () => {
   assert.equal(rows.length, 1);
   assert.equal(rows[0].present, false);          // angemeldet, aber nicht anwesend
   assert.equal(rows[0].eligible, false);
-  assert.equal((await e2.getIngestPulse(TEAM, ['justcallmedeimos']))[0].stale, true);
+  assert.equal((await e2.getIngestPulse(TEAM, ['justcallmedeimos']))[0].silent, true);
 });
 
 test('phase3b: Keyword zaehlt nur im offenen Anmeldefenster, Fenster mehrfach oeffenbar', async () => {

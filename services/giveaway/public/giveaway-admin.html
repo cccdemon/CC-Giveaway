@@ -43,9 +43,11 @@
   .ov-card .ov-state.pause { color:var(--rdoc-warning); }
   .ov-card .ov-state.closed { color:var(--rdoc-accent, #C48A4A); }
   .ov-empty { padding:24px; color:var(--rdoc-text-faint); font-size:13px; }
-  .gw-ingest-warn { margin:8px 0; padding:8px 12px; border:1px solid var(--rdoc-warning,#C48A4A);
-                    border-radius:4px; font-size:12.5px; color:var(--rdoc-warning,#C48A4A);
-                    background:color-mix(in srgb, var(--rdoc-warning,#C48A4A) 12%, transparent); }
+  /* Neutraler Hinweis (kein Stream online) vs. echter Stoerfall (.err) */
+  .gw-ingest-warn { margin:8px 0; padding:8px 12px; border:1px solid var(--rdoc-border);
+                    border-radius:4px; font-size:12.5px; color:var(--rdoc-text-muted); }
+  .gw-ingest-warn.err { border-color:var(--rdoc-error); color:var(--rdoc-error);
+                        background:color-mix(in srgb, var(--rdoc-error) 10%, transparent); }
   .card-flash { animation: card-flash 1.2s ease-out 2; }
   @keyframes card-flash {
     0%,100% { box-shadow:none; }

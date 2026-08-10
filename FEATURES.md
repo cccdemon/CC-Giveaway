@@ -92,7 +92,6 @@ jemand schaut.
   aber keine Garantie.
 - **Testziehung** möglich, die getrennt markiert wird und die echte Historie
   nicht verfälscht.
-- **OBS-Overlay** für den Gewinner, das du als Browserquelle einbindest.
 - **Jede Ziehung ist reproduzierbar.** Gespeichert werden Gewinner, Coins,
   Teilnehmerzahl, der verwendete Zufallswert und ein vollständiger Snapshot
   aller Teilnehmer mit ihren Losanteilen. Du kannst also jederzeit belegen, dass

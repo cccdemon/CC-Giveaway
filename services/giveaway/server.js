@@ -684,17 +684,10 @@ async function watchBoostExpiry() {
   }
 }
 
-async function verifyOverlayKey(teamId, key) {
-  if (!teamId || !key) return false;
-  const r = await pg.query('SELECT 1 FROM teams WHERE id=$1 AND overlay_key=$2', [teamId, String(key)]);
-  return r.rowCount > 0;
-}
-
 wss.on('connection', (ws, req) => {
   const clientId = `gw_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-  const isOverlay = (req.url || '').indexOf('/overlay-ws') === 0;
-  const authUser = isOverlay ? '' : sanitizeUsername(req.headers['x-auth-user'] || '');
-  const meta = { ws, authUser, teamId: null, overlay: isOverlay, role: null, ip: req.socket.remoteAddress, connectedAt: Date.now(), msgCount: 0 };
+  const authUser = sanitizeUsername(req.headers['x-auth-user'] || '');
+  const meta = { ws, authUser, teamId: null, role: null, ip: req.socket.remoteAddress, connectedAt: Date.now(), msgCount: 0 };
   clients.set(clientId, meta);
   log('WS', `Connected: ${clientId} user=${authUser || '?'} (${clients.size} total)`);
 
@@ -702,7 +695,7 @@ wss.on('connection', (ws, req) => {
     const now = Date.now();
     if (!meta.msgWindow || now - meta.msgWindow > WS_MSG_WINDOW_MS) { meta.msgWindow = now; meta.msgN = 0; }
     if (++meta.msgN > WS_MSG_MAX) {
-      log('WS', `Rate limit ${clientId} (${meta.authUser || 'overlay'}) — closing`);
+      log('WS', `Rate limit ${clientId} (${meta.authUser || '?'}) — closing`);
       try { ws.close(); } catch(e) { /* egal */ }
       return;
     }
@@ -764,19 +757,8 @@ async function handleClientMessage(meta, msg) {
   const send = (obj) => meta.ws.readyState === WebSocket.OPEN && meta.ws.send(JSON.stringify(obj));
 
   switch (msg.event) {
-    // OBS-Overlay: public, key-authentifiziert, read-only.
-    case 'overlay_subscribe': {
-      const teamId = sanitizeTeamId(msg.teamId);
-      if (!await verifyOverlayKey(teamId, msg.key)) { send({ event: 'overlay_denied' }); return; }
-      meta.teamId = teamId;
-      meta.overlay = true;
-      send({ event: 'overlay_ok', teamId });
-      send({ event: 'gw_status', status: await wte.isOpen(teamId) ? 'open' : 'closed' });
-      break;
-    }
     // Client wählt ein Team → nur Mitglieder dürfen dessen Daten sehen.
     case 'gw_get_all': {
-      if (meta.overlay) return;   // Overlays dürfen keine Admin-Daten ziehen
       const teamId = sanitizeTeamId(msg.teamId);
       if (!await isMember(meta.authUser, teamId)) { send({ event: 'gw_ack', type: 'forbidden' }); return; }
       meta.teamId = teamId;
@@ -786,11 +768,6 @@ async function handleClientMessage(meta, msg) {
     case 'gw_cmd':
       await handleAdminCmd(send, msg, meta);
       break;
-    case 'gw_overlay': {
-      const teamId = sanitizeTeamId(msg.teamId);
-      if (await isMember(meta.authUser, teamId)) broadcastTeam(teamId, { event: 'gw_overlay', winner: msg.winner || null, coins: msg.coins || 0 });
-      break;
-    }
     // Test-Console-Sim: nur für eigene Teams republishen.
     // Diese Events gehen in dieselbe Pipeline wie echte Ticks vom Ingest und
     // erzeugen echte watchtime_events. Darum: in Prod aus (ALLOW_SIM), und
@@ -1864,8 +1841,6 @@ async function runAdminCmd(send, msg, meta, ctx) {
                                  randValue: result.rand, isTest: !!result.isTest, core: result.core || null });
         send({ event: 'gw_ack', type: 'winner_drawn', winner: result.winner, watchSec: result.watchSec,
                coins: result.coins, drawId: result.drawId, prize: result.prize, ...semantic });
-        broadcastTeam(teamId, { event: 'gw_overlay', winner: result.winner, coins: result.coins,
-                                prize: result.prize || null, ...semantic });
         // Testziehungen erzeugen keine Meldefrist und keine Ansage.
         if (!result.isTest) {
           // Ersatzziehung: alten Claim als ersetzt markieren (sofern der
@@ -1960,7 +1935,7 @@ function subscribeToGiveaway() {
         const result = await wte.handleChatMessage(teamId, msg.channel, msg.user, msg.message, msg.follows);
         const u = sanitizeUsername(msg.user);
         if (result && result.isNew) {
-          broadcastTeam(teamId, { event: 'gw_join', user: u });
+          broadcastTeam(teamId, { event: 'gw_join', user: u });   // Panel-Hinweis + Refresh
           const reply = CORE.joinReply({ username: u, agg: result });
           redisPub.publish('ch:chat_reply', JSON.stringify({ event: 'chat_reply', channel: msg.channel, message: reply }));
         }

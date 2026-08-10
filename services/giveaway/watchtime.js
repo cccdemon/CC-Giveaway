@@ -921,6 +921,10 @@ class WatchtimeEngine {
     const t = sanitizeTeamId(teamId);
     const chans = Array.isArray(channels) && channels.length ? channels : await this.getChannels(t);
     const now = Math.floor(Date.now() / 1000);
+    // Live-Kanaele laut stream_online/-offline. Ohne laufenden Stream sendet
+    // Streamerbot bewusst nichts (beide Actions pruefen ObsIsStreaming) —
+    // fehlende Ticks sind dann normal und keine Stoerung.
+    const online = new Set(await this.redis.smembers(K.gwOnline(t)));
     const out = [];
     for (const ch of chans) {
       const ts = parseInt(await this.redis.get(K.chPulse(t, ch)), 10);
@@ -929,8 +933,11 @@ class WatchtimeEngine {
         const last = parseInt(await this.redis.get(K.chLastTick(t, ch, u)), 10);
         if (Number.isFinite(last) && now - last < PRESENCE_TTL) present++;
       }
-      out.push({ channel: ch, lastTickAgo: Number.isFinite(ts) ? now - ts : null,
-                 present, stale: !Number.isFinite(ts) || now - ts >= PRESENCE_TTL });
+      const silent = !Number.isFinite(ts) || now - ts >= PRESENCE_TTL;
+      out.push({ channel: ch, lastTickAgo: Number.isFinite(ts) ? now - ts : null, present,
+                 online: online.has(ch), silent,
+                 // stale = echter Stoerfall: Stream laeuft, es kommt trotzdem nichts.
+                 stale: silent && online.has(ch) });
     }
     return out;
   }

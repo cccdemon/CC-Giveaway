@@ -60,8 +60,11 @@ async function loadIngest() {
       + '<th>Anwesend</th><th>Zustand</th></tr></thead><tbody>'
       + teams.map(function(t) {
           return (t.channels || []).map(function(c, i) {
-            var cls = c.stale ? 'err' : 'ok';
-            var txt = c.stale ? 'KEINE MELDUNGEN' : 'LÄUFT';
+            // Drei Zustaende: Stoerfall (online, aber still), Stream offline
+            // (normal, Streamerbot sendet dann nichts) und laufend.
+            var cls = c.stale ? 'err' : (!c.online ? 'warn' : 'ok');
+            var txt = c.stale ? 'STREAM ONLINE, KEINE MELDUNGEN'
+                    : (!c.online ? 'STREAM OFFLINE' : 'LÄUFT');
             return '<tr>'
               + '<td>' + (i === 0 ? esc(t.teamName || t.teamId)
                   + (t.running ? ' <span class="detail">· ' + t.running + ' Giveaway(s)</span>' : '') : '') + '</td>'

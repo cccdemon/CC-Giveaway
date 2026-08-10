@@ -12,7 +12,7 @@
 var coinBaseSec = null;
 var currentTeam = null;
 // Ohne teamId lehnt der Server jedes gw_cmd mit "forbidden" ab.
-var TEAM_EVENTS = { gw_cmd:1, gw_get_all:1, gw_overlay:1, viewer_tick:1, chat_msg:1, time_cmd:1 };
+var TEAM_EVENTS = { gw_cmd:1, gw_get_all:1, viewer_tick:1, chat_msg:1, time_cmd:1 };
 var ws = null;
 var wsRetry = 2000;
 var wsRetryTimer = null;
@@ -221,13 +221,6 @@ function renderCalc() {
   var coins = Math.round((sec / coinBaseSec) * 10000) / 10000;
   out.textContent = coins + ' Coins (' + h + 'h ' + m + 'm · 1 Coin = '
                   + (Math.round((coinBaseSec / 3600) * 100) / 100) + 'h)';
-}
-
-// ── Overlays ──────────────────────────────────────────────
-function testWinner() {
-  var name = document.getElementById('ov-winner').value.trim();
-  if (!name) return;
-  send({ event: 'gw_overlay', winner: name, coins: 1.5 });
 }
 
 // ── Stream Simulation ─────────────────────────────────────

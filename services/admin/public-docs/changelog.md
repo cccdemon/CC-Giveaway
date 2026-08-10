@@ -7,6 +7,22 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 10. August 2026
 
+### OBS-Overlays entfallen
+
+Gewinner-Overlay und Join-Animation sind ersatzlos entfernt. Sie liefen im
+Stream nicht zuverlaessig und hatten keinen Testmodus; die Gewinner-Anzeige im
+Panel und die Chat-Ansage decken denselben Zweck ab. Damit verschwinden die
+beiden Seiten, das OBS-Menue, die Overlay-Links in der Team-Verwaltung und die
+oeffentlichen Overlay-Adressen.
+
+### Zuschauer-Meldungen: Warnung nur noch bei laufendem Stream
+
+Die Meldung "keine Zuschauer-Meldungen" erschien auch dann, wenn gar nicht
+gestreamt wurde - dabei sendet Streamerbot ohne laufenden OBS-Stream
+absichtlich nichts. Jetzt steht dort **Stream offline** als neutraler Hinweis,
+und rot wird es nur, wenn der Stream laeuft und trotzdem nichts ankommt. Die
+Betriebsseite zeigt dieselben drei Zustaende je Kanal.
+
 ### Fehler melden und Ideen schicken
 
 Neu im Menü unter Tools: **🐛 Fehler melden & Idee schicken**. Drei Arten

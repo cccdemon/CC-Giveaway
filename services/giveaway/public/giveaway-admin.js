@@ -17,7 +17,7 @@ let currentGiveaway = null;
 let giveawayList    = [];
 const GID_CMDS = { gw_pause:1, gw_resume:1, gw_set_multiplier:1, gw_get_multiplier:1, gw_draw_winner:1,
                    gw_set_keyword:1, gw_get_keyword:1 };
-const TEAM_EVENTS = { gw_cmd:1, gw_get_all:1, gw_overlay:1, viewer_tick:1, chat_msg:1, time_cmd:1 };
+const TEAM_EVENTS = { gw_cmd:1, gw_get_all:1, viewer_tick:1, chat_msg:1, time_cmd:1 };
 let participants = {};
 let gwChannels   = [];
 let gwIsOpen     = false;
@@ -280,23 +280,36 @@ function instanceLabel(gid) {
 }
 
 // SCHLIESSEN wirkt auf die Auswahl: Kampagne oder gewählte Zusatz-Instanz.
-// Ingest-Puls: ohne viewer_tick meldet Streamerbot keine Zuschauer, damit
-// ist bei der Sofortverlosung NIEMAND anwesend und die Ziehung liefe leer.
-// Genau das ist am 9.8.26 live passiert — darum steht die Warnung oben,
-// nicht im Event-Log.
+// Ingest-Puls: Streamerbot sendet nur bei laufendem OBS-Stream. Fehlende
+// Meldungen sind also nur dann eine Stoerung, wenn der Stream online ist
+// (stale). Ist er offline, steht hier ein neutraler Hinweis — sonst
+// schlaegt das Panel jeden streamfreien Tag Alarm.
 function renderIngestWarn(pulse) {
   var el = document.getElementById('ingest-warn');
   if (!el) return;
   if (!Array.isArray(pulse) || !pulse.length) { el.style.display = 'none'; return; }
-  var dead = pulse.filter(function(p){ return p.stale; });
-  if (!dead.length) { el.style.display = 'none'; return; }
-  var names = dead.map(function(p){
-    return esc(p.channel || '?') + (p.lastTickAgo === null ? ' (noch nie)' : ' (' + fmtDurShort(p.lastTickAgo) + ' still)');
-  }).join(', ');
-  el.innerHTML = '⚠ Keine Zuschauer-Meldungen von: ' + names
-    + ' — Streamerbot-Aktion <b>GW_ViewerTick</b> prüfen. Ohne diese Meldungen ist niemand „anwesend": '
-    + 'die Sofortverlosung zieht ins Leere, Zuschauzeit zählt nicht.';
-  el.style.display = '';
+  var broken = pulse.filter(function(p){ return p.stale; });            // online, aber still
+  var offline = pulse.filter(function(p){ return p.silent && !p.online; });
+  if (broken.length) {
+    el.className = 'gw-ingest-warn err';
+    el.innerHTML = '⚠ Stream läuft, aber es kommen keine Zuschauer-Meldungen von: '
+      + broken.map(function(p){
+          return esc(p.channel || '?') + (p.lastTickAgo === null ? ' (noch nie)'
+                                        : ' (' + fmtDurShort(p.lastTickAgo) + ' still)');
+        }).join(', ')
+      + ' — Streamerbot-Aktion <b>GW_ViewerTick</b> prüfen. Ohne diese Meldungen läuft keine '
+      + 'Zuschauzeit auf.';
+    el.style.display = '';
+    return;
+  }
+  if (offline.length === pulse.length) {
+    el.className = 'gw-ingest-warn';
+    el.innerHTML = 'ℹ Kein Stream online (' + offline.map(function(p){ return esc(p.channel || '?'); }).join(', ')
+      + ') — solange OBS nicht sendet, kommen keine Zuschauer-Meldungen und es läuft keine Zuschauzeit auf.';
+    el.style.display = '';
+    return;
+  }
+  el.style.display = 'none';
 }
 
 function gwCloseSmart() {
@@ -1119,9 +1132,9 @@ function handle(msg) {
         log('Anmeldefenster offen: ' + msg.windowSec + 's', 'gold');
         renderIngestWarn(msg.ingestPulse);
         if (msg.ingestStale && msg.ingestStale.length) {
-          alert('Fenster ist offen — ABER von ' + msg.ingestStale.join(', ')
-              + ' kommen keine Zuschauer-Meldungen.\n\nOhne sie gilt niemand als anwesend und die Ziehung bleibt leer.'
-              + '\nStreamerbot-Aktion GW_ViewerTick auf diesem Kanal prüfen.');
+          alert('Fenster ist offen — ABER der Stream läuft und von ' + msg.ingestStale.join(', ')
+              + ' kommen trotzdem keine Zuschauer-Meldungen.\n\nStreamerbot-Aktion GW_ViewerTick auf diesem Kanal prüfen.'
+              + '\nOhne Meldungen läuft keine Zuschauzeit auf — wer die Mindest-Zuschauzeit noch nicht hat, bleibt draußen.');
         }
         liveRefresh(); break;
       }
@@ -1213,8 +1226,8 @@ function handle(msg) {
         if (msg.registered !== undefined) {
           nw += '\n\nAngemeldet: ' + msg.registered + ' · davon anwesend: ' + (msg.present || 0);
           if (msg.ingestStale && msg.ingestStale.length) {
-            nw += '\nKeine Zuschauer-Meldungen von: ' + msg.ingestStale.join(', ')
-                + ' — Streamerbot-Aktion GW_ViewerTick prüft die Anwesenheit.';
+            nw += '\nStream läuft, aber keine Zuschauer-Meldungen von: ' + msg.ingestStale.join(', ')
+                + ' — Streamerbot-Aktion GW_ViewerTick prüfen (ohne sie läuft keine Zuschauzeit auf).';
           }
         }
         log(nw.replace(/\n/g, ' | '), 'red');
@@ -1526,7 +1539,7 @@ function rerollConfirm() {
   if (f) f.style.display = 'none';
   log('Ersatzziehung angefordert (Ursprung #' + lastDraw.drawId + ', bisheriger Gewinner ausgeschlossen)', 'gold');
 }
-function clearWinner() { lastWinner=null; document.getElementById('winner-card').style.display='none'; clearOverlay(); }
+function clearWinner() { lastWinner=null; document.getElementById('winner-card').style.display='none'; }
 
 // ── Manual Actions ────────────────────────────────────────
 function manualAdd() {
@@ -1562,7 +1575,7 @@ function resetAll() {
   send({ event:'gw_cmd', cmd:'gw_reset' });
   participants={}; gwIsOpen=false; lastWinner=null;
   document.getElementById('winner-card').style.display = 'none';
-  updateGwStatus(); renderTable(); updateStats(); clearOverlay();
+  updateGwStatus(); renderTable(); updateStats();
   log('RESET – alle Daten geloescht', 'red');
 }
 
@@ -1759,7 +1772,7 @@ function sortBy(f) {
   renderTable();
 }
 
-// ── Stats & Overlay ───────────────────────────────────────
+// ── Stats ─────────────────────────────────────────────
 // Kacheln in der Command-Bar je Mechanik: die Coin-/Msg-Zahlen der Kampagne
 // sagen bei Sofortverlosung/Los-Giveaway/Contest nichts aus.
 function statTile(t) {
@@ -1812,12 +1825,6 @@ function updateStats() {
     ];
   }
   host.innerHTML = tiles.map(statTile).join('');
-}
-
-// OBS-Overlay (giveaway-overlay.html) ist winner-only. Der Server broadcastet
-// den Gewinner bei der Ziehung selbst; hier nur das explizite Leeren.
-function clearOverlay() {
-  send({ event: 'gw_overlay', winner: null });
 }
 
 function verifyFollows() {

@@ -181,7 +181,6 @@
 
 // ── Navigation ────────────────────────────────────────────
 (function() {
-  var JOIN_HREF = '/giveaway/giveaway-join.html?test=1';
 
   function e(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
 
@@ -189,7 +188,6 @@
     grid:'<svg viewBox="0 0 16 16" fill="none"><rect x="1.5" y="1.5" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="9.5" y="1.5" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="1.5" y="9.5" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="9.5" y="9.5" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/></svg>',
     teams:'<svg viewBox="0 0 16 16" fill="none"><circle cx="5.5" cy="5" r="2.4" stroke="currentColor" stroke-width="1.3"/><circle cx="11" cy="6" r="1.9" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 13c0-2 1.8-3.2 4-3.2s4 1.2 4 3.2M10 13c0-1.6 1-2.6 2.6-2.6s2.9 1 2.9 2.6" stroke="currentColor" stroke-width="1.3"/></svg>',
     tools:'<svg viewBox="0 0 16 16" fill="none"><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.6 3.6l1.4 1.4M11 11l1.4 1.4M12.4 3.6L11 5M5 11l-1.4 1.4" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="2.2" stroke="currentColor" stroke-width="1.2"/></svg>',
-    obs:'<svg viewBox="0 0 16 16" fill="none"><rect x="1.5" y="3" width="13" height="9" rx="1.2" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="7.5" r="2.2" stroke="currentColor" stroke-width="1.3"/></svg>',
     logout:'<svg viewBox="0 0 16 16" fill="none"><path d="M6 2H3.5A1.5 1.5 0 0 0 2 3.5v9A1.5 1.5 0 0 0 3.5 14H6M10.5 11l3-3-3-3M13 8H6" stroke="currentColor" stroke-width="1.3"/></svg>'
   };
   var PRIMARY = [
@@ -225,10 +223,6 @@
     { href:'/admin/giveaway-test.html',     label:'Test Console', ic:'▶', sub:'DEV' },
     { href:'/admin/tests/test-runner.html', label:'Test Suite',   ic:'✓', sub:'DEV' }
   ];
-  var OBS = [
-    { href:'/giveaway/giveaway-overlay.html', label:'Gewinner-Overlay', ic:'🎁' },
-    { href:JOIN_HREF,                          label:'Join-Animation',   ic:'✨' }
-  ];
 
   var cur = window.location.pathname.replace(/^\/+/, '');
   function isCur(h){ return cur === h.split('?')[0].replace(/^\//,''); }
@@ -238,12 +232,11 @@
     return '<a class="gwnav-item'+(isCur(p.href)?' active':'')+'" href="'+p.href+'">'+p.icon+'<span class="lbl">'+e(p.label)+'</span></a>';
   }).join('');
 
-  function menu(list, obs){
+  function menu(list){
     return list.map(function(x){
       // admin:true → erst sichtbar, wenn /auth/me die Rolle superadmin meldet.
       var adm = x.admin ? ' gwnav-adminonly" style="display:none' : '';
       if(x.head) return '<div class="gwnav-head'+adm+'">'+e(x.head)+'</div>';
-      if(obs) return '<div class="gwnav-obs"><a href="'+x.href+'" target="_blank" rel="noopener"><span class="ic">'+x.ic+'</span>'+e(x.label)+'</a><button class="gwnav-cpy" data-url="'+e(x.href)+'">URL</button></div>';
       return '<a class="gwnav-di'+adm+'" href="'+x.href+'"><span class="ic">'+x.ic+'</span>'+e(x.label)+(x.sub?'<span class="sub">'+e(x.sub)+'</span>':'')+'</a>';
     }).join('');
   }
@@ -255,9 +248,8 @@
     '<a class="gwnav-brand" href="/admin/" aria-label="RDOC Giveaway"><svg width="24" height="24" viewBox="0 0 200 200" fill="none" role="img" aria-label="RDOC"><g transform="translate(-60 -60) scale(0.3125)"><path fill="var(--rdoc-accent,#C48A4A)" d="M528.748,192.439 A320 320 0 0 1 779.563,336.473 L679.227,402.295 A200 200 0 0 0 522.467,312.274 Z M796.445,365.402 A320 320 0 0 1 805.202,640.19 L695.251,592.119 A200 200 0 0 0 689.778,420.376 Z M790.196,670.136 A320 320 0 0 1 667.139,791.878 L608.962,686.924 A200 200 0 0 0 685.872,610.835 Z M444.124,680 L579.876,680 L631.874,808.699 A320 320 0 0 1 586.703,823.158 L575.497,776.485 A272 272 0 0 0 589.252,772.799 L573.612,720 L450.388,720 L434.748,772.799 A272 272 0 0 0 448.503,776.485 L437.297,823.158 A320 320 0 0 1 392.126,808.699 Z M356.861,791.878 A320 320 0 0 1 233.804,670.136 L338.128,610.835 A200 200 0 0 0 415.038,686.924 Z M218.798,640.19 A320 320 0 0 1 227.555,365.402 L334.222,420.376 A200 200 0 0 0 328.749,592.119 Z M244.437,336.473 A320 320 0 0 1 495.252,192.439 L501.533,312.274 A200 200 0 0 0 344.773,402.295 Z"/></g></svg><span class="brand-name">RDOC</span><b>GIVEAWAY</b></a>' +
     '<div class="gwnav-primary">' + prim +
       '<div class="gwnav-sep"></div>' +
-      '<div class="gwnav-drop" data-drop="tools"><div class="gwnav-item">'+ICON.tools+'<span class="lbl">TOOLS</span><span class="gwnav-caret">▾</span></div><div class="gwnav-menu">'+menu(TOOLS,false)+'</div></div>' +
-      '<div class="gwnav-drop gwnav-adminonly" data-drop="admin" style="display:none"><div class="gwnav-item">⚙<span class="lbl">ADMIN</span><span class="gwnav-caret">▾</span></div><div class="gwnav-menu">'+menu(ADMIN_MENU,false)+'</div></div>' +
-      '<div class="gwnav-drop" data-drop="obs"><div class="gwnav-item">'+ICON.obs+'<span class="lbl">OBS</span><span class="gwnav-caret">▾</span></div><div class="gwnav-menu">'+menu(OBS,true)+'</div></div>' +
+      '<div class="gwnav-drop" data-drop="tools"><div class="gwnav-item">'+ICON.tools+'<span class="lbl">TOOLS</span><span class="gwnav-caret">▾</span></div><div class="gwnav-menu">'+menu(TOOLS)+'</div></div>' +
+      '<div class="gwnav-drop gwnav-adminonly" data-drop="admin" style="display:none"><div class="gwnav-item">⚙<span class="lbl">ADMIN</span><span class="gwnav-caret">▾</span></div><div class="gwnav-menu">'+menu(ADMIN_MENU)+'</div></div>' +
     '</div>' +
     '<div class="gwnav-spacer"></div>' +
     '<div class="gwnav-right">' +
@@ -274,14 +266,6 @@
   });
   document.addEventListener('click', function(){ nav.querySelectorAll('.gwnav-drop').forEach(function(o){ o.classList.remove('open'); }); });
 
-  nav.querySelectorAll('.gwnav-cpy').forEach(function(b){
-    b.addEventListener('click', function(ev){ ev.preventDefault(); ev.stopPropagation();
-      var url = window.location.origin + b.getAttribute('data-url');
-      var done = function(){ b.textContent='✓'; b.classList.add('ok'); setTimeout(function(){ b.textContent='URL'; b.classList.remove('ok'); },1100); };
-      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done).catch(done);
-      else done();
-    });
-  });
 
   nav.querySelector('#gwnav-logout').addEventListener('click', function(ev){ ev.preventDefault();
     fetch('/admin/auth/logout', { method:'POST' }).catch(function(){}).then(function(){ window.location.href='/admin/login.html'; });

@@ -102,7 +102,7 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
   `{css, icon, unit, winnerStat, drawKind, emptyPool, columns, tiles, panelCard}`.
   Gemeinsame Oberflächen lesen NUR daraus: Panel (`gw_data.coreMeta`,
   `gw_list_giveaways` → `coreLabel/coreIcon/coreCss/coreUnit/drawKind/corePanelCard`),
-  Ziehungs-Payloads (`winner_drawn`/`gw_overlay` mit `unit/drawKind/votes`,
+  Ziehungs-Payload (`winner_drawn` mit `unit/drawKind/votes`,
   `no_winner.message`), `GET draws`/`claim/mine` (unit/drawKind je Zeile),
   Archiv (`coreMeta` im Dossier). Statistik-Kacheln: `display.tiles` = IDs aus
   der Registry `STAT_TILES` (giveaway-admin.js, Berechnung genau einmal dort);
@@ -328,7 +328,11 @@ setup-git` liefert die Credentials. Lokales `git` bleibt für commit/diff/log.
 ## Konventionen
 - **Streamermodus** (`giveaway-admin.js`): maskiert Zuschauernamen + Ingest-Tokens im
   Admin-Panel für Screenshare. Neue UI, die Namen oder Tokens zeigt, muss ihn beachten.
-- Deutsche UI. Admin-Pages laden `admin-shared.js` zuerst. OBS-Overlays laden es NICHT.
+- Deutsche UI. Admin-Pages laden `admin-shared.js` zuerst.
+- **Keine OBS-Overlays mehr** (10.8.26, Betreiber): Gewinner-Overlay und
+  Join-Animation sind ersatzlos raus — Seiten, WS-Events (`overlay_subscribe`,
+  `gw_overlay`, `gw_join`), `/overlay-ws`, OBS-Menü und die öffentlichen
+  Caddy-Pfade. `teams.overlay_key` bleibt als unbenutzte Spalte stehen.
 - WS-Events `{event:'name',...}`; Admin-Cmds `{event:'gw_cmd',cmd}`. Neue Events/Cmds in `ALLOWED_EVENTS`/`ALLOWED_CMDS` (admin-shared.js + giveaway-shared.js).
 - `CC.validate` für alle Input-Sanitization. `sanitizeUsername(s)` konsistent C# ↔ JS (lowercase, [a-z0-9_], max 25).
 - `log(tag,...)`/`logErr(tag,...)` statt raw console.

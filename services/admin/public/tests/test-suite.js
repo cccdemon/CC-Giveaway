@@ -157,7 +157,6 @@
   it('validateWsPayload allows known events/cmds and blocks unknown ones', function() {
     expect(CC.validate.validateWsPayload({ event: 'gw_cmd', cmd: 'gw_open', user: 'valid_user' })).toBeTruthy();
     expect(CC.validate.validateWsPayload({ event: 'gw_cmd', cmd: 'gw_draw_winner' })).toBeTruthy();
-    expect(CC.validate.validateWsPayload({ event: 'gw_overlay', winner: null })).toBeTruthy();
     withMutedConsole(function() {
       expect(CC.validate.validateWsPayload({ event: 'gw_cmd', cmd: 'rm_rf_db' })).toBeFalsy();
       expect(CC.validate.validateWsPayload({ event: 'bad_event' })).toBeFalsy();
@@ -227,15 +226,6 @@
         expect(sent[0].cmd).toBe('gw_sub_ticket');
         expect(sent[0].user).toBe('Eve_99');
       });
-    });
-  });
-
-  it('clearOverlay sends a winner-null gw_overlay (clears OBS overlay)', function() {
-    withGwSocket(function(sent) {
-      clearOverlay();
-      expect(sent.length).toBe(1);
-      expect(sent[0].event).toBe('gw_overlay');
-      expect(sent[0].winner).toBeNull();
     });
   });
 
