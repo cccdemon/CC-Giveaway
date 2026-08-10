@@ -108,7 +108,7 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
   Ziehungssatz (`gw_draw_winner` liest sessions/giveaway_prizes, wenn kein
   expliziter prize-Text kommt).
 - **CORE-UI-Vertrag (`display`):** jeder Core deklariert
-  `{css, icon, unit, winnerStat, drawKind, emptyPool, columns, tiles, panelCard}`.
+  `{css, icon, unit, winnerStat, drawKind, emptyPool, columns, tiles, panelCard, beta}`.
   Gemeinsame Oberflächen lesen NUR daraus: Panel (`gw_data.coreMeta`,
   `gw_list_giveaways` → `coreLabel/coreIcon/coreCss/coreUnit/drawKind/corePanelCard`),
   Ziehungs-Payload (`winner_drawn` mit `unit/drawKind/votes`,
@@ -203,7 +203,8 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 - `caddy/Caddyfile` (HTTP) · `caddy/Caddyfile.team` (prod, TLS DNS-01) · `caddy/Caddyfile.ssl`
 
 ## REST (`/giveaway/api/...`)
-`GET participants` · `GET user/:u` · `GET sessions` · `GET leaderboard` · `GET draws` (`?session=`,`?full=1`,`?limit=`) · `GET ws/clients`
+`GET participants` · `GET sessions` · `GET draws` (`?session=`,`?full=1`,`?limit=`) · `GET abuse`
+`GET export` · `POST import` (Owner, Backup/Wiederherstellung — jede Wiederherstellung auditiert)
 `GET audit` (Filter + Verdichtung + `before`-Cursor) · `GET audit/stats` · `GET audit/archive` (tar.gz)
 `GET archive` (Sitzungsliste) · `GET archive/:sid` (Dossier) · `GET archive/:sid/export` (tar.gz, Owner)
 `GET claim/mine` · `POST claim` (nur der eingeloggte Gewinner; Korrektur nur solange `handling IS NULL`, Fassung = `sessions.terms_version`)
@@ -347,9 +348,13 @@ setup-git` liefert die Credentials. Lokales `git` bleibt für commit/diff/log.
 - Deutsche UI. Admin-Pages laden `admin-shared.js` zuerst.
 - **Keine OBS-Overlays mehr** (10.8.26, Betreiber): Gewinner-Overlay und
   Join-Animation sind ersatzlos raus — Seiten, WS-Events (`overlay_subscribe`,
-  `gw_overlay`, `gw_join`), `/overlay-ws`, OBS-Menü und die öffentlichen
-  Caddy-Pfade. `teams.overlay_key` bleibt als unbenutzte Spalte stehen.
-- WS-Events `{event:'name',...}`; Admin-Cmds `{event:'gw_cmd',cmd}`. Neue Events/Cmds in `ALLOWED_EVENTS`/`ALLOWED_CMDS` (admin-shared.js + giveaway-shared.js).
+  `overlay_ok`, `overlay_denied`, `gw_overlay`), `verifyOverlayKey`, `/overlay-ws`,
+  OBS-Menü und die öffentlichen Caddy-Pfade. `gw_join` **bleibt** — das Panel
+  meldet damit neue Teilnehmer und frischt auf. `teams.overlay_key` bleibt als
+  unbenutzte Spalte stehen.
+- WS-Events `{event:'name',...}`; Admin-Cmds `{event:'gw_cmd',cmd}`. Neue Events/Cmds
+  **nur in `services/giveaway/public/cc-defs.js`** eintragen (`ALLOWED_EVENTS`/`ALLOWED_CMDS`) —
+  beide Shared-Libs lesen `CC.defs` fail-closed, eine zweite Liste wäre die nächste Dublette.
 - `CC.validate` für alle Input-Sanitization. `sanitizeUsername(s)` konsistent C# ↔ JS (lowercase, [a-z0-9_], max 25).
 - `log(tag,...)`/`logErr(tag,...)` statt raw console.
 - Redis DB 0 = prod (`REDIS_DB` in `docker-compose.yml`), DB 1 für alles, was gegen echtes
@@ -365,8 +370,14 @@ npm start · npm run dev (--watch)
 npm test                                  # node --test tests/*.test.js
 node --test tests/watchtime.test.js       # einzelne Datei
 node --test --test-name-pattern="coins"   # einzelner Test
+
+# Doku-Seite neu erzeugen, nachdem docs/SOFTWARE-ARCHITEKTUR.md sich geändert hat
+node tools/build-doc-page.js
 ```
-Tests in `giveaway` (`watchtime`, `chat-ai`, `cores` — Gleichheit gegen eingefrorene Alt-Logik, `credit`, `targz`) und `admin` (`auth`) — `bridge` hat kein `test`-Script.
+Tests in `giveaway` (`watchtime`, `cores` — Gleichheit gegen eingefrorene Alt-Logik,
+`credit`, `chat-ai`, `terms`, `claim-rules`, `audit-summary`, `targz`) und `admin`
+(`auth`, `ban-cache`) — `bridge` hat kein `test`-Script. Browser-Tests laufen unter
+`/admin/tests/test-runner.html`.
 **Die Suites brauchen keine laufende Infrastruktur**: Redis/pg sind In-Memory-Mocks
 (`makeRedis()` in `watchtime.test.js`), `fetch` ist gestubbt (`stubFetch()` in
 `chat-ai.test.js`). Also kein `docker compose up` vor `npm test`. Neue Tests genauso

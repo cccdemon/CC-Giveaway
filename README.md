@@ -21,7 +21,9 @@ Eigenständiges System — keine Abhängigkeit zu anderen Streamer-Tools.
   Los-Guthaben, Einsatz auf konkrete Preise, Ziehung je Preis gewichtet nach
   Einsatz — Guthaben ist nie käuflich) und der **Screenshot-Contest**
   (Einsendungen mit Freigabe, Community-Voting 1–10, höchste Punktsumme
-  gewinnt, Los nur bei Gleichstand). Architektur: austauschbare Cores, siehe
+  gewinnt, Los nur bei Gleichstand). Los-Giveaway und Contest sind **BETA** —
+  gebaut und getestet, im Livebetrieb noch kaum gelaufen.
+  Architektur: austauschbare Cores, siehe
   [docs/ARCHITEKTUR-CORES.md](docs/ARCHITEKTUR-CORES.md).
 - **Ziehung:** je Mechanik (Coins / gleiche Chance / Einsatz je Preis /
   Voting-Punktsumme). Voll nachvollziehbar — jede Ziehung wird mit
@@ -45,12 +47,16 @@ nie aus dem Payload.
 ```bash
 cp .env.example .env                # Twitch-Credentials eintragen
 docker compose up -d --build        # lokal (HTTP, Caddyfile)
-cd services/<name> && npm test      # node --test, Redis DB 1
+cd services/<name> && npm test      # node --test, ohne laufende Infrastruktur
+node tools/build-doc-page.js        # Doku-Seite aus dem Markdown neu erzeugen
 ```
 
 ## Dokumentation
 - Funktionsüberblick: [FEATURES.md](FEATURES.md)
-- Konventionen, Architektur, Dateiübersicht: [CLAUDE.md](CLAUDE.md)
+- Architektur, Klassen, Funktionen, Schnittstellen (mit Diagrammen):
+  [docs/SOFTWARE-ARCHITEKTUR.md](docs/SOFTWARE-ARCHITEKTUR.md) — gerendert im
+  Panel unter **DOKU** (`/admin/doku.html`, erzeugt mit `node tools/build-doc-page.js`)
+- Konventionen und Entscheidungen: [CLAUDE.md](CLAUDE.md)
 - Deploy, Produktiv-DB, Runbook: [docs/BETRIEB.md](docs/BETRIEB.md)
 - Recht, DSGVO, Zustimmungslogik: [docs/RECHT-UND-DATENSCHUTZ.md](docs/RECHT-UND-DATENSCHUTZ.md)
 - Repo-Herkunft, Altbestände, Neuaufsetzen: [docs/PROJEKTHISTORIE.md](docs/PROJEKTHISTORIE.md)
