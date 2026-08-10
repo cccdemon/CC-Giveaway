@@ -13,7 +13,7 @@ keine Abhängigkeit zu Spacefight, Alerts, HUD-Chat, Gamescenes, Stats oder Haul
 ## Mechanik (Spec)
 - **Viewtime pro Zuschauer.** **Regeln (Coin-Basis, Follow-Min, Chat-Bonus) gelten PRO GIVEAWAY**: Team-Keys (`cfgDrawMinSec` etc.) sind nur noch die **Vorgaben** — beim Öffnen kopiert `copyCfgToInstance()` sie in `t:<team>:g:<sid>:cfg:*` (nur Accrual-Cores). Die Regeln-Karte bearbeitet das laufende gewählte Giveaway (live, nur dieses), bei geschlossenem die Vorgaben (`gw_get/set_stream_settings` + `giveawayId`, Ack-Feld `scope`). Getter: `getCoinBaseSec(teamId, gid)`, `getFollowMin(teamId, gid)`, `getChatConfig(teamId, gid)` — per-gid-Key vor Team-Fallback. Coin-Basis = auch Lostopf-Schwelle (≥1 Coin). KI-Bewertung + Auto-Pause/Resume bleiben team-weit.
 - **Chat = selber Pott wie Viewtime, als BONUS.** Jede sinnvolle Nachricht ab der konfigurierten Mindestlänge (Default >3 Wörter, `CHAT_MIN_WORDS=4`) gibt den konfigurierten Viewtime-Bonus (Default +2s, `CHAT_BONUS_SEC=2`), Cooldown gegen Spam. Chat ist NICHT Pflicht — reine Zuschauzeit zählt nach den konfigurierten Regeln voll (Coins = watchSec/coinBase). Viewtime-Multiplier gilt auch für den Bonus (×2 → +4s).
-- **KI-Bewertung (optional, per Team):** `services/giveaway/cores/chat-ai.js` ersetzt NUR die Wortzählung — Provider `anthropic|openai|gemini`, Modell + eigener API-Key pro Team (verschlüsselt in `app_secrets`, `encryptKey`/`decryptKey`). **fail-open**: Timeout (`TIMEOUT_MS=4000`) oder Fehler → zurück auf Wortregel, Chat blockiert nie. Antwort ist ein Wort (JA/NEIN), Cache pro (Provider, Modell, Nachricht). Keys nie loggen, nie exportieren, nie ins Audit.
+- **KI-Bewertung (optional, per Team):** `services/giveaway/cores/chat-ai.js` ersetzt NUR die Wortzählung — Provider `anthropic|openai|gemini`, Modell + eigener API-Key pro Team (verschlüsselt in `teams.ai_key_enc` unter dem Master aus `app_secrets`, `encryptKey`/`decryptKey`). **fail-open**: Timeout (`TIMEOUT_MS=4000`) oder Fehler → zurück auf Wortregel, Chat blockiert nie. Antwort ist ein Wort (JA/NEIN), Cache pro (Provider, Modell, Nachricht). Keys nie loggen, nie exportieren, nie ins Audit.
 - **Viewtime-Multiplier:** Admin kann zeitlich begrenzt beschleunigen („nächste 15 min doppelte Viewtime", gilt auch für Chat) — time-boxed Faktor auf Tick + Chat-Bonus.
 - **Teilnahme (Kampagne):** Keyword im Chat registriert (= Zustimmung Teilnahmebedingungen) — das kann jeder. **Berechtigung (`eligible`) ist eine separate Prüfung:** registered + Follows ≥ followMin (konfigurierbar, Default 2) + ≥1 Coin. Lurken MIT Follow sammelt Coins und erhöht die Chance; Chat gibt nur den Zusatzbonus.
 - **Ziehung je Mechanik:** Kampagne = Zufall gewichtet nach Coins; Sofortverlosung = Gewicht 1 für alle Berechtigten; TicketBuy = je Preis, gewichtet nach Einsatz; Contest = höchste Punktsumme, Zufall NUR bei Gleichstand. Gewinner 14 Tage Meldefrist, sonst kontrollierte Ersatzziehung (`rerollOf`, nie automatisch).
@@ -331,7 +331,7 @@ Wertebereichen — Referenz bei Config-Fragen) · `docs/BETRIEB.md` ·
 Architekturdiagramme — Nachschlagewerk) ·
 `docs/RECHT-UND-DATENSCHUTZ.md` · `docs/PROJEKTHISTORIE.md` ·
 `docs/ANLEITUNG-TEILNEHMER.md` · `docs/TEILNAHMEBEDINGUNGEN.md` ·
-`docs/ARCHITEKTUR-CORES.md` (Entwurf austauschbarer Mechaniken) ·
+`docs/ARCHITEKTUR-CORES.md` (Core-Vertrag, verbindlich) ·
 `streamerbot/CAMPAIGN_SETUP.md`.
 Öffentlich (ohne Login): `services/admin/public-docs/roadmap.md` +
 `changelog.md` → `/admin/roadmap.html`, `/admin/changelog.html`. Nutzerrelevante
@@ -382,6 +382,57 @@ Tests in `giveaway` (`watchtime`, `cores` — Gleichheit gegen eingefrorene Alt-
 (`makeRedis()` in `watchtime.test.js`), `fetch` ist gestubbt (`stubFetch()` in
 `chat-ai.test.js`). Also kein `docker compose up` vor `npm test`. Neue Tests genauso
 halten — was Redis/pg/Netz wirklich braucht, gehört nicht in `tests/`.
+
+## ENV (was Verhalten schaltet)
+Zwei Vorlagen: `.env.example` (lokal, HTTP) und `.env.team.example` (prod, LXC 103).
+**Wirksam ist nur, was `docker-compose.yml` als `environment:` durchreicht** — eine
+Variable in `.env`, die dort fehlt, erreicht den Container nie. Alle Werte unten sind
+gegen den Quelltext geprueft, Default in Klammern:
+- `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` (admin + giveaway, leer): **Pflicht.**
+  Die komplette Auth laeuft ueber Twitch-OAuth, ohne die beiden kommt niemand rein.
+- `SESSION_SECRET` (admin, leer): leer heisst nicht „aus", sondern
+  `randomBytes(32)` bei jedem Start (`server.js:69`). Jeder Neustart wirft alle
+  Sessions raus.
+- `INTERNAL_API_KEY` (admin + giveaway, leer): leer legt
+  `/internal/team/cleanup` und `/internal/ingest-pulse` still. Team-Loeschung laesst
+  dann den Live-State in Redis stehen, „Betrieb & Diagnose" zeigt keinen Ingest-Puls.
+- `ALLOW_SIM` (giveaway, `false`): Test-Console-Sim. Erzeugt echte
+  `watchtime_events`, gehoert nie auf einen Server mit laufender Verlosung.
+- `PLATFORM_ADMINS` (admin, `justcallmedeimos`): Superadmin-Bootstrap, komma-getrennt.
+- `COOKIE_SECURE` (admin, `true`): nur fuer lokales HTTP auf `false`.
+- `DISCORD_FEEDBACK_WEBHOOK` (admin, leer): leer = Rueckmeldungen nur in der DB.
+- `ADMIN_PUBLIC_URL` (admin, `https://team.raumdock.org`): Basis-URL fuer
+  Login-Redirects und Links des admin-Service.
+
+Nicht ueber `.env` steuerbar, auch wenn der Code sie liest, weil
+`docker-compose.yml` sie nicht durchreicht: `MAX_PARALLEL_GIVEAWAYS` (`4`) und
+`PUBLIC_URL` (`https://team.raumdock.org`) im giveaway-Service haengen fest am
+Default, geprueft am laufenden Container. Solange die Domain stimmt und 4 reicht,
+ist das folgenlos; wer daran dreht, braucht zuerst einen `environment:`-Eintrag.
+`REDIS_DB` ist in `docker-compose.yml` fest auf `"0"` (bridge und giveaway); DB 1 gilt
+nur fuer Testcode ausserhalb Docker. `ADMIN_URL`, `GIVEAWAY_URL`, `BRIDGE_URL` sind
+Service-interne Namen. Der KI-Master-Schluessel ist bewusst **kein** ENV, siehe unten.
+
+## Repo-Fakten (bevor du suchst)
+- **Kein Linter, kein Formatter, keine CI, kein Build-Schritt.** Einzige Prüfung ist
+  `node --test`; kein root-`package.json`, kein ESLint/Prettier, kein `.github/`.
+  `public/*.js` geht unverändert an den Browser (kein Bundler, kein Transpiler),
+  darum dort Plain-ES5/ES2017-Stil ohne Imports beibehalten.
+- **Vier grosse Dateien, immer erst greppen:** `services/giveaway/server.js` (~3.800 Z.),
+  `services/giveaway/public/giveaway-admin.js` (~2.200), `services/giveaway/watchtime.js`
+  (~1.900), `services/admin/server.js` (~1.800). Alles andere ist klein.
+- **`blog/` ist ein fremdes, verschachteltes Git-Repo** (Portfolio chele.bi, Next.js 14 +
+  Bun + Biome, eigene `blog/CLAUDE.md`) und im Haupt-Repo untracked. Es hat nichts mit
+  CC-Giveaway zu tun: nicht mitcommitten, nicht mitrefactoren, Suchen nach Möglichkeit
+  ausschliessen.
+- **Entwicklungsrechner ist Windows, Laufzeit ist Linux im Container.** Shell-Snippets
+  fuer den Betrieb (`docker compose`, `pct exec`) laufen auf dem Zielhost, nicht lokal.
+- **Zwei Ebenen bei den KI-Keys:** der Team-Key liegt verschluesselt in
+  `teams.ai_key_enc`, der Master-Schluessel als Zeile `key='ai_master'` in `app_secrets`
+  (Lazy-Anlage beim ersten Zugriff, `AI_SECRET` in `services/giveaway/server.js`).
+  Abgeleitet wird mit `scryptSync(secret, 'cc-giveaway-ai', 32)`, AES-256-GCM in
+  `cores/chat-ai.js`. Rotation nur ueber `rotateMasterSecret()`, das in einer TX alle
+  Team-Keys neu verschluesselt; wer `app_secrets` von Hand anfasst, macht sie unlesbar.
 
 ## Response Rules
 - Terse. Kein Filler, keine „was ich geändert habe"-Zusammenfassung (Diff ist sichtbar).
