@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RDOC Giveaway: Betrieb &amp; Diagnose</title>
+<link rel="stylesheet" href="/admin/rdoc.css">
+<script src="/admin/rdoc-theme.js"></script>
+<link rel="icon" href="/admin/favicon.ico" sizes="32x32">
+<link rel="icon" href="/admin/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/admin/icons/apple-touch-icon.png">
+<link rel="manifest" href="/admin/site.webmanifest">
+<meta name="theme-color" content="#121416" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F2F0" media="(prefers-color-scheme: light)">
+<style>
+  .btwrap { max-width:1180px; margin:24px auto; padding:0 16px; }
+  .panel { background:var(--rdoc-surface); border:1px solid var(--rdoc-border); border-radius:8px; padding:20px; margin-bottom:20px; }
+  .panel h2 { font-family:var(--rdoc-font-mono); font-weight:400; font-size:13px; letter-spacing:0.07em; color:var(--rdoc-text); margin-bottom:6px; text-transform:uppercase; }
+  .panel .sub { font-size:12px; color:var(--rdoc-text-muted); margin-bottom:14px; }
+  .stats { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; }
+  .stat { background:var(--rdoc-bg); border:1px solid var(--rdoc-border); border-radius:8px; padding:14px; }
+  .stat .v { font-family:var(--rdoc-font-display); font-weight:400; font-size:23px; color:var(--rdoc-text); line-height:1; }
+  .stat .v.warn { color:var(--rdoc-warning); }
+  .stat .v.err  { color:var(--rdoc-error); }
+  .stat .l { font-size:10px; letter-spacing:1.2px; color:var(--rdoc-text-muted); text-transform:uppercase; margin-top:6px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:8px; border-bottom:1px solid var(--rdoc-border); vertical-align:top; }
+  th { color:var(--rdoc-text-muted); font-size:11px; letter-spacing:1px; text-transform:uppercase; }
+  td.mono, .mono { font-family:var(--rdoc-font-mono); font-size:12px; }
+  .badge { font-family:var(--rdoc-font-mono); font-size:11px; padding:2px 7px; border-radius:4px; }
+  .badge.ok   { background:var(--rdoc-tint-success); color:var(--rdoc-success); }
+  .badge.warn { background:var(--rdoc-tint-warning); color:var(--rdoc-warning); }
+  .badge.err  { background:var(--rdoc-tint-error);   color:var(--rdoc-error); }
+  .detail { color:var(--rdoc-text-muted); font-size:11.5px; word-break:break-word; }
+  button.ghost { background:transparent; border:1px solid var(--rdoc-line-on-surface); color:var(--rdoc-text-muted); padding:6px 12px; border-radius:6px; cursor:pointer; font-size:12px; }
+  button.ghost:hover { border-color:var(--rdoc-border-strong); color:var(--rdoc-text); }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  .msg { margin-top:10px; font-size:12px; min-height:15px; }
+  .msg.err { color:var(--rdoc-error); }
+  .scroll { max-height:420px; overflow:auto; }
+  @media(max-width:900px){ .stats { grid-template-columns:repeat(2,1fr); } }
+</style>
+</head>
+<body data-app>
+<script src="/giveaway/cc-defs.js"></script>
+<script src="admin-shared.js"></script>
+<div class="btwrap">
+
+  <div class="panel">
+    <h2>Dienste</h2>
+    <div class="sub">Erreichbarkeit der Container laut <span class="mono">/health</span>. Rot heißt: der Dienst antwortet nicht oder meldet einen Fehler.</div>
+    <div class="row">
+      <button class="ghost" onclick="loadAll()">↻ Alles neu laden</button>
+      <span class="mono" id="stamp"></span>
+    </div>
+    <div id="health">lädt…</div>
+  </div>
+
+  <div class="panel">
+    <h2>Zuschauer-Meldungen je Kanal</h2>
+    <div class="sub">Ohne <span class="mono">viewer_tick</span> läuft keine Zuschauzeit auf und die Sofortverlosung zieht ins Leere. Quelle ist die Streamerbot-Aktion <span class="mono">GW_ViewerTick</span> (Trigger: Twitch → General → Present Viewers, sendet nur bei laufendem OBS).</div>
+    <div id="ingest">lädt…</div>
+    <div class="msg" id="ingestMsg"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Betrieb in Zahlen</h2>
+    <div class="sub">Plattformweit. Fehler und Ablehnungen beziehen sich auf die letzten 24 Stunden.</div>
+    <div class="stats" id="stats"></div>
+    <div class="msg" id="statsMsg"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Fehler &amp; Ablehnungen</h2>
+    <div class="sub">Einträge aus dem Protokoll mit Ergebnis <span class="mono">error</span> oder <span class="mono">denied</span> — über alle Teams. Das vollständige Protokoll steht je Team im Audit-Log.</div>
+    <div class="row">
+      <button class="ghost" onclick="setFilter('')">Alle</button>
+      <button class="ghost" onclick="setFilter('error')">Nur Fehler</button>
+      <button class="ghost" onclick="setFilter('denied')">Nur Ablehnungen</button>
+      <span class="mono" id="errFilter">alle</span>
+    </div>
+    <div class="scroll"><table>
+      <thead><tr><th>Zeit</th><th>Team</th><th>Akteur</th><th>Vorgang</th><th>Ergebnis</th><th>Detail</th></tr></thead>
+      <tbody id="errRows"><tr><td colspan="6" style="color:var(--rdoc-text-faint)">lädt…</td></tr></tbody>
+    </table></div>
+    <div class="msg" id="errMsg"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Rückmeldungen aus der Oberfläche</h2>
+    <div class="sub">Was Nutzer über <span class="mono">Fehler melden &amp; Idee schicken</span> geschickt haben.
+    <span class="mono">nicht zugestellt</span> heißt: gespeichert, aber der Discord-Kanal war nicht erreichbar.</div>
+    <div class="scroll"><table>
+      <thead><tr><th>Zeit</th><th>Von</th><th>Art</th><th>Seite</th><th>Nachricht</th><th>Discord</th></tr></thead>
+      <tbody id="fbRows"><tr><td colspan="6" style="color:var(--rdoc-text-faint)">lädt…</td></tr></tbody>
+    </table></div>
+    <div class="msg" id="fbMsg"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Streamerbot-Debugzeilen</h2>
+    <div class="sub">Meldungen der Actions (<span class="mono">cc_debug</span>). Die Tabelle wird bei jedem Stream-Start geleert — leer ist hier der Normalfall.</div>
+    <div class="scroll"><table>
+      <thead><tr><th>Zeit</th><th>Quelle</th><th>Stufe</th><th>Benutzer</th><th>Info</th></tr></thead>
+      <tbody id="dbgRows"><tr><td colspan="5" style="color:var(--rdoc-text-faint)">lädt…</td></tr></tbody>
+    </table></div>
+    <div class="msg" id="dbgMsg"></div>
+  </div>
+
+</div>
+<script src="betrieb.js"></script>
+</body>
+</html>

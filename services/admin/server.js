@@ -1036,6 +1036,86 @@ app.get('/api/me/data', async (req, res) => {
   }
 });
 
+// ── Rückmeldung: Fehler melden / Idee schicken ──────────────
+// Jede eingeloggte Person darf schreiben. Der Text landet in PG (Nachweis,
+// auch wenn Discord klemmt) und geht per Webhook in den Discord-Kanal des
+// Betreiberteams — derselbe Kanal wie beim Fleetplanner.
+// Ohne DISCORD_FEEDBACK_WEBHOOK wird nur gespeichert, nichts verschickt.
+const FEEDBACK_KINDS = { bug: '🐛 Fehler', idea: '💡 Idee', question: '❓ Frage' };
+const feedbackSeen = new Map();   // login -> ts der letzten Meldung (Bremse)
+
+app.post('/api/feedback', express.json({ limit: '32kb' }), async (req, res) => {
+  const sess = sessionFromReq(req);
+  if (!sess) return res.status(401).json({ error: 'unauthenticated' });
+  const kind = FEEDBACK_KINDS[req.body && req.body.kind] ? req.body.kind : null;
+  const message = String((req.body && req.body.message) || '').trim().slice(0, 2000);
+  const page = String((req.body && req.body.page) || '').trim().slice(0, 200);
+  if (!kind) return res.status(400).json({ error: 'bad_kind' });
+  if (message.length < 10) return res.status(400).json({ error: 'too_short' });
+  // Eine Meldung pro Minute je Person — gegen versehentliche Doppelklicks
+  // und gegen Flutung des Discord-Kanals.
+  const last = feedbackSeen.get(sess.user) || 0;
+  if (Date.now() - last < 60000) return res.status(429).json({ error: 'rate_limited' });
+  feedbackSeen.set(sess.user, Date.now());
+
+  let id = null;
+  try {
+    const r = await pg.query(
+      `INSERT INTO feedback (login, kind, page, message) VALUES ($1,$2,$3,$4) RETURNING id`,
+      [sess.user, kind, page || null, message]);
+    id = r.rows[0].id;
+  } catch (e) { logErr('Feedback', 'insert:', e.message); }
+
+  const hook = process.env.DISCORD_FEEDBACK_WEBHOOK || '';
+  if (!hook) {
+    if (id) await pg.query(`UPDATE feedback SET error=$1 WHERE id=$2`,
+      ['kein DISCORD_FEEDBACK_WEBHOOK gesetzt', id]).catch(() => {});
+    await auditPlatform(sess.user, 'feedback', kind, 'ok', { id, delivered: false });
+    return res.json({ ok: true, delivered: false, id });
+  }
+  try {
+    const body = {
+      username: 'RDOC Giveaway',
+      embeds: [{
+        title: FEEDBACK_KINDS[kind] + (id ? ' #' + id : ''),
+        description: message,
+        color: kind === 'bug' ? 0xC0392B : kind === 'idea' ? 0xC48A4A : 0x5A7D9A,
+        fields: [
+          { name: 'Von', value: sess.user, inline: true },
+          { name: 'Seite', value: page || 'unbekannt', inline: true },
+        ],
+        timestamp: new Date().toISOString(),
+      }],
+    };
+    const r = await fetch(hook, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(6000),
+    });
+    if (!r.ok) throw new Error('Discord HTTP ' + r.status);
+    if (id) await pg.query(`UPDATE feedback SET delivered=TRUE WHERE id=$1`, [id]).catch(() => {});
+    await auditPlatform(sess.user, 'feedback', kind, 'ok', { id, delivered: true });
+    res.json({ ok: true, delivered: true, id });
+  } catch (e) {
+    logErr('Feedback', 'discord:', e.message);
+    if (id) await pg.query(`UPDATE feedback SET error=$1 WHERE id=$2`, [e.message.slice(0, 200), id]).catch(() => {});
+    await auditPlatform(sess.user, 'feedback', kind, 'error', { id, error: e.message });
+    // Gespeichert ist gespeichert — die Meldung ist nicht verloren.
+    res.json({ ok: true, delivered: false, id, note: 'gespeichert, Zustellung fehlgeschlagen' });
+  }
+});
+
+// Eingegangene Rückmeldungen (Betriebsseite).
+app.get('/api/platform/feedback', async (req, res) => {
+  if (!requireSuperadmin(req, res)) return;
+  try {
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const r = await pg.query(
+      `SELECT id, ts, login, kind, page, message, delivered, error
+         FROM feedback ORDER BY id DESC LIMIT $1`, [limit]);
+    res.json({ rows: r.rows });
+  } catch (e) { res.json({ rows: [], error: e.message }); }
+});
+
 app.post('/api/me/delete', async (req, res) => {
   const s = requireSession(req, res); if (!s) return;
   const u = sanitizeViewer(s.user);
@@ -1123,6 +1203,75 @@ app.get('/api/platform/stats', async (req, res) => {
     ]);
     res.json({ teamsActive, teamsDeactivated, streamers, viewers, openGiveaways });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Betriebsseite (/admin/betrieb.html), nur Superadmin ────────
+// Drei Fragen, die im Betrieb wirklich gestellt werden: laufen die Dienste,
+// kommen Zuschauer-Meldungen an, und was ist zuletzt schiefgegangen.
+
+// Fehler und Ablehnungen aus dem Protokoll — teamübergreifend, weil genau
+// das der Blick des Plattform-Betreibers ist.
+app.get('/api/platform/errors', async (req, res) => {
+  if (!requireSuperadmin(req, res)) return;
+  try {
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 60));
+    const only = req.query.result === 'error' || req.query.result === 'denied'
+      ? [req.query.result] : ['error', 'denied'];
+    const r = await pg.query(`
+      SELECT a.id, a.ts, a.team_id, t.name AS team_name, a.actor, a.action, a.target,
+             a.result, a.detail
+        FROM audit_log a LEFT JOIN teams t ON t.id = a.team_id
+       WHERE a.result = ANY($1) ORDER BY a.id DESC LIMIT $2`, [only, limit]);
+    res.json({ rows: r.rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Kennzahlen zum laufenden Betrieb (die Team-/Streamer-Zähler stehen in
+// /api/platform/stats — hier geht es um Aktivität und Rückstand).
+app.get('/api/platform/activity', async (req, res) => {
+  if (!requireSuperadmin(req, res)) return;
+  try {
+    const n = (sql) => pg.query(sql).then(r => r.rows[0].n).catch(() => null);
+    const [giveawaysOpen, drawsWeek, claimsOpen, claimsOverdue, eventsDay, flagsWeek,
+           errorsDay, deniedDay, wagersWeek, entriesWeek] = await Promise.all([
+      n(`SELECT COUNT(*)::int AS n FROM sessions WHERE status IN ('open','paused')`),
+      n(`SELECT COUNT(*)::int AS n FROM giveaway_draws WHERE drawn_at > NOW() - INTERVAL '7 days' AND NOT is_test`),
+      n(`SELECT COUNT(*)::int AS n FROM draw_claims WHERE status='open'`),
+      n(`SELECT COUNT(*)::int AS n FROM draw_claims WHERE status='open' AND deadline_at < NOW()`),
+      n(`SELECT COUNT(*)::int AS n FROM watchtime_events WHERE ts > NOW() - INTERVAL '24 hours'`),
+      n(`SELECT COUNT(*)::int AS n FROM abuse_flags WHERE last_seen > NOW() - INTERVAL '7 days'`),
+      n(`SELECT COUNT(*)::int AS n FROM audit_log WHERE result='error' AND ts > NOW() - INTERVAL '24 hours'`),
+      n(`SELECT COUNT(*)::int AS n FROM audit_log WHERE result='denied' AND ts > NOW() - INTERVAL '24 hours'`),
+      n(`SELECT COUNT(*)::int AS n FROM prize_wagers WHERE created_at > NOW() - INTERVAL '7 days'`),
+      n(`SELECT COUNT(*)::int AS n FROM contest_entries WHERE created_at > NOW() - INTERVAL '7 days'`),
+    ]);
+    res.json({ giveawaysOpen, drawsWeek, claimsOpen, claimsOverdue, eventsDay, flagsWeek,
+               errorsDay, deniedDay, wagersWeek, entriesWeek });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Ingest-Puls je Kanal — kommt aus dem giveaway-Service (Redis liegt dort).
+app.get('/api/platform/ingest', async (req, res) => {
+  if (!requireSuperadmin(req, res)) return;
+  const key = process.env.INTERNAL_API_KEY || '';
+  if (!key) return res.json({ teams: [], error: 'INTERNAL_API_KEY fehlt — Puls nicht abrufbar' });
+  try {
+    const r = await fetch(CFG.services.giveaway + '/internal/ingest-pulse',
+      { headers: { 'X-Internal-Key': key }, signal: AbortSignal.timeout(5000) });
+    if (!r.ok) return res.status(502).json({ error: 'giveaway ' + r.status });
+    res.json(await r.json());
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+// Debug-Zeilen der Streamerbot-Actions (cc_debug), jüngste zuerst.
+app.get('/api/platform/debuglog', async (req, res) => {
+  if (!requireSuperadmin(req, res)) return;
+  try {
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const r = await pg.query(
+      `SELECT id, ts, source, stage, username, info FROM debug_log ORDER BY id DESC LIMIT $1`, [limit]);
+    res.json({ rows: r.rows });
+  } catch (e) { res.json({ rows: [], error: e.message }); }
 });
 
 app.get('/api/platform/teams', async (req, res) => {
@@ -1552,6 +1701,21 @@ async function ensureSchema() {
       acknowledged_by TEXT
     )`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_pw_subject ON platform_warnings(subject_type, subject_id)`);
+  // Rückmeldungen aus der Oberfläche (Fehler/Wunsch). Wird zusätzlich in den
+  // Discord-Kanal des Betreiberteams geschickt; die Zeile hier bleibt auch
+  // dann erhalten, wenn Discord gerade nicht erreichbar ist.
+  await pg.query(`
+    CREATE TABLE IF NOT EXISTS feedback (
+      id         BIGSERIAL PRIMARY KEY,
+      ts         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      login      TEXT NOT NULL,
+      kind       TEXT NOT NULL CHECK (kind IN ('bug','idea','question')),
+      page       TEXT,
+      message    TEXT NOT NULL,
+      delivered  BOOLEAN NOT NULL DEFAULT FALSE,
+      error      TEXT
+    )`);
+  await pg.query(`CREATE INDEX IF NOT EXISTS idx_feedback_ts ON feedback(ts DESC)`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_tm_login ON team_members(login)`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_teams_code ON teams(invite_code)`);
   const { rows } = await pg.query('SELECT COUNT(*)::int AS n FROM admin_users');

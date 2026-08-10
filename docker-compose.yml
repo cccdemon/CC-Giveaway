@@ -158,6 +158,9 @@ services:
       TWITCH_CLIENT_SECRET: ${TWITCH_CLIENT_SECRET:-}
       ADMIN_PUBLIC_URL:     ${ADMIN_PUBLIC_URL:-https://team.raumdock.org}
       PLATFORM_ADMINS:      ${PLATFORM_ADMINS:-justcallmedeimos}
+      # Discord-Webhook fuer Rueckmeldungen aus der Oberflaeche (gleicher Kanal
+      # wie beim Fleetplanner). Leer = Meldungen werden nur gespeichert.
+      DISCORD_FEEDBACK_WEBHOOK: ${DISCORD_FEEDBACK_WEBHOOK:-}
       TZ: Europe/Berlin
     depends_on:
       giveaway:

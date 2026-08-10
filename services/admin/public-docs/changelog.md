@@ -5,6 +5,28 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ---
 
+## 10. August 2026
+
+### Fehler melden und Ideen schicken
+
+Neu im Menü unter Tools: **🐛 Fehler melden & Idee schicken**. Drei Arten
+(Fehler, Idee, Frage), ein Textfeld, fertig — die Meldung geht direkt in den
+Discord-Kanal des Betreiberteams und wird zusätzlich gespeichert, damit nichts
+verloren geht, wenn Discord gerade klemmt. Mitgeschickt werden nur dein
+Twitch-Login, die genannte Seite, dein Text und der Zeitpunkt.
+
+### Eigener ADMIN-Menüpunkt mit Betriebsübersicht
+
+Die Werkzeuge der Plattform-Verwaltung stecken nicht mehr im Tools-Menü,
+sondern in einem eigenen Punkt **ADMIN** — sichtbar nur für
+Plattform-Administratoren. Dort gibt es neben Plattform-Verwaltung, Benutzern
+und Betroffenenrechten die neue Seite **Betrieb & Diagnose**: Zustand der
+Dienste, Zuschauer-Meldungen je Kanal (kommen überhaupt Ticks an?),
+Kennzahlen zum laufenden Betrieb, die letzten Fehler und Ablehnungen aus dem
+Protokoll, die eingegangenen Rückmeldungen und die Debugzeilen aus Streamerbot.
+
+---
+
 ## 9. August 2026
 
 ### Startseite des Panels ist jetzt eine Übersicht

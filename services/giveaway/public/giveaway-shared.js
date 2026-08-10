@@ -266,15 +266,23 @@
     { href:'/giveaway/claim.html', label:'Gewinn melden', ic:'🏆' },
     { href:'/giveaway/wager.html', label:'Lose setzen', ic:'🎟' },
     { href:'/giveaway/contest.html', label:'Screenshot-Contest', ic:'📸' },
-    { href:'/admin/users.html', label:'Benutzer', ic:'👥', admin:true },
-    { href:'/admin/datenschutz-admin.html', label:'Betroffenenrechte', ic:'🛡', admin:true },
     { href:'/viewer/help',      label:'Anleitung', ic:'📖' },
     { href:'/admin/setup.html', label:'Setup-Guide', ic:'⚙' },
+    { href:'/admin/feedback.html', label:'Fehler melden & Idee schicken', ic:'🐛' },
     { href:'/admin/changelog.html', label:'Änderungsprotokoll', ic:'📋' },
-    { href:'/admin/roadmap.html', label:'Roadmap', ic:'🧭' },
-    { head:'Diagnose', admin:true },
-    { href:'/admin/giveaway-test.html',     label:'Test Console', ic:'▶', sub:'DEV', admin:true },
-    { href:'/admin/tests/test-runner.html', label:'Test Suite',   ic:'✓', sub:'DEV', admin:true }
+    { href:'/admin/roadmap.html', label:'Roadmap', ic:'🧭' }
+  ];
+  // Eigener ADMIN-Punkt (nicht unter Tools): Plattform-Verwaltung, Betrieb
+  // und die Entwicklerwerkzeuge. Das ganze Menue ist superadmin-only.
+  var ADMIN_MENU = [
+    { head:'Plattform' },
+    { href:'/admin/platform.html', label:'Plattform-Verwaltung', ic:'🏛' },
+    { href:'/admin/betrieb.html', label:'Betrieb & Diagnose', ic:'🩺' },
+    { href:'/admin/users.html', label:'Benutzer', ic:'👥' },
+    { href:'/admin/datenschutz-admin.html', label:'Betroffenenrechte', ic:'🛡' },
+    { head:'Diagnose' },
+    { href:'/admin/giveaway-test.html',     label:'Test Console', ic:'▶', sub:'DEV' },
+    { href:'/admin/tests/test-runner.html', label:'Test Suite',   ic:'✓', sub:'DEV' }
   ];
   var OBS = [
     { href:'/giveaway/giveaway-overlay.html', label:'Gewinner-Overlay', ic:'🎁' },
@@ -308,6 +316,7 @@
     '<div class="gwnav-primary">' + prim +
       '<div class="gwnav-sep"></div>' +
       '<div class="gwnav-drop" data-drop="tools"><div class="gwnav-item">'+ICON.tools+'<span class="lbl">TOOLS</span><span class="gwnav-caret">▾</span></div><div class="gwnav-menu">'+menu(TOOLS,false)+'</div></div>' +
+      '<div class="gwnav-drop gwnav-adminonly" data-drop="admin" style="display:none"><div class="gwnav-item">⚙<span class="lbl">ADMIN</span><span class="gwnav-caret">▾</span></div><div class="gwnav-menu">'+menu(ADMIN_MENU,false)+'</div></div>' +
       '<div class="gwnav-drop" data-drop="obs"><div class="gwnav-item">'+ICON.obs+'<span class="lbl">OBS</span><span class="gwnav-caret">▾</span></div><div class="gwnav-menu">'+menu(OBS,true)+'</div></div>' +
     '</div>' +
     '<div class="gwnav-spacer"></div>' +

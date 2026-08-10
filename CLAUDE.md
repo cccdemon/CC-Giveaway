@@ -177,6 +177,10 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 - `services/admin/server.js` — Login/OAuth, Teams, TOS-Gate, DSGVO, `PUB_DOCS`, Health
 - `services/admin/public/admin-shared.js` — `CC.validate`, Nav, Debug-Console, TOS-Overlay
 - `services/admin/public/teams.js` — Team-Verwaltung + Rechts-/Giveaway-Linkblock
+- `services/admin/public/betrieb.html|js` — Betrieb & Diagnose (nur Superadmin: Dienste-Health,
+  Ingest-Puls je Kanal, Kennzahlen, Fehler/Ablehnungen aus dem Audit, Rückmeldungen, debug_log)
+- `services/admin/public/feedback.html|js` — „Fehler melden & Idee schicken“ (jede eingeloggte Person;
+  Tabelle `feedback` + Discord-Webhook `DISCORD_FEEDBACK_WEBHOOK`, fail-safe: ohne Webhook nur speichern)
 - `services/admin/public/meine-daten.html` — DSGVO-Selbstauskunft/-Löschung
 - `services/admin/public/status.html` — Zuschauer-Status (`/viewer/status`) inkl. Rechtslinks
 - `services/admin/public/giveaway-test.js` + `public/tests/test-suite.js` — Browser-Test-Console (Sim-Events, hängt an `ALLOW_SIM`)
@@ -249,6 +253,19 @@ bleiben) · `POST :id/reactivate`. Alles auditiert (`auditTeam`, ohne IP). Live-
 Token-Widerruf läuft über `POST giveaway:/internal/team/cleanup` — Shared-Secret
 `INTERNAL_API_KEY` (ENV in BEIDEN Services, leer = Endpunkt tot, Wipe wird übersprungen).
 `gw_open`/`gw_open_instance`/Auto-Open prüfen `teamActive()` (deaktivierte Teams öffnen nichts).
+
+## Admin-Bereich (nur Superadmin)
+Eigener Menüpunkt **ADMIN** in beiden Shared-Libs (`ADMIN_MENU`, Dropdown mit
+`gwnav-adminonly`, sichtbar erst wenn `/auth/me` die Rolle `superadmin` meldet):
+Plattform-Verwaltung, Betrieb & Diagnose, Benutzer, Betroffenenrechte, Test
+Console, Test Suite. Superadmin = `streamers.is_platform_admin` (Bootstrap
+`PLATFORM_ADMINS`), durchgesetzt in Caddy (`@superadmin` →
+`/auth/verify-superadmin`) UND je Endpunkt (`requireSuperadmin`). **Neue
+Superadmin-Seite? Dann in die `@superadmin path`-Liste in
+`caddy/Caddyfile.team` eintragen** — sonst reicht ein normaler Login.
+APIs der Betriebsseite: `GET /admin/api/platform/activity|errors|ingest|debuglog|feedback`;
+der Ingest-Puls kommt über `GET giveaway:/internal/ingest-pulse` (Shared-Secret
+`INTERNAL_API_KEY`), weil der admin-Service kein Redis hat.
 
 ## Sicherheit
 - **Rollen-Entscheidung (Betreiber, 6.8.26):** `MEMBER_CMDS` bleiben wie sie sind —

@@ -51,7 +51,7 @@
         # Live-State, /health nennt interne Servicenamen und Fehlertexte.
         # Beides nur fuer Plattform-Administratoren. Laeuft NACH dem
         # allgemeinen Gate, prueft also nur noch die Rolle.
-        @superadmin path /health /redis-ui /redis-ui/* /admin/platform.html
+        @superadmin path /health /redis-ui /redis-ui/* /admin/platform.html /admin/betrieb.html /admin/betrieb.js
         forward_auth @superadmin admin:3005 {
             uri /auth/verify-superadmin
             method GET

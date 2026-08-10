@@ -209,7 +209,7 @@ function renderOverview() {
     if (!g.primary && g.coreLabel) sub.push(g.coreLabel);
     if (g.keyword && !g.primary && g.name) sub.push('„' + g.keyword + '"');
     if (g.primary && g.keyword) sub.push('Keyword „' + g.keyword + '"');
-    if (Array.isArray(g.channels) && g.channels.length) sub.push(g.channels.map(maskName).join(', '));
+    if (Array.isArray(g.channels) && g.channels.length) sub.push(g.channels.join(', '));
     var start = fmtGwStart(g.startedAt);
     if (start) sub.push('seit ' + start);
     return '<div class="ov-card" onclick="gwPickGiveaway(\'' + esc(g.primary ? '' : g.gid) + '\')">'
@@ -291,7 +291,7 @@ function renderIngestWarn(pulse) {
   var dead = pulse.filter(function(p){ return p.stale; });
   if (!dead.length) { el.style.display = 'none'; return; }
   var names = dead.map(function(p){
-    return maskName(p.channel) + (p.lastTickAgo === null ? ' (nie)' : ' (' + fmtDurShort(p.lastTickAgo) + ' still)');
+    return esc(p.channel || '?') + (p.lastTickAgo === null ? ' (noch nie)' : ' (' + fmtDurShort(p.lastTickAgo) + ' still)');
   }).join(', ');
   el.innerHTML = '⚠ Keine Zuschauer-Meldungen von: ' + names
     + ' — Streamerbot-Aktion <b>GW_ViewerTick</b> prüfen. Ohne diese Meldungen ist niemand „anwesend": '
@@ -1119,7 +1119,7 @@ function handle(msg) {
         log('Anmeldefenster offen: ' + msg.windowSec + 's', 'gold');
         renderIngestWarn(msg.ingestPulse);
         if (msg.ingestStale && msg.ingestStale.length) {
-          alert('Fenster ist offen — ABER von ' + msg.ingestStale.map(maskName).join(', ')
+          alert('Fenster ist offen — ABER von ' + msg.ingestStale.join(', ')
               + ' kommen keine Zuschauer-Meldungen.\n\nOhne sie gilt niemand als anwesend und die Ziehung bleibt leer.'
               + '\nStreamerbot-Aktion GW_ViewerTick auf diesem Kanal prüfen.');
         }
@@ -1213,7 +1213,7 @@ function handle(msg) {
         if (msg.registered !== undefined) {
           nw += '\n\nAngemeldet: ' + msg.registered + ' · davon anwesend: ' + (msg.present || 0);
           if (msg.ingestStale && msg.ingestStale.length) {
-            nw += '\nKeine Zuschauer-Meldungen von: ' + msg.ingestStale.map(maskName).join(', ')
+            nw += '\nKeine Zuschauer-Meldungen von: ' + msg.ingestStale.join(', ')
                 + ' — Streamerbot-Aktion GW_ViewerTick prüft die Anwesenheit.';
           }
         }

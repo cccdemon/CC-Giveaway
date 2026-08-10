@@ -2462,6 +2462,26 @@ app.get('/api/prize/image/:token', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Interner Ingest-Puls (nur admin-Service, Shared-Secret) ──
+// Der admin-Service hat kein Redis, braucht die Zahlen aber für die
+// Betriebsseite: kommen von den Kanälen überhaupt viewer_tick an?
+app.get('/internal/ingest-pulse', async (req, res) => {
+  const key = process.env.INTERNAL_API_KEY || '';
+  if (!key || req.get('X-Internal-Key') !== key) return res.status(403).json({ error: 'forbidden' });
+  try {
+    const out = [];
+    const teams = await pg.query(
+      `SELECT id, name FROM teams WHERE deactivated_at IS NULL ORDER BY name`);
+    for (const t of teams.rows) {
+      const pulse = await wte.getIngestPulse(t.id);
+      if (!pulse.length) continue;
+      const running = (await wte.listGiveaways(t.id)).filter(g => !g.closed).length;
+      out.push({ teamId: t.id, teamName: t.name, running, channels: pulse });
+    }
+    res.json({ teams: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Interner Team-Cleanup (nur admin-Service, Shared-Secret) ──
 // Der admin-Service hat kein Redis — Live-State-Aufräumen (Team verlassen /
 // Kanal ändern / Team deaktivieren) läuft darum über diesen Endpunkt.
