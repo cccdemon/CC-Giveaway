@@ -272,9 +272,12 @@
           <span class="mr-lbl">× für</span>
           <input type="number" id="mult-minutes" value="15" min="1" max="1440" class="in-narrow" title="Minuten">
           <span class="mr-lbl">min</span>
-          <button class="btn btn-cyan btn-sm" onclick="startMultiplier()">START</button>
+          <button class="btn btn-cyan btn-sm" id="mult-start" onclick="startMultiplier()">START</button>
           <button class="btn btn-gold btn-sm" onclick="stopMultiplier()">STOP</button>
         </div>
+        <div class="cfg-hint" id="boost-offline-hint" style="display:none">Kein Kanal ist live mit
+        verbundenem Streamerbot — ohne Zuschauer-Ticks läuft die Boost-Zeit wirkungslos ab.
+        START ist deshalb gesperrt.</div>
       </div>
 
       <!-- Keyword (nicht bei Los-Giveaway/Contest — dort kein Keyword-Opt-in) -->

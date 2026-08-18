@@ -522,7 +522,7 @@ async function closeGiveaway(teamId) {
   await setSessionStatus(teamId, 'closed');
   await wte.closeGiveaway(teamId, sid);
   await redis.del(K.gwOnline(teamId), K.gwAutoPaused(teamId));
-  boostAnnounced.delete(teamId);
+  for (const k of [...boostAnnounced.keys()]) if (k.startsWith(teamId + '|')) boostAnnounced.delete(k);
   broadcastTeam(teamId, { event: 'gw_status', status: 'closed' });
   await announceTeam(teamId, '🔒 Das Giveaway ist GESCHLOSSEN — ab jetzt zählt keine Zuschauzeit mehr. '
     + 'Die Ziehung erfolgt gewichtet nach Punkten unter allen Zugelassenen. Viel Glück!');
@@ -709,16 +709,20 @@ async function announceTeam(teamId, message) {
 // Der Boost laeuft ueber ein Redis-TTL aus, es gibt also kein Ereignis dafuer.
 // Der Ticker merkt sich pro Team den angesagten Faktor und sagt das Ende an,
 // sobald er weg ist — sonst wundern sich die Zuschauer, warum es langsamer wird.
+// Schluessel `${teamId}|${gid||''}` — ein Boost gehoert seit Phase 2d zu einem
+// konkreten Giveaway. Wer hier nur je Team prueft, prueft den Primary und
+// erklaert Instanz-Boosts faelschlich fuer abgelaufen (Bug 18.8.26: Panel
+// zeigte Ende + Neustart im Wechsel, Chat sagte das Ende sofort an).
 const boostAnnounced = new Map();
 async function watchBoostExpiry() {
-  for (const [teamId, factor] of [...boostAnnounced]) {
+  for (const [key, b] of [...boostAnnounced]) {
     try {
-      const st = await wte.multiplierState(teamId);
-      if (st.factor > 1) { boostAnnounced.set(teamId, st.factor); continue; }
-      boostAnnounced.delete(teamId);
-      await announceTeam(teamId, `⚡ Giveaway-Boost (Faktor ×${factor}) ist abgelaufen — Zuschauzeit zählt wieder normal.`);
-      broadcastTeam(teamId, { event: 'gw_multiplier', factor: 1, secondsLeft: 0 });
-    } catch(e) { logErr('Boost', e.message); boostAnnounced.delete(teamId); }
+      const st = await wte.multiplierState(b.teamId, b.gid);   // gid null = Team-/Legacy-Key
+      if (st.factor > 1) { boostAnnounced.set(key, { ...b, factor: st.factor }); continue; }
+      boostAnnounced.delete(key);
+      await announceTeam(b.teamId, `⚡ Giveaway-Boost (Faktor ×${b.factor}) ist abgelaufen — Zuschauzeit zählt wieder normal.`);
+      broadcastTeam(b.teamId, { event: 'gw_multiplier', factor: 1, secondsLeft: 0, giveawayId: b.gid || null });
+    } catch(e) { logErr('Boost', e.message); boostAnnounced.delete(key); }
   }
 }
 
@@ -1770,17 +1774,34 @@ async function runAdminCmd(send, msg, meta, ctx) {
       // muss ein Giveaway meinen, nicht das Team — §6).
       const mGid = validGid(msg.giveawayId) || undefined;
       const prev = await wte.multiplierState(teamId, mGid);
+      // Boost einschalten nur, wenn der Ingest lebt: mindestens ein Kanal der
+      // Auswahl ist laut Streamerbot online UND liefert Ticks. Ohne Ticks
+      // wuerde der Boost nur die Uhr abbrennen (Betreiber 18.8.26).
+      // Ausschalten (Faktor 1) geht immer.
+      if ((parseFloat(msg.factor) || 1) > 1) {
+        const mInst = mGid ? (await wte.listGiveaways(teamId)).find(g => g.gid === mGid) : null;
+        let mPulse = [];
+        try { mPulse = await wte.getIngestPulse(teamId, mInst ? mInst.channels : null); }
+        catch (e) { logErr('GW', 'boostPulse:', e.message); }
+        if (!mPulse.some(x => x.online && !x.silent)) {
+          Object.assign(outcome, { blocked: 'ingest_offline' });
+          send({ event: 'gw_ack', type: 'error',
+                 error: 'Boost nicht möglich: kein Kanal ist live mit verbundenem Streamerbot — ohne Zuschauer-Ticks würde die Boost-Zeit wirkungslos ablaufen.' });
+          break;
+        }
+      }
       const r = await wte.setMultiplier(teamId, msg.factor, (parseInt(msg.minutes) || 0) * 60, mGid);
-      Object.assign(outcome, { factorBefore: prev.factor, factorAfter: r.factor, seconds: r.seconds });
-      broadcastTeam(teamId, { event: 'gw_multiplier', factor: r.factor, secondsLeft: r.seconds });
+      const bKey = `${teamId}|${r.gid || ''}`;
+      Object.assign(outcome, { factorBefore: prev.factor, factorAfter: r.factor, seconds: r.seconds, giveawayId: r.gid || null });
+      broadcastTeam(teamId, { event: 'gw_multiplier', factor: r.factor, secondsLeft: r.seconds, giveawayId: r.gid || null });
       // Ein Boost, den keiner mitbekommt, bringt niemanden zum Zuschauen.
       // Faktor 1 = aus, das ist derselbe Befehl und wird genauso angesagt.
       if (r.factor > 1) {
-        boostAnnounced.set(teamId, r.factor);
+        boostAnnounced.set(bKey, { teamId, gid: r.gid || null, factor: r.factor });
         await announceTeam(teamId, `⚡ Giveaway-Boost für ${Math.round(r.seconds / 60)} Minuten — Faktor ×${r.factor}`
           + ' auf Zuschauzeit UND Chat-Bonus. Jetzt zählt jede Minute mehr!');
       } else if (prev.factor > 1) {
-        boostAnnounced.delete(teamId);
+        boostAnnounced.delete(bKey);
         await announceTeam(teamId, '⚡ Giveaway-Boost vorzeitig beendet — Zuschauzeit zählt wieder normal.');
       }
       send({ event: 'gw_ack', type: 'multiplier_set', factor: r.factor, seconds: r.seconds });
@@ -1788,7 +1809,8 @@ async function runAdminCmd(send, msg, meta, ctx) {
     }
     case 'gw_get_multiplier': {
       const st = await wte.multiplierState(teamId, validGid(msg.giveawayId) || undefined);
-      send({ event: 'gw_multiplier', factor: st.factor, secondsLeft: st.secondsLeft });
+      send({ event: 'gw_multiplier', factor: st.factor, secondsLeft: st.secondsLeft,
+             giveawayId: validGid(msg.giveawayId) || null });
       break;
     }
     case 'gw_gen_ingest_token': {
@@ -2336,13 +2358,16 @@ const CLAIM_FIELDS = { real_name: 120, email: 190, street: 140, zip: 20, city: 9
 // sahen „kein Contest/kein Guthaben", obwohl eine Instanz lief. Darum
 // Union aus Index + team_members + allen Teams mit offener Instanz der
 // gesuchten Mechanik (die Teilnahme-Gates prüfen ohnehin je Nutzer).
-async function viewerTeams(user, coreId) {
+async function viewerTeams(user, coreId, { scanAll = true } = {}) {
   const set = new Set(await wte.getUserTeams(user));
   try {
     const r = await pg.query('SELECT team_id FROM team_members WHERE login=$1', [user]);
     for (const row of r.rows) set.add(row.team_id);
   } catch (e) { logErr('GW', 'viewerTeams members:', e.message); }
-  try {
+  // scanAll: auch fremde Teams mit passender offener Instanz (Contest-Seite).
+  // Die Setz-Seite laesst das WEG — dort zaehlt nur, wo die Person Daten hat
+  // oder Mitglied ist; sonst erschienen alle Los-Giveaways der Plattform.
+  if (scanAll) try {
     for (const t of await redis.smembers(K.openTeams())) {
       if (set.has(t)) continue;
       if ((await wte.listGiveaways(t)).some(g => !g.primary && !g.closed && g.core === coreId)) set.add(t);
@@ -2359,7 +2384,7 @@ app.get('/api/wager/state', async (req, res) => {
     const user = reqUser(req);
     if (!user) return res.status(401).json({ error: 'unauthenticated' });
     const out = [];
-    for (const t of await viewerTeams(user, 'CORE_TicketBuy')) {
+    for (const t of await viewerTeams(user, 'CORE_TicketBuy', { scanAll: false })) {
       const available = await wte.availableCredit(t, user);
       const insts = (await wte.listGiveaways(t)).filter(g => g.core === 'CORE_TicketBuy' && g.gid && !g.closed);
       const tName = await teamName(t);
@@ -2373,6 +2398,7 @@ app.get('/api/wager/state', async (req, res) => {
         const kw = await redis.get(K.gKw(t, g.gid));
         const registered = await redis.get(K.gReg(t, g.gid, user)) === '1';
         if (kw && !registered) continue;
+        if (!kw && !registered && !(available > 0)) continue;   // Altbestand: ohne Guthaben nichts anzeigbar
         visible++;
         const prizes = await wte.listPrizes(t, { gid: g.gid });
         const withStake = [];
@@ -3691,8 +3717,12 @@ async function seedBoostWatch() {
   try {
     const r = await pg.query('SELECT id FROM teams');
     for (const row of r.rows) {
-      const st = await wte.multiplierState(row.id);
-      if (st.factor > 1) boostAnnounced.set(row.id, st.factor);
+      const t = row.id;
+      const gids = [null, ...(await wte.listGiveaways(t)).filter(g => !g.closed && g.gid).map(g => g.gid)];
+      for (const gid of gids) {
+        const st = await wte.multiplierState(t, gid);
+        if (st.factor > 1) boostAnnounced.set(`${t}|${gid || ''}`, { teamId: t, gid, factor: st.factor });
+      }
     }
     if (boostAnnounced.size) log('Boost', `laufende Boosts uebernommen: ${boostAnnounced.size}`);
   } catch(e) { logErr('Boost', 'seed:', e.message); }

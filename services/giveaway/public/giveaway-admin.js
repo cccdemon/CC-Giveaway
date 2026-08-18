@@ -332,6 +332,7 @@ function instanceLabel(gid) {
 // (stale). Ist er offline, steht hier ein neutraler Hinweis — sonst
 // schlaegt das Panel jeden streamfreien Tag Alarm.
 function renderIngestWarn(pulse) {
+  updateBoostAvailability(pulse);
   var el = document.getElementById('ingest-warn');
   if (!el) return;
   if (!Array.isArray(pulse) || !pulse.length) { el.style.display = 'none'; return; }
@@ -1298,9 +1299,16 @@ function handle(msg) {
       break;
     }
 
-    case 'gw_multiplier':
-      updateMultiplierUI(parseFloat(msg.factor) || 1, parseInt(msg.secondsLeft) || 0);
+    case 'gw_multiplier': {
+      // Nur Zustand der EIGENEN Auswahl uebernehmen: Broadcasts anderer
+      // Instanzen (z.B. Ablauf-Watcher) wuerden sonst die Anzeige kippen —
+      // genau so sah der Boost-Bug vom 18.8.26 aus (Ende + Neustart im Wechsel).
+      var mgid = msg.giveawayId || null;
+      if (mgid === (currentGiveaway || null)) {
+        updateMultiplierUI(parseFloat(msg.factor) || 1, parseInt(msg.secondsLeft) || 0);
+      }
       break;
+    }
 
     case 'gw_join':
       if (msg.user) log('Neuer Teilnehmer: ' + msg.user, 'cyan');
@@ -1314,7 +1322,23 @@ function handle(msg) {
 }
 
 // ── Viewtime-Multiplier ───────────────────────────────────
+// Boost nur bei lebendem Ingest (Kanal online + Ticks kommen an). Haengt am
+// gw_data-Puls (10-s-Poll) — die Karte aktualisiert sich damit von selbst,
+// der Server prueft dieselbe Bedingung noch einmal (ingest_offline).
+var boostIngestLive = false;
+function updateBoostAvailability(pulse) {
+  boostIngestLive = Array.isArray(pulse) && pulse.some(function(p){ return p.online && !p.silent; });
+  var btn = document.getElementById('mult-start');
+  if (btn) { btn.disabled = !boostIngestLive; btn.title = boostIngestLive ? '' : 'Kein Kanal live mit verbundenem Streamerbot'; }
+  var hint = document.getElementById('boost-offline-hint');
+  if (hint) hint.style.display = boostIngestLive ? 'none' : '';
+}
+
 function startMultiplier() {
+  if (!boostIngestLive) {
+    log('Boost nicht möglich: kein Kanal live mit verbundenem Streamerbot.', 'red');
+    return;
+  }
   const factor  = CC.validate.sanitizeInt(document.getElementById('mult-factor').value, 1, 10, 2);
   const minutes = CC.validate.sanitizeInt(document.getElementById('mult-minutes').value, 1, 1440, 15);
   send({ event: 'gw_cmd', cmd: 'gw_set_multiplier', factor: factor, minutes: minutes });

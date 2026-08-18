@@ -7,6 +7,24 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 18. August 2026
 
+### Viewtime-Boost repariert und abgesichert
+
+Der Boost einer Instanz wurde vom Ablauf-Waechter faelschlich sofort fuer
+beendet erklaert (Chat sagte das Ende an, das Panel zeigte Ende und Neustart
+im Wechsel). Der Waechter prueft jetzt den Boost des richtigen Giveaways,
+und das Panel uebernimmt nur noch Boost-Meldungen der eigenen Auswahl.
+
+Ausserdem laesst sich ein Boost nur noch starten, wenn mindestens ein Kanal
+live ist und der Streamerbot Zuschauer-Ticks liefert — sonst wuerde die
+Boost-Zeit wirkungslos ablaufen. Die Boost-Karte zeigt das selbststaendig an
+und sperrt START, solange kein Kanal sendet; Stoppen geht immer.
+
+### Setz-Seite zeigt wirklich nur noch deine Giveaways
+
+Nachtrag zur Aenderung von heute: auch Teams, mit denen du gar nichts zu tun
+hast, sind jetzt von der Setz-Seite verschwunden. Alte Los-Giveaways ohne
+Teilnahme-Keyword erscheinen nur noch, wenn du dort Guthaben hast.
+
 ### Los-Giveaway: Anmeldung per Keyword, einfacherer Setz-Befehl
 
 Drei Aenderungen am Los-Giveaway:

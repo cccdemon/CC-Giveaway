@@ -296,11 +296,11 @@ class WatchtimeEngine {
     if (f <= 1 || !s) {
       await this.redis.del(key);
       if (isPrimary) await this.redis.del(K.gwMult(t));   // Altbestand nie parallel weiterlaufen lassen
-      return { factor: 1, seconds: 0 };
+      return { factor: 1, seconds: 0, gid: gid || null };
     }
     await this.redis.set(key, String(f), 'EX', s);
     if (gid && isPrimary) await this.redis.del(K.gwMult(t));
-    return { factor: f, seconds: s };
+    return { factor: f, seconds: s, gid: gid || null };
   }
   async multiplierState(teamId, gid = undefined) {
     const t = sanitizeTeamId(teamId);
