@@ -24,7 +24,9 @@ function signToken(payload, secret, ttl = DEFAULT_TTL) {
 
 function verifyToken(token, secret) {
   if (!token || typeof token !== 'string' || token.indexOf('.') === -1) return null;
-  const [data, sig] = token.split('.');
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const [data, sig] = parts;
   if (!data || !sig) return null;
   const expected = crypto.createHmac('sha256', secret).update(data).digest('base64url');
   // constant-time compare
@@ -47,7 +49,12 @@ function parseCookies(header) {
     if (i === -1) continue;
     const k = part.slice(0, i).trim();
     const v = part.slice(i + 1).trim();
-    if (k) out[k] = decodeURIComponent(v);
+    if (k) {
+      // Ein kaputtes Prozent-Encoding im Cookie-Header darf die Auth-Route
+      // nicht mit URIError abbrechen. Der einzelne Cookie ist unbrauchbar,
+      // alle anderen Cookies koennen weiterhin gelesen werden.
+      try { out[k] = decodeURIComponent(v); } catch { /* malformed cookie ignorieren */ }
+    }
   }
   return out;
 }

@@ -18,7 +18,10 @@ const CORES = Object.freeze({
 const DEFAULT_CORE_ID = watchtimeChat.id;
 
 function getCore(id) {
-  return CORES[id] || watchtimeChat;
+  // Nur explizit registrierte IDs aufloesen. Ohne Own-Property-Pruefung
+  // wuerden Namen wie "__proto__" oder "constructor" Eigenschaften der
+  // Object-Prototypenkette statt eines Core-Moduls zurueckgeben.
+  return Object.prototype.hasOwnProperty.call(CORES, id) ? CORES[id] : watchtimeChat;
 }
 
 function listCores() {

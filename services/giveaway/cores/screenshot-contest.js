@@ -23,8 +23,14 @@ const IMAGE_MAX_BYTES = 7 * 1024 * 1024;   // Betreiber-Vorgabe: max. 7 MB
 const IMAGE_MIMES = Object.freeze(['image/png', 'image/jpeg']);   // nur JPG/PNG
 
 function clampScore(v) {
-  const n = parseInt(v, 10);
-  if (!Number.isFinite(n)) return null;
+  // REST-/Formwerte duerfen Strings sein, muessen aber eine vollstaendige
+  // Ganzzahl darstellen. parseInt("10abc") wuerde sonst eine gueltige 10
+  // erzeugen und fehlerhafte/manipulierte Eingaben still akzeptieren.
+  const raw = typeof v === 'string' ? v.trim() : v;
+  if ((typeof raw === 'string' && !/^-?\d+$/.test(raw))
+      || (typeof raw !== 'string' && typeof raw !== 'number')) return null;
+  const n = Number(raw);
+  if (!Number.isSafeInteger(n)) return null;
   return Math.max(VOTE_MIN, Math.min(VOTE_MAX, n));
 }
 

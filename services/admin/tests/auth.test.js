@@ -37,11 +37,24 @@ test('verifyToken rejects garbage', () => {
   assert.equal(A.verifyToken(null, SECRET), null);
 });
 
+test('verifyToken rejects extra token segments and empty signatures', () => {
+  const tok = A.signToken({ user: 'bob', role: 'admin' }, SECRET);
+  assert.equal(A.verifyToken(tok + '.attacker-data', SECRET), null);
+  assert.equal(A.verifyToken(tok + '.', SECRET), null);
+  assert.equal(A.verifyToken('.signature', SECRET), null);
+  assert.equal(A.verifyToken('payload.', SECRET), null);
+});
+
 test('parseCookies', () => {
   const c = A.parseCookies('cc_session=abc.def; other=1');
   assert.equal(c.cc_session, 'abc.def');
   assert.equal(c.other, '1');
   assert.deepEqual(A.parseCookies(''), {});
+});
+
+test('parseCookies ignores malformed percent encoding instead of throwing', () => {
+  assert.doesNotThrow(() => A.parseCookies('cc_session=%E0%A4%A; other=ok'));
+  assert.deepEqual(A.parseCookies('cc_session=%E0%A4%A; other=ok'), { other: 'ok' });
 });
 
 test('serialize/clear session cookie flags', () => {

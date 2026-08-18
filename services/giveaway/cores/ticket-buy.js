@@ -37,8 +37,12 @@ function parseWager(message, cmd) {
   const words = String(message || '').trim().toLowerCase().split(/\s+/);
   if (!words.length || words[0] !== c) return null;
   if (words.length === 1) return { help: true };
-  const amount = parseInt(words[1], 10);
-  if (!Number.isFinite(amount) || amount < 0) return { help: true };
+  // Keine Teilzahlen akzeptieren ("2abc" => 2) und keine still
+  // ignorierten Zusatzargumente. Beides waere bei einem Einsatzbefehl
+  // ueberraschend und koennte versehentlich Guthaben binden.
+  if (words.length !== 2 || !/^\d+$/.test(words[1])) return { help: true };
+  const amount = Number(words[1]);
+  if (!Number.isSafeInteger(amount) || amount < 0) return { help: true };
   return { amount };   // amount 0 = Rücknahme des kompletten Einsatzes
 }
 
