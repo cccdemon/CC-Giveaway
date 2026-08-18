@@ -1294,6 +1294,7 @@ function handle(msg) {
       if (msg.type === 'prize_added')   { log('Preis #' + msg.prizeId + ' angelegt: „' + (msg.title || '') + '"', 'gold'); tbHandleImageAfterSave(msg.prizeId); tbLoadPrizes(); }
       if (msg.type === 'prize_edited')  { log('Preis #' + msg.prizeId + ' korrigiert', 'gold'); tbHandleImageAfterSave(msg.prizeId); tbLoadPrizes(); }
       if (msg.type === 'prize_cancelled') { log('Preis #' + msg.prizeId + ' storniert — ' + (msg.refundedUsers || 0) + ' Einsätze zurückgebucht', 'gold'); tbLoadPrizes(); }
+      if (msg.type === 'credit_reset')  { log('Losanpassung: ' + (msg.users || 0) + ' Konten auf 0 (-' + (msg.total || 0) + ' Lose)', 'gold'); liveRefresh(); }
       if (msg.type === 'page_announced') log('Zuschauer-Link im Chat angesagt', 'gold');
       if (msg.type === 'wager_cmd_set') log('Setz-Befehl geändert: „' + (msg.command || '') + '"', 'gold');
       if (msg.type === 'contest_voting') log('Contest-Voting: ' + (msg.voting || '?'), 'gold');
@@ -1878,11 +1879,18 @@ function renderTable(hlKey=null) {
   if (gwDisplayCols) {
     // Core-Spalten: keine Coin-Badges, Aktionen nur BAN (+1/-1 sind
     // Kampagnen-Coins und haben hier keine Wirkung).
-    document.getElementById('tbl').innerHTML = entries.map(([key,p],i) => `
+    // Los-Giveaway: TEILNEHMER = nur Angemeldete der Instanz,
+    // TICKETSTAND = alle Lose-Konten des Teams (🏆 = letzte 3 Gewinner).
+    let rows = entries;
+    if (selectedCore() === 'CORE_TicketBuy' && tbView !== 'all') {
+      rows = entries.filter(([,p]) => p.registered || (parseFloat(p.stake)||0) > 0);
+      document.getElementById('list-count').textContent = rows.length;
+    }
+    document.getElementById('tbl').innerHTML = rows.map(([key,p],i) => `
       <tr class="${p.banned?'banned':''} ${p.eligible?'eligible':''} ${key===hlKey?'winner-row':''}">
         <td class="rank">${i+1}</td>
-        <td class="name">${esc(maskName(key, p.display||key))}${p.banned?' <span style="color:var(--rdoc-error);font-size:10px;">[BAN]</span>':''}</td>
-        ${gwDisplayCols.map(c => `<td class="tickets">${fmtColVal(p[c.key])}</td>`).join('')}
+        <td class="name">${esc(maskName(key, p.display||key))}${tbWinBadge(p)}${p.banned?' <span style="color:var(--rdoc-error);font-size:10px;">[BAN]</span>':''}</td>
+        ${gwDisplayCols.map(c => `<td class="tickets">${c.fmt==='dur' ? fmtTime(parseInt(p[c.key])||0) : fmtColVal(p[c.key])}</td>`).join('')}
         <td style="display:flex;gap:4px;justify-content:flex-end;">
           <button class="mini-btn ban" onclick="toggleBan('${esc(key)}')">${p.banned?'UN':'BAN'}</button>
         </td>
@@ -1902,6 +1910,42 @@ function renderTable(hlKey=null) {
         <button class="mini-btn ban" onclick="toggleBan('${esc(key)}')">${p.banned?'UN':'BAN'}</button>
       </td>
     </tr>`).join('');
+}
+
+// ── Los-Giveaway: Roster-Ansichten + Losanpassung ────────
+// TEILNEHMER (Angemeldete der Instanz) vs. TICKETSTAND (alle Konten).
+var tbView = 'parts';
+function tbSetView(v) {
+  tbView = v === 'all' ? 'all' : 'parts';
+  var a = document.getElementById('tbv-parts'), b = document.getElementById('tbv-all');
+  if (a) a.classList.toggle('on', tbView === 'parts');
+  if (b) b.classList.toggle('on', tbView === 'all');
+  renderTable();
+}
+
+// 🏆 an den letzten 3 Gewinnern team-weit (alle Mechaniken, echte Ziehungen).
+function tbWinBadge(p) {
+  if (!p || !p.recentWin) return '';
+  var d = p.recentWin.at ? new Date(p.recentWin.at).toLocaleDateString('de-DE') : '';
+  var t = 'Gewinner einer der letzten 3 Ziehungen (#' + p.recentWin.rank
+        + (p.recentWin.prize ? ': ' + p.recentWin.prize : '') + (d ? ', ' + d : '') + ')';
+  return ' <span class="win-badge" title="' + esc(t) + '">&#127942;' + p.recentWin.rank + '</span>';
+}
+
+// Zweistufiger Reset (kein confirm()-Dialog): erst scharf schalten, dann senden.
+var tbResetArm = null;
+function tbResetCredit() {
+  var btn = document.getElementById('tb-reset-btn');
+  if (!btn) return;
+  if (!tbResetArm) {
+    btn.textContent = 'WIRKLICH? ALLE KONTEN AUF 0';
+    tbResetArm = setTimeout(function(){ tbResetArm = null; btn.textContent = 'LOSE ZURÜCKSETZEN'; }, 6000);
+    return;
+  }
+  clearTimeout(tbResetArm); tbResetArm = null;
+  btn.textContent = 'LOSE ZURÜCKSETZEN';
+  send({ event: 'gw_cmd', cmd: 'gw_reset_credit' });
+  log('Losanpassung angefordert …', 'gold');
 }
 
 function sortBy(f) {
@@ -1925,7 +1969,9 @@ var STAT_TILES = {
   registeredCount: function(a){ return { v: a.filter(function(p){return p.registered;}).length, l: 'ANGEMELDET', title: 'Keyword im Anmeldefenster geschrieben' }; },
   presentCount:    function(a){ return { v: a.filter(function(p){return p.present;}).length, l: 'ANWESEND', cls: 'plain', title: 'Gerade als Zuschauer gemeldet (viewer_tick)' }; },
   inPotCount:      function(a){ return { v: a.filter(function(p){return p.eligible;}).length, l: 'IM TOPF', cls: 'green', title: 'Angemeldet + anwesend — Stand jetzt in der Ziehung' }; },
-  accountCount:    function(a){ return { v: a.length, l: 'KONTEN', title: 'Zuschauer mit Guthaben oder Einsatz' }; },
+  accountCount:    function(a){ return { v: a.filter(function(p){ return (parseFloat(p.lose)||0) > 0
+                     || (parseFloat(p.stake)||0) > 0 || (parseFloat(p.balance)||0) > 0; }).length,
+                     l: 'KONTEN', title: 'Zuschauer mit Lose-Guthaben oder Einsatz' }; },
   stakeSum:        function(a){ return { v: fmtStatNum(a.reduce(function(s,p){return s+(parseFloat(p.stake)||0);},0)), l: 'GESETZTE LOSE', cls: 'gold' }; },
   freeBalance:     function(a){ return { v: fmtStatNum(a.reduce(function(s,p){return s+(parseFloat(p.balance)||0);},0)), l: 'FREIES GUTHABEN', cls: 'plain', title: 'Ledger-Saldo (ohne live erspielten Stand der laufenden Instanz)' }; },
   setterCount:     function(a){ return { v: a.filter(function(p){return p.eligible;}).length, l: 'SETZER', cls: 'green', title: 'Mindestens 1 Los gesetzt' }; },

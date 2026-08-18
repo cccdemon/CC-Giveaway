@@ -1008,27 +1008,63 @@ class WatchtimeEngine {
   async getTicketBuyParticipants(teamId, gid) {
     const t = sanitizeTeamId(teamId);
     const round4 = (x) => Math.round((parseFloat(x) || 0) * 10000) / 10000;
+    const row0 = (u) => ({ username: u, balance: 0, stake: 0, watchSec: 0, reg: false });
     const map = new Map();
     const bal = await this.pg.query(
       `SELECT username, SUM(amount) AS balance FROM credit_ledger WHERE team_id=$1 GROUP BY username`, [t]);
-    for (const r of bal.rows) map.set(r.username, { username: r.username, balance: round4(r.balance), stake: 0 });
+    for (const r of bal.rows) { const row = row0(r.username); row.balance = round4(r.balance); map.set(r.username, row); }
     const st = await this.pg.query(
       `SELECT w.username, SUM(w.amount) AS stake
        FROM prize_wagers w JOIN giveaway_prizes p ON p.id = w.prize_id
        WHERE p.team_id=$1 AND p.session_id=$2 GROUP BY w.username`, [t, gid]);
     for (const r of st.rows) {
-      const row = map.get(r.username) || { username: r.username, balance: 0, stake: 0 };
+      const row = map.get(r.username) || row0(r.username);
       row.stake = round4(r.stake);
       map.set(r.username, row);
     }
+    // Anmeldung = Keyword-Opt-in der Instanz (18.8.26) + Instanz-Viewtime.
+    // Instanzen ohne Keyword (Altbestand) bleiben permissiv: Einsatz gilt
+    // dort weiter als Teilnahme.
+    const kw = await this.redis.get(K.gKw(t, gid));
+    let channels = null;
+    try { const raw = await this.redis.get(K.gChanList(t, gid)); if (raw) channels = JSON.parse(raw); } catch { /* alle */ }
+    if (!Array.isArray(channels) || !channels.length) channels = await this.getChannels(t);
+    for (const u of await this.redis.smembers(K.gwUsers(t))) {
+      const reg = kw ? (await this.redis.get(K.gReg(t, gid, u))) === '1' : false;
+      let sec = 0;
+      for (const ch of channels) sec += parseFloat(await this.redis.get(K.gWatch(t, gid, ch, u)) || '0');
+      if (!reg && sec <= 0 && !map.has(u)) continue;
+      const row = map.get(u) || row0(u);
+      row.reg = reg; row.watchSec = Math.round(sec);
+      map.set(u, row);
+    }
+    // Letzte 3 echte Ziehungen team-weit (alle Mechaniken, inkl. Ersatz-
+    // ziehungen) — Markierung im Ticketstand. Nur Beiwerk: Fehler hier
+    // dürfen die Liste nicht verhindern.
+    const recent = new Map();
+    try {
+      const d = await this.pg.query(
+        `SELECT d.winner, d.prize, d.drawn_at
+         FROM giveaway_draws d JOIN sessions s ON s.id = d.session_id
+         WHERE s.team_id=$1 AND NOT d.is_test
+         ORDER BY d.drawn_at DESC, d.id DESC LIMIT $2`, [t, 3]);
+      d.rows.forEach((r, i) => {
+        if (!recent.has(r.winner)) recent.set(r.winner, { rank: i + 1, prize: r.prize || '', at: r.drawn_at });
+      });
+    } catch { /* keine Markierung */ }
     const out = [];
     for (const row of map.values()) {
-      if (row.balance <= 0 && row.stake <= 0) continue;
-      out.push({ ...row,
+      const registered = row.reg || (!kw && row.stake > 0);
+      // „Tatsächliche Lose" = Ledger-Saldo + live erspielter Stand laufender
+      // TicketBuy-Instanzen (dieselbe Formel wie availableCredit/earn).
+      const lose = round4(row.balance + await this._liveTicketBuyCredit(t, row.username));
+      if (row.balance <= 0 && row.stake <= 0 && !registered && lose <= 0) continue;
+      out.push({ username: row.username, balance: row.balance, stake: row.stake,
+        watchSec: row.watchSec, lose, recentWin: recent.get(row.username) || null,
         banned: await this.redis.get(K.gwBanned(t, row.username)) === '1',
-        registered: row.stake > 0, eligible: row.stake > 0 });
+        registered, eligible: row.stake > 0 });
     }
-    return out.sort((a, b) => b.stake - a.stake || b.balance - a.balance);
+    return out.sort((a, b) => b.stake - a.stake || b.lose - a.lose);
   }
 
   // Contest: Einsender mit Status/Punkten — dieselben Zahlen wie die
@@ -1420,6 +1456,31 @@ class WatchtimeEngine {
       users++; total += coins;
     }
     console.log(`[WTE] [${t}] ticketbuy ${gid} settled: ${users} Konten, +${total.toFixed(2)} Lose`);
+    return { users, total: Math.round(total * 10000) / 10000 };
+  }
+
+  // Losanpassung (Betreiber 18.8.26): alle Lose-Konten des Teams auf null —
+  // Neustart, weil Guthaben sonst über Giveaways hinweg erhalten bleibt.
+  // Append-only: je Konto EINE Gegenbuchung (reset), kein DELETE. Blockiert,
+  // solange irgendwo im Team ein offener Preis liegt (erst ziehen/stornieren
+  // — ohne offene Preise kann parallel auch niemand setzen).
+  async resetTeamCredit(teamId, { detail = null } = {}) {
+    const t = sanitizeTeamId(teamId);
+    const open = await this.pg.query(
+      `SELECT COUNT(*)::int AS open_n FROM giveaway_prizes WHERE team_id=$1 AND status='open'`, [t]);
+    const n = parseInt(open.rows[0] && open.rows[0].open_n, 10) || 0;
+    if (n > 0) return { error: 'open_prizes', open: n };
+    const r = await this.pg.query(
+      `SELECT username, SUM(amount) AS balance FROM credit_ledger
+       WHERE team_id=$1 GROUP BY username HAVING SUM(amount) > 0`, [t]);
+    let users = 0, total = 0;
+    for (const row of r.rows) {
+      const b = Math.round((parseFloat(row.balance) || 0) * 10000) / 10000;
+      if (b <= 0) continue;
+      await this.credit.book(t, row.username, 'reset', b, { detail: detail || { reason: 'admin_reset' } });
+      users++; total += b;
+    }
+    console.log(`[WTE] [${t}] Losanpassung: ${users} Konten auf 0 (-${total.toFixed(2)} Lose)`);
     return { users, total: Math.round(total * 10000) / 10000 };
   }
 

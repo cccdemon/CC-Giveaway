@@ -851,6 +851,9 @@ const MEMBER_CMDS = new Set([
   // ziehen (Entscheidung: Ziehung macht der jeweilige Kanalstreamer) und
   // die Chat-Ansagen der Instanz stumm/laut schalten.
   'gw_instant_window', 'gw_draw_winner', 'gw_set_announce', 'gw_announce_page',
+  // Losanpassung (Betreiber 18.8.26): darf jedes Team-Mitglied — ohne offene
+  // Preise ist sie gefahrlos wiederholbar und voll auditiert.
+  'gw_reset_credit',
 ]);
 
 // Abgelehnte Versuche gehoeren ins Protokoll — aber das Admin-Panel pollt die
@@ -1464,6 +1467,21 @@ async function runAdminCmd(send, msg, meta, ctx) {
         `🎁 Preis #${prizeId} „${r.title}" wurde storniert` +
         (r.refundedUsers ? ` — alle Einsätze (${r.refundedUsers} Teilnehmer) sind zurückgebucht.` : '.'));
       send({ event: 'gw_ack', type: 'prize_cancelled', prizeId, refundedUsers: r.refundedUsers });
+      break;
+    }
+    // Losanpassung: alle Lose-Konten des Teams auf null (Neustart) — Lose
+    // bleiben sonst über Giveaways hinweg erhalten. Gegenbuchung je Konto,
+    // blockiert solange irgendwo ein offener Preis liegt.
+    case 'gw_reset_credit': {
+      const r = await wte.resetTeamCredit(teamId, { detail: { reason: 'admin_reset', actor: meta.authUser || null } });
+      if (r.error) {
+        Object.assign(outcome, { error: r.error, openPrizes: r.open });
+        send({ event: 'gw_ack', type: 'error',
+               error: `Losanpassung blockiert: ${r.open} offener Preis(e) im Team — erst ziehen oder stornieren.` });
+        break;
+      }
+      Object.assign(outcome, { users: r.users, total: r.total });
+      send({ event: 'gw_ack', type: 'credit_reset', users: r.users, total: r.total });
       break;
     }
     case 'gw_set_wager_cmd': {

@@ -75,6 +75,15 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
   Preise korrigierbar (`editPrize`, nur offene) und stornierbar
   (`cancelPrize` = Gegenzeilen in `prize_wagers` + `refund` im Ledger, dann
   `status='cancelled'`). Verfall nach 12 Monaten Inaktivität (`runRetention`).
+  **Roster hat 2 Ansichten** (18.8.26, Toggle `#tb-view-toggle`): TEILNEHMER
+  (nur Angemeldete der Instanz) vs. TICKETSTAND (alle Konten, 🏆 = letzte 3
+  echte Ziehungen team-weit, `recentWin` aus `getTicketBuyParticipants`);
+  Spalten Einsatz/Viewtime/`lose` (= Ledger-Saldo + live erspielt,
+  `_liveTicketBuyCredit`), `registered` kommt aus dem Keyword-Opt-in.
+  **Losanpassung** `gw_reset_credit` (MEMBER_CMDS, zweistufiger Knopf in
+  `card-ticketbuy`): `resetTeamCredit()` nullt alle Konten per
+  `reset`-Gegenbuchung — blockiert (`open_prizes`), solange ein offener
+  Preis existiert.
 - `CORE_ScreenshotContest` (**BETA**, kaum Live-Erfahrung) — Community-Wettbewerb: Einsendungen (nur Follow +
   Mindest-Viewtime, 1/Person, `BYTEA` in PG, **Freigabe-Pflicht** durch den
   Owner), Voting 1–10 (`UNIQUE(entry, voter)`, Re-Vote überschreibt, eigene

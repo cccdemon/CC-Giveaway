@@ -27,6 +27,7 @@ const ENTRY = Object.freeze({
   debit:  -1,   // Einsatz nach der Ziehung verbraucht (alle Setzer, §5.2)
   expire: -1,   // Verfall nach Inaktivität
   erase:  -1,   // DSGVO-Löschung: Restsaldo ausgebucht
+  reset:  -1,   // Losanpassung: Admin nullt alle Konten des Teams (Neustart)
 });
 
 const EXPIRE_MONTHS = 12;

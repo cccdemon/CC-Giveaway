@@ -56,6 +56,12 @@
   }
   /* Typ-Karten in der Rail nur bei passender Auswahl */
   .gw-app:not(.core-ticketbuy) #card-ticketbuy { display:none !important; }
+  /* Roster-Umschalter + Gewinner-Markierung nur beim Los-Giveaway */
+  .gw-app:not(.core-ticketbuy) #tb-view-toggle { display:none !important; }
+  .tb-view-toggle { display:inline-flex; gap:4px; margin-left:10px; }
+  .tb-view-toggle .btn { opacity:.55; }
+  .tb-view-toggle .btn.on { opacity:1; border-color:var(--rdoc-accent,#C48A4A); color:var(--rdoc-accent,#C48A4A); }
+  .win-badge { color:var(--rdoc-warning); font-size:10px; letter-spacing:.04em; cursor:help; }
   .gw-app:not(.core-contest) #card-contest { display:none !important; }
   /* Regel-Karte: nur wo Watchtime-Accrual läuft (Kampagne, Los-Giveaway) */
   .gw-app.core-instant #card-settings, .gw-app.core-contest #card-settings { display:none !important; }
@@ -192,6 +198,14 @@
     <div class="gw-main" data-help="Teilnehmer der aktuellen Auswahl. Die Spalten passen sich der Mechanik an: Kampagne = Coins + Viewtime je Kanal · Sofortverlosung = Anwesend/Im Topf · Los-Giveaway = Einsatz/Guthaben · Contest = Screenshot/Punkte/Stimmen. Zeilen-Aktionen: ±1 Coin (nur Kampagne, wird auditiert) und BAN. Badges: LOSTOPF = alle Bedingungen erfüllt, VORGEMERKT = angemeldet, Bedingung fehlt noch.">
       <div class="gw-main-head">
         <span class="panel-label" id="main-label">TEILNEHMER <em id="list-count">0</em></span>
+        <!-- Los-Giveaway: zwei Ansichten — Teilnehmer der Instanz vs.
+             Ticketstand aller Konten (🏆 = letzte 3 Gewinner team-weit) -->
+        <div class="tb-view-toggle" id="tb-view-toggle">
+          <button type="button" class="btn btn-sm on" id="tbv-parts" onclick="tbSetView('parts')"
+                  title="Nur Angemeldete des gewählten Los-Giveaways">TEILNEHMER</button>
+          <button type="button" class="btn btn-sm" id="tbv-all" onclick="tbSetView('all')"
+                  title="Lose-Konten aller Zuschauer im Team — 🏆 markiert die letzten 3 Gewinner">TICKETSTAND</button>
+        </div>
         <a href="#" id="ov-back" style="display:none" onclick="gwShowOverview();return false;">&larr; Übersicht</a>
         <input type="text" id="search" placeholder="Suche..." oninput="renderTable()">
       </div>
@@ -355,6 +369,12 @@
         </div>
         <div class="card-sub mt-8">PREIS DIESES GIVEAWAYS <span class="link-cyan" onclick="tbLoadPrizes()">↻</span></div>
         <div id="tb-prizes"><div class="wsc-empty">Lade…</div></div>
+        <!-- Losanpassung: Lose bleiben sonst über Giveaways hinweg erhalten -->
+        <div class="card-sub mt-8">LOSANPASSUNG</div>
+        <div class="cfg-hint">Lose bleiben über Giveaways hinweg erhalten. ZURÜCKSETZEN nullt die Lose-Konten <b>aller</b> Zuschauer im Team per Gegenbuchung im Journal — geht nur, wenn kein offener Preis mehr aussteht.</div>
+        <div class="btn-group mt-6">
+          <button class="btn btn-red btn-sm" id="tb-reset-btn" onclick="tbResetCredit()">LOSE ZURÜCKSETZEN</button>
+        </div>
       </div>
 
       <!-- Screenshot-Contest: Voting-Steuerung + Einsendungen -->

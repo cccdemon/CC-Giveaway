@@ -137,8 +137,11 @@ module.exports = {
     drawKind:   'perPrize',    // Ziehung je Preis, gewichtet nach Einsatz
     emptyPool:  'Keine Einsätze auf diesen Preis — niemand im Topf.',
     columns: [
-      { key: 'stake',   label: 'Einsatz', mask: false },
-      { key: 'balance', label: 'Guthaben', mask: false },
+      { key: 'stake',    label: 'Einsatz',  mask: false },
+      { key: 'watchSec', label: 'Viewtime', mask: false, fmt: 'dur' },
+      // „Lose" = Ledger-Saldo + live erspielter Stand (verlorene Einsätze
+      // sind schon verrechnet) — ersetzt die alte Guthaben-Spalte.
+      { key: 'lose',     label: 'Lose',     mask: false },
     ],
     // Kachel-IDs aus der Panel-Registry (STAT_TILES in giveaway-admin.js).
     tiles: ['accountCount', 'stakeSum', 'freeBalance', 'setterCount'],

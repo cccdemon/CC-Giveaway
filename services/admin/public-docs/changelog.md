@@ -7,6 +7,23 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 18. August 2026
 
+### Los-Giveaway: zwei Roster-Ansichten, Viewtime + tatsaechliche Lose, Losanpassung
+
+Die Teilnehmer-Tabelle des Los-Giveaways hat jetzt zwei Ansichten:
+TEILNEHMER zeigt nur die per Keyword Angemeldeten der laufenden Instanz,
+TICKETSTAND alle Lose-Konten des Teams. Im Ticketstand markiert 🏆 die
+Gewinner der letzten drei Ziehungen (team-weit, alle Mechaniken). Neue
+Spalten: Viewtime der Instanz und „Lose" — der tatsaechliche Stand aus
+Guthaben plus live erspielter Zuschauzeit; gesetzte und bei einer Ziehung
+verbrauchte Lose sind darin schon abgezogen (alle Setzer verlieren ihren
+Einsatz, auch der Gewinner — das Setzen erhoeht nur die Chance).
+
+Neu ist ausserdem die Losanpassung in der Preis-Karte: LOSE ZURUECKSETZEN
+nullt die Lose-Konten aller Zuschauer im Team fuer einen Neustart, weil
+Lose sonst ueber Giveaways hinweg erhalten bleiben. Das geht nur, wenn
+kein offener Preis mehr aussteht, laeuft als Gegenbuchung im Journal
+(nichts wird geloescht) und wird auditiert.
+
 ### Giveaway wieder oeffnen + aufgeraeumte Preis-Karte beim Los-Giveaway
 
 Schliessen ist nicht mehr endgueltig: eine geschlossene, noch nicht

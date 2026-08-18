@@ -211,6 +211,9 @@
       case 'auto_pause':  return 'Auto-Pause (alle Streams offline)';
       case 'auto_resume': return 'Auto-Resume (Stream online)';
       case 'auto_open':   return 'Auto-Open (Stream online)';
+      case 'gw_reset_credit':
+        return d.error ? 'Losanpassung blockiert (' + (d.openPrizes || '?') + ' offene Preise)'
+                       : 'Losanpassung: ' + (d.users || 0) + ' Lose-Konten auf 0 (-' + (d.total || 0) + ' Lose)';
       case 'gw_gen_ingest_token': return d.rotated ? 'Ingest-Token rotiert' : 'Ingest-Token erstellt';
       case 'gw_verify_follows':   return 'Follow-Abgleich (Helix)';
       case 'gw_get_ai_settings':  return 'KI-Einstellungen gelesen';

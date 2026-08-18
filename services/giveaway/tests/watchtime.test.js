@@ -75,6 +75,9 @@ function makePg(channels) {
       const r = prizes.filter(x => x.id === p[0]);
       return { rows: r, rowCount: r.length };
     }
+    if (/AS open_n FROM giveaway_prizes/.test(sql)) {
+      return { rows: [{ open_n: prizes.filter(x => x.team_id === p[0] && x.status === 'open').length }] };
+    }
     if (/COUNT\(\*\) AS n FROM giveaway_prizes.*status <> 'cancelled'/.test(sql)) {
       return { rows: [{ n: prizes.filter(x => x.team_id === p[0] && x.session_id === p[1] && x.status !== 'cancelled').length }] };
     }
@@ -112,6 +115,13 @@ function makePg(channels) {
     if (/AS total FROM prize_wagers WHERE prize_id=\$1/.test(sql)) {
       const total = wagers.filter(w => w.prize_id === p[0]).reduce((s, w) => s + w.amount, 0);
       return { rows: [{ total }] };
+    }
+    // Losanpassung: Salden-Liste je Konto (Saldo > 0) — VOR dem Zähl-Zweig,
+    // beide SQLs enthalten dieselbe HAVING-Klausel.
+    if (/AS balance FROM credit_ledger[\s\S]*HAVING SUM\(amount\) > 0/.test(sql)) {
+      const by = new Map();
+      for (const r of ledger) if (r.team_id === p[0]) by.set(r.username, (by.get(r.username) || 0) + r.amount);
+      return { rows: [...by.entries()].filter(([, b]) => b > 0).map(([username, balance]) => ({ username, balance })) };
     }
     // P6: Teilnehmer-Vorschau TicketBuy — Konten mit positivem Saldo
     // (VOR dem Wager-GROUP-BY prüfen, beide SQLs enthalten dieselbe Klausel).
@@ -208,6 +218,13 @@ function makePg(channels) {
         if (pr && pr.team_id === p[0] && pr.session_id === p[1]) by.set(w.username, (by.get(w.username) || 0) + w.amount);
       }
       return { rows: [...by.entries()].map(([username, stake]) => ({ username, stake })) };
+    }
+    // Letzte Ziehungen team-weit (Roster-Markierung): aus den festgehaltenen
+    // Draw-Inserts — Parameter-Reihenfolge wie in drawWinner (winner=p[1],
+    // is_test=p[8], prize=p[9]).
+    if (/FROM giveaway_draws d[\s\S]*JOIN sessions s/.test(sql)) {
+      const real = drawIns.filter(d => !d[8]).map((d, i) => ({ winner: d[1], prize: d[9], drawn_at: new Date(2026, 7, 1 + i).toISOString() }));
+      return { rows: real.reverse().slice(0, p[1] || 3) };
     }
     if (/COUNT\(\*\)::int AS cnt FROM contest_entries/.test(sql)) {
       return { rows: [{ cnt: entries.filter(e => e.session_id === p[0] && e.team_id === p[1]).length }] };
@@ -1577,4 +1594,67 @@ test('preflight: TicketBuy zaehlt Konten mit positivem Guthaben, Contest Follow+
   assert.equal(r.count, 1);
   r = await e.previewEligible(TEAM, { core: 'CORE_ScreenshotContest', minWatchSec: 7200 });
   assert.equal(r.count, 0);                       // Schwelle zu hoch
+});
+
+// ── Losanpassung + Roster-Erweiterung (CORE_TicketBuy) ──
+test('panel: TicketBuy-Roster — Keyword-Anmeldung, Viewtime, tatsächliche Lose, Gewinner-Markierung', async () => {
+  const e = engine();
+  await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy', keyword: 'los' });
+  await e.credit.book(TEAM, 'bob', 'earn', 5);
+  await e.credit.book(TEAM, 'alice', 'earn', 3);
+  const p1 = await e.addPrize(TEAM, 'sess_2', { title: 'Headset' });
+  // bob: angemeldet + Einsatz. carol: nur angemeldet, mit Live-Viewtime. alice: nur Konto.
+  await e.redis.sadd(K.gwUsers(TEAM), 'bob', 'carol');
+  await e.redis.set(K.gReg(TEAM, 'sess_2', 'bob'), '1');
+  await e.redis.set(K.gReg(TEAM, 'sess_2', 'carol'), '1');
+  await e.redis.set(K.gWatch(TEAM, 'sess_2', 'justcallmedeimos', 'carol'), String(2 * SECS_PER_COIN));
+  await e.placeWager(TEAM, null, 'bob', p1, 2);
+  // Ziehungshistorie: letzte 3 ECHTE Ziehungen zählen (Test-Ziehung nicht).
+  e.pg.drawIns.push(
+    ['sess_x', 'old_winner', 1, 0, 1, 1, 0.5, 1, false, 'Alt',      null, null, null, null, null],
+    ['sess_x', 'alice',      1, 0, 1, 1, 0.5, 2, false, 'Maus',     null, null, null, null, null],
+    ['sess_x', 'bob',        1, 0, 1, 1, 0.5, 3, true,  'Testlauf', null, null, null, null, null],
+    ['sess_x', 'erin',       1, 0, 1, 1, 0.5, 4, false, 'Tastatur', null, null, null, null, null],
+    ['sess_x', 'carol',      1, 0, 1, 1, 0.5, 5, false, 'Headset',  null, null, null, null, null],
+  );
+  const parts = await e.getTicketBuyParticipants(TEAM, 'sess_2');
+  const bob = parts.find(x => x.username === 'bob');
+  const alice = parts.find(x => x.username === 'alice');
+  const carol = parts.find(x => x.username === 'carol');
+  // Anmeldung kommt aus dem Keyword-Opt-in, nicht mehr aus dem Einsatz
+  assert.equal(bob.registered, true);
+  assert.equal(carol.registered, true);
+  assert.equal(alice.registered, false);
+  // Viewtime der Instanz + tatsächliche Lose (Saldo + live erspielt)
+  assert.equal(bob.stake, 2);
+  assert.equal(bob.lose, 3);                        // 5 verdient - 2 gesetzt
+  assert.equal(carol.watchSec, 2 * SECS_PER_COIN);
+  assert.equal(carol.lose, 2);                      // live erspielt, noch nicht gebucht
+  assert.equal(alice.lose, 3);
+  // Gewinner-Markierung: letzte 3 echte Ziehungen (carol=1, erin=2, alice=3)
+  assert.equal(carol.recentWin.rank, 1);
+  assert.equal(carol.recentWin.prize, 'Headset');
+  assert.equal(alice.recentWin.rank, 3);
+  assert.ok(!bob.recentWin);                        // Test-Ziehung zählt nicht
+  // Pool-Bedingung unverändert: nur Setzer
+  assert.equal(bob.eligible, true);
+  assert.equal(carol.eligible, false);
+});
+
+test('resetTeamCredit: blockiert bei offenen Preisen, sonst Gegenbuchung je Konto', async () => {
+  const e = engine();
+  await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy', keyword: 'los' });
+  await e.credit.book(TEAM, 'bob', 'earn', 5);
+  await e.credit.book(TEAM, 'alice', 'earn', 3);
+  const p1 = await e.addPrize(TEAM, 'sess_2', { title: 'Headset' });
+  const blocked = await e.resetTeamCredit(TEAM);
+  assert.equal(blocked.error, 'open_prizes');
+  await e.cancelPrize(TEAM, p1);
+  const r = await e.resetTeamCredit(TEAM);
+  assert.equal(r.users, 2);
+  assert.equal(r.total, 8);
+  assert.equal(await e.credit.balance(TEAM, 'bob'), 0);
+  assert.equal(await e.credit.balance(TEAM, 'alice'), 0);
+  // Journal bleibt: Gegenbuchungen, kein DELETE
+  assert.ok(e.pg.ledger.some(x => x.entry_type === 'reset' && x.username === 'bob' && x.amount === -5));
 });
