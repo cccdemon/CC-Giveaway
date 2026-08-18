@@ -122,9 +122,14 @@ body {
   font-family:var(--rdoc-font-text); font-size:14px; line-height:1.5;
 }
 /* App-Seiten (die frueheren Dashboard-Seiten): 4K-Zoom bleibt,
-   aber nur dort. Öffentliche Seiten hatten nie zoom. */
-body[data-app] { zoom:1.15; }
-body[data-app="dashboard"] { height:100vh; overflow:hidden; }
+   aber nur dort. Öffentliche Seiten hatten nie zoom.
+   ACHTUNG: zoom skaliert jede CSS-px-Laenge, aber vh-Einheiten loesen
+   UNskaliert gegen den echten Viewport auf. Jede vh-Hoehe innerhalb des
+   gezoomten Bodys MUSS deshalb durch --app-zoom geteilt werden, sonst ragt
+   die Box unter den Viewport (Event-Log unerreichbar, Bug 18.8.26). */
+:root { --app-zoom: 1.15; }
+body[data-app] { zoom:var(--app-zoom); }
+body[data-app="dashboard"] { height:calc(100vh / var(--app-zoom)); overflow:hidden; }
 
 /* Kein synthetischer Schnitt: fehlt eine Datei, wird nichts nachgebaut. */
 * { font-synthesis-weight:none; font-synthesis-style:none; }
@@ -171,7 +176,7 @@ a { color:inherit; }
 /* 44px Top-Nav + 28px Debug-Console-Leiste (cc-dbg-handle, fixed bottom aus
    den Shared-Libs) — ohne den zweiten Abzug scrollt die letzte Rail-Karte
    hinter die Leiste und ist nicht lesbar. */
-.gw-app { display:flex; flex-direction:column; height:calc(100vh - 44px - 28px); overflow:hidden; }
+.gw-app { display:flex; flex-direction:column; height:calc(100vh / var(--app-zoom) - 44px - 28px); overflow:hidden; }
 
 /* ── Command bar ─────────────────────────────────────────── */
 .cmdbar {
@@ -425,7 +430,7 @@ footer { background:var(--rdoc-surface); border-top:1px solid var(--rdoc-border)
 .footer-ver  { font-family:var(--rdoc-font-mono); font-size:9px; color:var(--rdoc-text-faint); letter-spacing:1px; }
 
 /* ── Test-Konsole ────────────────────────────────────────── */
-.test-layout { display:grid; grid-template-columns:360px 1fr; height:calc(100vh - 44px - 54px); overflow:hidden; }
+.test-layout { display:grid; grid-template-columns:360px 1fr; height:calc(100vh / var(--app-zoom) - 44px - 54px); overflow:hidden; }
 .test-controls { overflow-y:auto; padding:10px; display:flex; flex-direction:column; gap:6px; border-right:1px solid var(--rdoc-border); background:var(--rdoc-bg); }
 .test-section { border:1px solid var(--rdoc-border); border-radius:6px; overflow:hidden; }
 .test-section-title { font-family:var(--rdoc-font-mono); font-size:9px; letter-spacing:0.07em; color:var(--rdoc-text-muted); padding:6px 10px; background:var(--rdoc-surface); border-bottom:1px solid var(--rdoc-border); text-transform:uppercase; }
