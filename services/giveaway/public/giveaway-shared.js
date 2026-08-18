@@ -371,6 +371,9 @@
 
   var bar = document.createElement('div');
   bar.className = 'cc-dbg-bar';
+  // Platz fuer die fixe Leiste reservieren (body.cc-has-dbg in rdoc.css) —
+  // sonst verdeckt sie das Seitenende, sichtbar am Event-Log des Panels.
+  document.body.classList.add('cc-has-dbg');
 
   var handle = document.createElement('div');
   handle.className = 'cc-dbg-handle';

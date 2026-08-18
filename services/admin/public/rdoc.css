@@ -493,6 +493,10 @@ footer { background:var(--rdoc-surface); border-top:1px solid var(--rdoc-border)
 
 /* ── Debug-Konsole ───────────────────────────────────────── */
 .cc-dbg-bar { position:fixed; bottom:0; left:0; right:0; z-index:9999; font-family:var(--rdoc-font-mono); font-size:11px; }
+/* Die Shared-Libs setzen cc-has-dbg auf <body>, sobald die Leiste existiert:
+   das Dokument reserviert deren 28px — wirkt auch im Responsive-Modus
+   (dort ist .gw-app height:auto und die Seite scrollt als Ganzes). */
+body.cc-has-dbg { padding-bottom:28px; }
 .cc-dbg-handle { background:var(--rdoc-bg); border-top:1px solid var(--rdoc-border-strong); height:28px; display:flex; align-items:center; padding:0 12px; gap:10px; cursor:pointer; user-select:none; }
 .cc-dbg-handle:hover { background:var(--rdoc-surface); }
 .cc-dbg-label { color:var(--rdoc-text-muted); letter-spacing:0.07em; font-size:10px; }
