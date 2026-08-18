@@ -267,7 +267,13 @@ textarea { resize:vertical; width:100%; }
 /* ── Grid + Spalten ──────────────────────────────────────── */
 /* min-height:0: als Flex-Kind waechst das Grid sonst ueber .gw-app hinaus
    (min-height:auto) — die Rail wird unten abgeschnitten statt zu scrollen. */
-.gw-grid { flex:1; display:grid; grid-template-columns:1fr 400px; overflow:hidden; min-height:0; }
+.gw-grid { flex:1; display:grid; grid-template-columns:1fr 400px;
+  /* Die Zeile MUSS auf Containerhoehe festgenagelt werden: eine implizite
+     Grid-Row ist auto-sized, waechst mit der Rail ueber den Container hinaus
+     und overflow:hidden schneidet dann das Ende ab — Rail-Scroll erreicht die
+     letzte Karte nie (Event-Log-Bug 18.8.26, per Headless-Repro verifiziert). */
+  grid-template-rows:minmax(0, 100%);
+  overflow:hidden; min-height:0; }
 .gw-main { display:flex; flex-direction:column; overflow:hidden; min-height:0; border-right:1px solid var(--rdoc-border); }
 .gw-main-head { padding:10px 14px; border-bottom:1px solid var(--rdoc-border); display:flex; align-items:center; gap:10px; flex-shrink:0; background:var(--rdoc-surface); }
 .panel-label { font-family:var(--rdoc-font-mono); font-size:9px; color:var(--rdoc-text-muted); letter-spacing:0.07em; white-space:nowrap; text-transform:uppercase; }
@@ -555,7 +561,7 @@ body.cc-has-dbg { padding-bottom:28px; }
 @media (max-width:900px) {
   body[data-app="dashboard"] { overflow:auto; height:auto; }
   .gw-app { height:auto; }
-  .gw-grid { grid-template-columns:1fr; overflow:visible; }
+  .gw-grid { grid-template-columns:1fr; grid-template-rows:none; overflow:visible; }
   .gw-main { border-right:none; border-bottom:1px solid var(--rdoc-border); }
   .gw-table-wrap { max-height:60vh; }
   .cmdbar { grid-template-columns:1fr; gap:10px; }
