@@ -179,6 +179,17 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
   `previewEligible`, `/api/my-status`, Archiv-Dossier. 5. Panel: `IW_TYPES` im
   Start-Modal, ggf. `STAT_TILES`- und `PANEL_CARD_LOADERS`-Eintrag. 6. Tests in
   `tests/cores.test.js` (pure Funktionen, keine Infrastruktur).
+- **Chat-Ansagen editierbar (18.8.26):** Katalog aller Broadcast-Ansagen in
+  `services/giveaway/chat-texts.js` (`CATALOG` je Gruppe `_common`/Core-ID,
+  `resolveChatText` = Override aus PG `chat_templates` (team_id, core,
+  msg_key, text, append_terms, append_page) vor Default; `{platzhalter}`
+  deutsch, Links NIE im Text, sondern per Haken angehängt). **Jede neue
+  Broadcast-Ansage läuft über `chatText(teamId, group, key, ctx)` in
+  server.js** — nie wieder ein Literal an `announceChannels`. prizeLine +
+  Meldefrist hängt der Server immer an; Chat-REPLIES (!los, Setz-Ack) sind
+  bewusst nicht im Katalog. Cmds: `gw_get_chat_templates` (AUDIT_SKIP,
+  Member) / `gw_set_chat_template` (Owner). Panel-Karte `card-chattexts`.
+  Rail-Karten sind einklappbar (`initRailCollapse`, localStorage je Karte).
 - **Teilnehmer-Vorschau:** `gw_preflight` (read-only, AUDIT_SKIP/MEMBER_CMDS)
   → Engine `previewEligible(teamId, {core, channels, minWatchSec})`: Kampagne
   = Follows+≥1 Coin, CV = Präsenz jetzt, TicketBuy = Ledger-Saldo>0, Contest

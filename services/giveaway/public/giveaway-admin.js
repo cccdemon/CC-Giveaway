@@ -1133,6 +1133,7 @@ function requestData() {
   send({ event: 'gw_cmd', cmd: 'gw_get_channels' });
   send({ event: 'gw_cmd', cmd: 'gw_get_ingest_tokens' });
   send({ event: 'gw_cmd', cmd: 'gw_get_ai_settings' });
+  send({ event: 'gw_cmd', cmd: 'gw_get_chat_templates' });
 }
 
 setInterval(() => { if (gwWs && gwWs.readyState === 1) requestData(); }, 10000);
@@ -1204,6 +1205,7 @@ function handle(msg) {
       }
       // Read-only Antworten (NIE requestData → sonst Endlosschleife)
       if (msg.type === 'giveaways')     { giveawayList = msg.giveaways || []; renderGiveawaySelect(); updateMainView();
+                                          renderChatTexts();   // Ansagen-Editor folgt der Auswahl
                                           // ★-Gate der Preis-Zeilen haengt am closed-Stand der Auswahl.
                                           if (selectedCore() === 'CORE_TicketBuy') { renderPrizes(tbPrizes); tbFillWagerCmd(); } break; }
       if (msg.type === 'drafts')        { drafts = msg.drafts || []; renderDrafts(); break; }
@@ -1295,6 +1297,8 @@ function handle(msg) {
       if (msg.type === 'prize_edited')  { log('Preis #' + msg.prizeId + ' korrigiert', 'gold'); tbHandleImageAfterSave(msg.prizeId); tbLoadPrizes(); }
       if (msg.type === 'prize_cancelled') { log('Preis #' + msg.prizeId + ' storniert — ' + (msg.refundedUsers || 0) + ' Einsätze zurückgebucht', 'gold'); tbLoadPrizes(); }
       if (msg.type === 'credit_reset')  { log('Losanpassung: ' + (msg.users || 0) + ' Konten auf 0 (-' + (msg.total || 0) + ' Lose)', 'gold'); liveRefresh(); }
+      if (msg.type === 'chat_templates')    { ctGroups = msg.groups || []; renderChatTexts(); break; }
+      if (msg.type === 'chat_template_set') { log('Chat-Ansage ' + (msg.reset ? 'auf Standard zurückgesetzt' : 'gespeichert') + ' (' + msg.key + ')', 'gold'); ctLoad(); }
       if (msg.type === 'page_announced') log('Zuschauer-Link im Chat angesagt', 'gold');
       if (msg.type === 'wager_cmd_set') { log('Setz-Befehl geändert: „' + (msg.command || '') + '"', 'gold');
                                           setTimeout(requestData, 300); }   // Liste neu — Feld bleibt nach Reload gefüllt
@@ -1933,6 +1937,69 @@ function tbWinBadge(p) {
   return ' <span class="win-badge" title="' + esc(t) + '">&#127942;' + p.recentWin.rank + '</span>';
 }
 
+// ── Chat-Ansagen-Editor (Karte CHAT-ANSAGEN) ─────────────
+// Vorlagen je (Gruppe, Nachricht) vom Server; angezeigt werden die Gruppe
+// der aktuellen Auswahl + die core-unabhängigen Boost-Ansagen (_common).
+var ctGroups = null;
+function ctLoad() { send({ event: 'gw_cmd', cmd: 'gw_get_chat_templates' }); }
+
+function renderChatTexts() {
+  var host = document.getElementById('ct-list');
+  if (!host || !ctGroups) return;
+  // Nicht neu rendern, während der Bediener in der Karte tippt.
+  if (document.activeElement && host.contains(document.activeElement)) return;
+  var vis = ['_common', selectedCore() || 'CORE_WatchtimeChatActivity'];
+  var html = '';
+  ctGroups.forEach(function(g) {
+    if (vis.indexOf(g.core) < 0) return;
+    (g.entries || []).forEach(function(e) {
+      var id = 'ct_' + g.core + '_' + e.key;
+      html += '<div class="ct-entry">'
+        + '<div class="card-sub mt-8">' + esc(e.label.toUpperCase())
+        + (e.text ? ' <span class="ct-own">EIGENER TEXT</span>' : '') + '</div>'
+        + '<textarea id="' + id + '" rows="3" maxlength="500" placeholder="' + esc(e.defaultText || '') + '">'
+        + esc(e.text || '') + '</textarea>'
+        + ((e.placeholders && e.placeholders.length)
+            ? '<div class="cfg-hint">Platzhalter: ' + esc(e.placeholders.map(function(p){ return '{' + p + '}'; }).join(' ')) + '</div>' : '')
+        + '<label class="cfg-row"><input type="checkbox" id="' + id + '_t"' + (e.appendTerms ? ' checked' : '') + '><span>Link Teilnahmebedingungen anhängen</span></label>'
+        + '<label class="cfg-row"><input type="checkbox" id="' + id + '_p"' + (e.appendPage ? ' checked' : '') + '><span>Link Zuschauer-Seite anhängen</span></label>'
+        + '<div class="btn-group mt-6">'
+        + '<button class="btn btn-gold btn-sm" onclick="ctSave(\'' + jsStr(g.core) + '\',\'' + jsStr(e.key) + '\')">SPEICHERN</button>'
+        + '<button class="btn btn-sm" onclick="ctReset(\'' + jsStr(g.core) + '\',\'' + jsStr(e.key) + '\')">STANDARD</button>'
+        + '</div></div>';
+    });
+  });
+  host.innerHTML = html || '<div class="wsc-empty">Keine Ansagen für diese Auswahl.</div>';
+}
+
+function ctSave(core, key) {
+  var id = 'ct_' + core + '_' + key;
+  var ta = document.getElementById(id);
+  send({ event: 'gw_cmd', cmd: 'gw_set_chat_template', core: core, key: key,
+         text: ta ? ta.value : '',
+         appendTerms: !!(document.getElementById(id + '_t') || {}).checked,
+         appendPage:  !!(document.getElementById(id + '_p') || {}).checked });
+}
+function ctReset(core, key) {
+  send({ event: 'gw_cmd', cmd: 'gw_set_chat_template', core: core, key: key, text: '' });
+}
+
+// ── Rail-Karten ein-/ausklappbar (Klick auf den Titel) ───
+function initRailCollapse() {
+  document.querySelectorAll('.gw-rail .card').forEach(function(card, i) {
+    var title = card.querySelector('.card-title');
+    if (!title) return;
+    var key = 'cc_clps_' + (card.id || 'card' + i);
+    try { if (localStorage.getItem(key) === '1') card.classList.add('clps'); } catch (e) { /* egal */ }
+    title.addEventListener('click', function(ev) {
+      // Knöpfe/↻ im Titel bleiben bedienbar, ohne die Karte zu klappen.
+      if (ev.target.closest('button') || ev.target.closest('.link-cyan')) return;
+      card.classList.toggle('clps');
+      try { localStorage.setItem(key, card.classList.contains('clps') ? '1' : '0'); } catch (e) { /* egal */ }
+    });
+  });
+}
+
 // Setz-Befehl-Feld aus der gewählten Instanz befüllen (kommt via
 // gw_list_giveaways.wagerCmd) — nie während der Bediener darin tippt.
 function tbFillWagerCmd() {
@@ -2395,6 +2462,7 @@ if (!window._sfUnitTests) {
   updateStats();                // Kacheln sofort zeigen (Nullstand, Kampagnen-Layout)
   applyHelp();                  // Hilfemodus-Zustand aus localStorage
   updateMainView();             // Start ohne Auswahl = Uebersicht, Rail leer
+  initRailCollapse();           // Rail-Karten ein-/ausklappbar
   connectWS();
   log('Admin-Panel gestartet', 'cyan');
   if (privacyOn) log('Streamermodus aktiv (gespeichert)', 'gold');

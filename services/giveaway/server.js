@@ -20,6 +20,7 @@ const { WatchtimeEngine, K, sanitizeUsername, sanitizeStr, sanitizeTeamId, sanit
 // dem Core — die Regeltexte gehören zur Mechanik (Phase 1, ARCHITEKTUR-CORES).
 const CORE = require('./cores/watchtime-chat.js');
 const CoreRegistry = require('./cores/index.js');
+const ChatTexts = require('./chat-texts.js');
 const { fmtDur, kw2 } = CORE;
 const { Helix } = require('./helix.js');
 const { judgeMessage, listModels, encryptKey, decryptKey, PROVIDERS } = require('./cores/chat-ai.js');
@@ -257,7 +258,7 @@ const AUDIT_SKIP = new Set([
   'gw_get_channels', 'gw_get_multiplier', 'gw_get_stream_settings',
   'gw_get_keyword', 'gw_get_ingest_tokens', 'gw_get_ai_settings', 'gw_list_ai_models',
   'gw_list_giveaways', 'gw_list_prizes', 'gw_list_entries', 'gw_list_drafts',
-  'gw_preflight',
+  'gw_preflight', 'gw_get_chat_templates',
 ]);
 
 // Obergrenze gleichzeitiger Giveaways je Team (Entscheidung §10.2:
@@ -387,6 +388,26 @@ async function secondaryStatusLines(teamId, channel) {
   return lines.join(' ');
 }
 
+// ── Chat-Ansagen über den Vorlagen-Resolver (18.8.26) ─────
+// Jede Broadcast-Ansage läuft hier durch: Team-Vorlage (chat_templates)
+// schlägt den eingebauten Standard; Links (Teilnahmebedingungen / Seite)
+// hängen am Haken der Vorlage. Fail-open: Fehler beim Lesen der Vorlage
+// dürfen die Ansage nie verhindern — dann kommt der Standardtext.
+function viewerPageUrl(groupId) {
+  if (groupId === 'CORE_TicketBuy') return publicHost() + '/viewer/wager';
+  if (groupId === 'CORE_ScreenshotContest') return publicHost() + '/viewer/contest';
+  return publicHost() + '/viewer/status';
+}
+async function chatText(teamId, groupId, key, ctx = {}) {
+  let ov = null;
+  try { ov = await wte.getChatTemplate(teamId, groupId, key); }
+  catch (e) { logErr('GW', 'chatTemplate:', e.message); }
+  const full = { host: chatHost(), teamId,
+    termsUrl: publicHost() + '/viewer/terms?team=' + teamId,
+    pageUrl: viewerPageUrl(groupId), ...ctx };
+  return ChatTexts.resolveChatText(groupId, key, full, ov);
+}
+
 async function giveawayInfoText(teamId) {
   const sid = await wte.getSessionId(teamId);   // laufende Kampagne → deren Werte
   return CORE.infoText({
@@ -422,7 +443,10 @@ async function openGiveaway(teamId, keyword, prize = '', sponsor = '') {
   await pg.query(`INSERT INTO sessions (id, team_id, keyword, channels, core, status, core_config, prize, sponsor, terms_version) VALUES ($1,$2,$3,$4,$5,'open',$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`,
     [sid, teamId, keyword || '', JSON.stringify(chans), CORE.id, JSON.stringify(coreConfig), prize || null, sponsor || null, termsV]);
   broadcastTeam(teamId, { event: 'gw_status', status: 'open' });
-  await announceTeam(teamId, '🎉 Das Giveaway ist ERÖFFNET!' + prizeLine(prize, sponsor) + ' ' + await giveawayInfoText(teamId));
+  await announceTeam(teamId, await chatText(teamId, CORE.id, 'open', {
+    keyword: keyword || '', followMin: await wte.getFollowMin(teamId, sid),
+    drawMinSec: await wte.getDrawMinSec(teamId, sid),
+    gewinn: prize || '', sponsor: sponsor || '' }) + prizeLine(prize, sponsor));
   log('GW', `[${teamId}] opened session ${sid}, kw="${keyword}", channels=${chans.join(',')}`);
   return sid;
 }
@@ -524,8 +548,7 @@ async function closeGiveaway(teamId) {
   await redis.del(K.gwOnline(teamId), K.gwAutoPaused(teamId));
   for (const k of [...boostAnnounced.keys()]) if (k.startsWith(teamId + '|')) boostAnnounced.delete(k);
   broadcastTeam(teamId, { event: 'gw_status', status: 'closed' });
-  await announceTeam(teamId, '🔒 Das Giveaway ist GESCHLOSSEN — ab jetzt zählt keine Zuschauzeit mehr. '
-    + 'Die Ziehung erfolgt gewichtet nach Punkten unter allen Zugelassenen. Viel Glück!');
+  await announceTeam(teamId, await chatText(teamId, CORE.id, 'closed'));
   log('GW', `[${teamId}] closed`);
 }
 async function pauseGiveaway(teamId, { auto = false } = {}) {
@@ -534,18 +557,14 @@ async function pauseGiveaway(teamId, { auto = false } = {}) {
   if (auto) await redis.set(K.gwAutoPaused(teamId), '1');
   else      await redis.del(K.gwAutoPaused(teamId));
   broadcastTeam(teamId, { event: 'gw_status', status: 'paused' });
-  await announceTeam(teamId, auto
-    ? '⏸ Giveaway pausiert — alle Team-Kanäle sind offline. Zuschauzeit zählt gerade nicht, euer Punktestand bleibt erhalten.'
-    : '⏸ Giveaway pausiert — Zuschauzeit zählt gerade nicht. Euer Punktestand bleibt erhalten.');
+  await announceTeam(teamId, await chatText(teamId, CORE.id, auto ? 'pauseAuto' : 'pause'));
 }
 async function resumeGiveaway(teamId, { auto = false } = {}) {
   await wte.setPaused(teamId, false);
   await setSessionStatus(teamId, 'open');
   await redis.del(K.gwAutoPaused(teamId));
   broadcastTeam(teamId, { event: 'gw_status', status: 'open' });
-  await announceTeam(teamId, auto
-    ? '▶ Giveaway läuft weiter — der Stream ist wieder online, Zuschauzeit zählt ab jetzt wieder.'
-    : '▶ Giveaway läuft weiter — Zuschauzeit zählt ab jetzt wieder.');
+  await announceTeam(teamId, await chatText(teamId, CORE.id, auto ? 'resumeAuto' : 'resume'));
 }
 
 // ── Auto-Steuerung: Stream online/offline → Giveaway pause/resume ──
@@ -720,7 +739,7 @@ async function watchBoostExpiry() {
       const st = await wte.multiplierState(b.teamId, b.gid);   // gid null = Team-/Legacy-Key
       if (st.factor > 1) { boostAnnounced.set(key, { ...b, factor: st.factor }); continue; }
       boostAnnounced.delete(key);
-      await announceTeam(b.teamId, `⚡ Giveaway-Boost (Faktor ×${b.factor}) ist abgelaufen — Zuschauzeit zählt wieder normal.`);
+      await announceTeam(b.teamId, await chatText(b.teamId, '_common', 'boostEnd', { faktor: b.factor }));
       broadcastTeam(b.teamId, { event: 'gw_multiplier', factor: 1, secondsLeft: 0, giveawayId: b.gid || null });
     } catch(e) { logErr('Boost', e.message); boostAnnounced.delete(key); }
   }
@@ -854,6 +873,8 @@ const MEMBER_CMDS = new Set([
   // Losanpassung (Betreiber 18.8.26): darf jedes Team-Mitglied — ohne offene
   // Preise ist sie gefahrlos wiederholbar und voll auditiert.
   'gw_reset_credit',
+  // Vorlagen LESEN darf jedes Mitglied; SETZEN bleibt Owner (Konfig).
+  'gw_get_chat_templates',
 ]);
 
 // Abgelehnte Versuche gehoeren ins Protokoll — aber das Admin-Panel pollt die
@@ -1234,15 +1255,23 @@ async function runAdminCmd(send, msg, meta, ctx) {
                                wagerCmd: wagerCmd || undefined, prize: iPrize || undefined,
                                sponsor: iSponsor || undefined, channels: channels.length ? channels : 'alle',
                                announce: announceOn });
-      if (announceOn) await announceChannels(teamId, channels.length ? channels : null,
-        (coreId === 'CORE_CurrentViewers'
-          ? (windowSec > 0 ? coreMod.infoText({ keyword, windowSec,
-                                                minWatchSec: minWatchSec !== null ? minWatchSec : undefined })
-                           : coreMod.prepText({ keyword }))
-        : coreId === 'CORE_ScreenshotContest' ? coreMod.infoText({ url: publicHost() + '/viewer/contest' })
-        : coreId === 'CORE_TicketBuy' ? coreMod.infoText({ cmd: wagerCmd, keyword, url: publicHost() + '/viewer/wager' })
-        : '🎁 Zusätzliches Giveaway gestartet!' + (keyword ? ` Mitmachen: schreib "${keyword}" im Chat.` : ''))
-        + prizeLine(iPrize, iSponsor));
+      if (announceOn) {
+        let openTxt;
+        if (coreId === 'CORE_CurrentViewers') {
+          openTxt = windowSec > 0
+            ? await chatText(teamId, coreId, 'windowOpen', { keyword, windowSec,
+                minuten: Math.round(windowSec / 60),
+                minWatchSec: minWatchSec !== null ? minWatchSec : undefined })
+            : await chatText(teamId, coreId, 'prep', { keyword });
+        } else if (coreId === 'CORE_ScreenshotContest') {
+          openTxt = await chatText(teamId, coreId, 'open', { gewinn: iPrize || '', sponsor: iSponsor || '' });
+        } else if (coreId === 'CORE_TicketBuy') {
+          openTxt = await chatText(teamId, coreId, 'open', { befehl: wagerCmd, keyword, gewinn: iPrize || '', sponsor: iSponsor || '' });
+        } else {
+          openTxt = '🎁 Zusätzliches Giveaway gestartet!' + (keyword ? ` Mitmachen: schreib "${keyword}" im Chat.` : '');
+        }
+        await announceChannels(teamId, channels.length ? channels : null, openTxt + prizeLine(iPrize, iSponsor));
+      }
       // P6: vorbereitete Preise direkt beim Start anlegen (Los-Giveaway) —
       // aus dem Modal oder aus einem Entwurf (draftStart sendet dessen config).
       // Ein Giveaway = ein Preis: aus Modal/Entwurf wird genau der erste
@@ -1317,14 +1346,13 @@ async function runAdminCmd(send, msg, meta, ctx) {
         const settled = await wte.settleTicketBuyInstance(teamId, gid);
         Object.assign(outcome, { settledUsers: settled.users, settledCredit: settled.total });
         await announceChannels(teamId, known.channels,
-          `🎟 Los-Giveaway beendet — eure Zuschauzeit ist jetzt Los-Guthaben (${settled.users} Konten gutgeschrieben). `
-          + 'Es bleibt erhalten und zählt beim nächsten Los-Giveaway weiter. Die Ziehung folgt gleich!');
+          await chatText(teamId, known.core, 'closed', { konten: settled.users }));
       } else if (known.core === 'CORE_CurrentViewers') {
         if (known.announce !== false) await announceChannels(teamId, known.channels,
-          '⚡ Anmeldung beendet — die Ziehung macht der Streamer jetzt live!');
+          await chatText(teamId, known.core, 'closed'));
       } else if (known.core === 'CORE_ScreenshotContest') {
         await announceChannels(teamId, known.channels,
-          '📸 Der Screenshot-Contest ist beendet — danke an alle Einsender! Die Ziehung folgt.');
+          await chatText(teamId, known.core, 'closed'));
       } else {
         await announceChannels(teamId, known.channels,
           '🔒 Das zusätzliche Giveaway ist geschlossen — Ziehung folgt.');
@@ -1356,10 +1384,10 @@ async function runAdminCmd(send, msg, meta, ctx) {
       Object.assign(outcome, { giveawayId: gid, reopened: true });
       if (known.core === 'CORE_TicketBuy') {
         await announceChannels(teamId, known.channels,
-          '🎟 Das Los-Giveaway läuft weiter — Zuschauzeit zählt wieder als Los-Guthaben (euer Guthaben bleibt erhalten).');
+          await chatText(teamId, known.core, 'reopened'));
       } else if (known.core === 'CORE_CurrentViewers') {
         if (known.announce !== false) await announceChannels(teamId, known.channels,
-          '⚡ Die Verlosung ist wieder offen!');
+          await chatText(teamId, known.core, 'reopened'));
       } else {
         await announceChannels(teamId, known.channels,
           '🔓 Das zusätzliche Giveaway ist wieder offen.');
@@ -1401,12 +1429,10 @@ async function runAdminCmd(send, msg, meta, ctx) {
       }
       if (pSponsor) await pg.query(`UPDATE giveaway_prizes SET sponsor=$1 WHERE id=$2`, [pSponsor, prizeId]);
       Object.assign(outcome, { prizeId, title, sponsor: pSponsor || undefined, giveawayId: gid, wagerEndMinutes: endMin || null });
-      const cmd = (await redis.get(K.gWagerCmd(teamId, gid))) || 'setzen-Befehl';
+      const cmd = (await redis.get(K.gWagerCmd(teamId, gid))) || '!setzen';
       await announceChannels(teamId, inst.channels,
-        `🎁 Neuer Preis #${prizeId}: „${title}"`
-        + (pSponsor ? ` (bereitgestellt von ${pSponsor})` : '')
-        + ` — Lose setzen mit dem ${cmd === 'setzen-Befehl' ? cmd : `Befehl „${cmd} ${prizeId} <anzahl>"`}`
-        + (endMin ? ` (Einsatz-Ende in ${endMin} min).` : '.'));
+        await chatText(teamId, 'CORE_TicketBuy', 'prizeAdded',
+          { nr: prizeId, preis: title, sponsor: pSponsor, befehl: cmd, minuten: endMin || 0 }));
       send({ event: 'gw_ack', type: 'prize_added', prizeId, title });
       break;
     }
@@ -1464,8 +1490,8 @@ async function runAdminCmd(send, msg, meta, ctx) {
       const cGid = validGid(msg.giveawayId);
       const cInst = cGid ? (await wte.listGiveaways(teamId)).find(g => g.gid === cGid) : null;
       await announceChannels(teamId, cInst ? cInst.channels : null,
-        `🎁 Preis #${prizeId} „${r.title}" wurde storniert` +
-        (r.refundedUsers ? ` — alle Einsätze (${r.refundedUsers} Teilnehmer) sind zurückgebucht.` : '.'));
+        await chatText(teamId, 'CORE_TicketBuy', 'prizeCancelled',
+          { nr: prizeId, preis: r.title, anzahl: r.refundedUsers || 0 }));
       send({ event: 'gw_ack', type: 'prize_cancelled', prizeId, refundedUsers: r.refundedUsers });
       break;
     }
@@ -1482,6 +1508,39 @@ async function runAdminCmd(send, msg, meta, ctx) {
       }
       Object.assign(outcome, { users: r.users, total: r.total });
       send({ event: 'gw_ack', type: 'credit_reset', users: r.users, total: r.total });
+      break;
+    }
+    // ── Chat-Ansagen-Vorlagen (18.8.26): Katalog + Team-Overrides ──
+    case 'gw_get_chat_templates': {
+      const stored = await wte.listChatTemplates(teamId);
+      const byKey = {};
+      stored.forEach(s => { byKey[s.core + '|' + s.key] = s; });
+      const groups = ['_common', 'CORE_WatchtimeChatActivity', 'CORE_CurrentViewers',
+                      'CORE_TicketBuy', 'CORE_ScreenshotContest'].map(gr => ({
+        core: gr,
+        entries: ChatTexts.listChatTexts(gr).map(e => {
+          const s = byKey[gr + '|' + e.key] || null;
+          return { key: e.key, label: e.label, placeholders: e.placeholders, defaultText: e.defaultText,
+                   text: s ? s.text : '', appendTerms: s ? s.appendTerms : false, appendPage: s ? s.appendPage : false };
+        }),
+      }));
+      send({ event: 'gw_ack', type: 'chat_templates', groups });
+      break;
+    }
+    case 'gw_set_chat_template': {
+      const gr = String(msg.core || '');
+      const key = String(msg.key || '');
+      if (!ChatTexts.listChatTexts(gr).some(e => e.key === key)) {
+        Object.assign(outcome, { error: 'bad_request', core: gr, key });
+        send({ event: 'gw_ack', type: 'error', error: 'Unbekannte Chat-Nachricht.' });
+        break;
+      }
+      const r = await wte.setChatTemplate(teamId, gr, key, {
+        text: sanitizeStr(msg.text || '', 500),
+        appendTerms: !!msg.appendTerms, appendPage: !!msg.appendPage });
+      Object.assign(outcome, { core: gr, key, reset: !!r.reset,
+                               appendTerms: !!msg.appendTerms, appendPage: !!msg.appendPage });
+      send({ event: 'gw_ack', type: 'chat_template_set', core: gr, key, reset: !!r.reset });
       break;
     }
     case 'gw_set_wager_cmd': {
@@ -1502,7 +1561,8 @@ async function runAdminCmd(send, msg, meta, ctx) {
       const before = await redis.get(K.gWagerCmd(teamId, gid));
       await redis.set(K.gWagerCmd(teamId, gid), cmd);
       Object.assign(outcome, { giveawayId: gid, cmdBefore: before, cmdAfter: cmd });
-      await announceChannels(teamId, inst.channels, `🎟 Lose setzen geht ab jetzt mit „${cmd} <anzahl>".`);
+      await announceChannels(teamId, inst.channels,
+        await chatText(teamId, 'CORE_TicketBuy', 'wagerCmd', { befehl: cmd }));
       send({ event: 'gw_ack', type: 'wager_cmd_set', giveawayId: gid, command: cmd });
       break;
     }
@@ -1517,11 +1577,11 @@ async function runAdminCmd(send, msg, meta, ctx) {
       }
       const w = await wte.openInstantWindow(teamId, gid, msg.windowSec);
       Object.assign(outcome, { giveawayId: gid, windowSec: w.windowSec });
-      const CV = CoreRegistry.getCore('CORE_CurrentViewers');
       const cvMin = parseInt(await redis.get(K.gMinWatch(teamId, gid)), 10);
       if (inst.announce) await announceChannels(teamId, inst.channels,
-        CV.infoText({ keyword: inst.keyword, windowSec: w.windowSec,
-                      minWatchSec: Number.isFinite(cvMin) ? cvMin : undefined }));
+        await chatText(teamId, 'CORE_CurrentViewers', 'windowOpen',
+          { keyword: inst.keyword, windowSec: w.windowSec, minuten: Math.round(w.windowSec / 60),
+            minWatchSec: Number.isFinite(cvMin) ? cvMin : undefined }));
       // Ohne viewer_tick ist niemand „anwesend" — die Ziehung liefe ins Leere.
       // Darum beim Oeffnen des Fensters sofort warnen, nicht erst beim ★.
       let pulse = [];
@@ -1539,9 +1599,9 @@ async function runAdminCmd(send, msg, meta, ctx) {
       let txt = null;
       if (inst && inst.core === 'CORE_TicketBuy') {
         const cmd = await redis.get(K.gWagerCmd(teamId, gid)) || '!setzen';
-        txt = `🎟 Lose setzen: ${publicHost()}/viewer/wager (Login mit Twitch) — oder im Chat mit „${cmd} <anzahl>".`;
+        txt = await chatText(teamId, inst.core, 'page', { befehl: cmd });
       } else if (inst && inst.core === 'CORE_ScreenshotContest') {
-        txt = `📸 Screenshot-Contest: Einsenden und Bewerten auf ${publicHost()}/viewer/contest (Login mit Twitch).`;
+        txt = await chatText(teamId, inst.core, 'page');
       }
       if (!txt) {
         Object.assign(outcome, { error: 'no_viewer_page' });
@@ -1584,12 +1644,9 @@ async function runAdminCmd(send, msg, meta, ctx) {
       const before = await wte.getContestVoting(teamId, gid);
       const state = await wte.setContestVoting(teamId, gid, map[action]);
       Object.assign(outcome, { giveawayId: gid, votingBefore: before, votingAfter: state });
-      const texts = {
-        open:   `📸 Das VOTING ist offen! Bewerte die Screenshots mit 1–10 auf ${publicHost()}/viewer/contest (Login mit Twitch).`,
-        paused: '📸 Voting pausiert — abgegebene Stimmen bleiben erhalten.',
-        closed: '📸 Voting beendet — die Auswertung folgt!',
-      };
-      if (before !== state) await announceChannels(teamId, inst.channels, texts[state]);
+      const votingKeys = { open: 'votingOpen', paused: 'votingPaused', closed: 'votingClosed' };
+      if (before !== state) await announceChannels(teamId, inst.channels,
+        await chatText(teamId, 'CORE_ScreenshotContest', votingKeys[state]));
       send({ event: 'gw_ack', type: 'contest_voting', giveawayId: gid, voting: state });
       break;
     }
@@ -1859,11 +1916,11 @@ async function runAdminCmd(send, msg, meta, ctx) {
       // Faktor 1 = aus, das ist derselbe Befehl und wird genauso angesagt.
       if (r.factor > 1) {
         boostAnnounced.set(bKey, { teamId, gid: r.gid || null, factor: r.factor });
-        await announceTeam(teamId, `⚡ Giveaway-Boost für ${Math.round(r.seconds / 60)} Minuten — Faktor ×${r.factor}`
-          + ' auf Zuschauzeit UND Chat-Bonus. Jetzt zählt jede Minute mehr!');
+        await announceTeam(teamId, await chatText(teamId, '_common', 'boostStart',
+          { minuten: Math.round(r.seconds / 60), faktor: r.factor }));
       } else if (prev.factor > 1) {
         boostAnnounced.delete(bKey);
-        await announceTeam(teamId, '⚡ Giveaway-Boost vorzeitig beendet — Zuschauzeit zählt wieder normal.');
+        await announceTeam(teamId, await chatText(teamId, '_common', 'boostStop'));
       }
       send({ event: 'gw_ack', type: 'multiplier_set', factor: r.factor, seconds: r.seconds });
       break;
@@ -2014,14 +2071,10 @@ async function runAdminCmd(send, msg, meta, ctx) {
           // P4: Gewinner-Ansage aus dem Core (Einsatz/Score/Sofort-Wortlaut),
           // Fallback = bisheriger generischer Text. Die Meldefrist-Zeile
           // bleibt immer dran — der Gewinner muss wissen, wie es weitergeht.
-          let winLine = `🎉 Gewinner: @${result.winner} — herzlichen Glückwunsch!`;
-          try {
-            const wc = CoreRegistry.getCore(result.core || CORE.id);
-            if (typeof wc.winnerText === 'function') {
-              winLine = wc.winnerText({ winner: result.winner, coins: result.coins,
-                                        prizeTitle: result.prize || 'Preis' });
-            }
-          } catch { /* generisch */ }
+          let winLine = await chatText(teamId, result.core || CORE.id, 'winner',
+            { gewinner: result.winner, preis: result.prize || 'Preis',
+              gewinn: result.prize || '', punkte: result.coins });
+          if (!winLine) winLine = `🎉 Gewinner: @${result.winner} — herzlichen Glückwunsch!`;
           await announceTeam(teamId, winLine
             + ` Melde dich innerhalb von ${CLAIM_DEADLINE_DAYS} Tagen unter ${publicHost()}/viewer/claim `
             + '(Login mit Twitch), sonst wird ein Ersatzgewinner gezogen.');
@@ -3600,6 +3653,18 @@ async function ensureSchema() {
       status      TEXT NOT NULL DEFAULT 'open',
       created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
   await pg.query(`CREATE INDEX IF NOT EXISTS idx_prizes_team ON giveaway_prizes(team_id, status)`);
+  // Chat-Ansagen-Vorlagen (18.8.26): eigener Text je (Team, Core, Nachricht),
+  // Katalog + Rendering in chat-texts.js. Kein Personenbezug.
+  await pg.query(`
+    CREATE TABLE IF NOT EXISTS chat_templates (
+      team_id      TEXT NOT NULL,
+      core         TEXT NOT NULL,
+      msg_key      TEXT NOT NULL,
+      text         TEXT NOT NULL,
+      append_terms BOOLEAN NOT NULL DEFAULT FALSE,
+      append_page  BOOLEAN NOT NULL DEFAULT FALSE,
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (team_id, core, msg_key))`);
   await pg.query(`
     CREATE TABLE IF NOT EXISTS prize_wagers (
       id BIGSERIAL PRIMARY KEY,
@@ -3836,7 +3901,7 @@ async function closeInstantWindow(teamId, g) {
   const rows = await wte.getInstantParticipants(teamId, g.gid);
   const n = rows.filter(p => p.eligible).length;
   if (g.announce !== false) await announceChannels(teamId, g.channels,
-    `⚡ Anmeldefenster geschlossen — ${n} im Topf. Die Ziehung macht der Streamer gleich live!`);
+    await chatText(teamId, 'CORE_CurrentViewers', 'windowClosed', { anzahl: n }));
   // Angemeldet, aber keiner anwesend? Dann fehlen die viewer_tick — das
   // Panel soll das sehen, bevor der Streamer live auf ★ drueckt.
   let pulse = [];

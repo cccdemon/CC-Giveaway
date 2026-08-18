@@ -39,7 +39,7 @@ function makeRedis() {
 function makePg(channels) {
   // In-Memory-Tabellen für die TicketBuy-Pfade (Phase 4b) — die übrigen
   // Queries laufen wie bisher auf die Dummy-Antwort.
-  const prizes = [], wagers = [], ledger = [], entries = [], cvotes = [], consents = [], drawIns = [];
+  const prizes = [], wagers = [], ledger = [], entries = [], cvotes = [], consents = [], drawIns = [], ctpl = [];
   let prizeSeq = 1, entrySeq = 1, drawSeq = 1;
   async function query(sql, p = []) {
     if (/from team_members/i.test(sql)) return { rows: (channels || []).map(c => ({ channel: c })) };
@@ -196,6 +196,26 @@ function makePg(channels) {
                    image_token: e.image_token || null,
                    score: vs.reduce((s, v) => s + v.score, 0), votes: vs.length };
         }).sort((a, b) => b.score - a.score || b.votes - a.votes || a.entry_id - b.entry_id) };
+    }
+    // Chat-Ansagen-Vorlagen (chat_templates): Upsert / Delete / Select
+    if (/INSERT INTO chat_templates/.test(sql)) {
+      const ex = ctpl.find(x => x.team_id === p[0] && x.core === p[1] && x.msg_key === p[2]);
+      if (ex) Object.assign(ex, { text: p[3], append_terms: p[4], append_page: p[5] });
+      else ctpl.push({ team_id: p[0], core: p[1], msg_key: p[2], text: p[3], append_terms: p[4], append_page: p[5] });
+      return { rowCount: 1, rows: [] };
+    }
+    if (/DELETE FROM chat_templates/.test(sql)) {
+      const i = ctpl.findIndex(x => x.team_id === p[0] && x.core === p[1] && x.msg_key === p[2]);
+      if (i >= 0) ctpl.splice(i, 1);
+      return { rowCount: i >= 0 ? 1 : 0, rows: [] };
+    }
+    if (/FROM chat_templates WHERE team_id=\$1 AND core=\$2 AND msg_key=\$3/.test(sql)) {
+      const r = ctpl.filter(x => x.team_id === p[0] && x.core === p[1] && x.msg_key === p[2]);
+      return { rows: r, rowCount: r.length };
+    }
+    if (/FROM chat_templates WHERE team_id=\$1/.test(sql)) {
+      const r = ctpl.filter(x => x.team_id === p[0]);
+      return { rows: r, rowCount: r.length };
     }
     if (/INSERT INTO credit_ledger/.test(sql)) {
       ledger.push({ team_id: p[0], username: p[1], entry_type: p[2], amount: parseFloat(p[3]) });
@@ -1664,4 +1684,26 @@ test('listGiveaways liefert den Setz-Befehl der Instanz (Panel-Reload)', async (
   await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy', keyword: 'los', wagerCmd: '!buy' });
   const g = (await e.listGiveaways(TEAM)).find(x => x.gid === 'sess_2');
   assert.equal(g.wagerCmd, '!buy');
+});
+
+// ── Chat-Ansagen-Vorlagen (chat_templates) ──
+test('chat-templates: set/get/reset je (Core, Nachricht)', async () => {
+  const e = engine();
+  assert.equal(await e.getChatTemplate(TEAM, 'CORE_TicketBuy', 'open'), null);
+  await e.setChatTemplate(TEAM, 'CORE_TicketBuy', 'open',
+    { text: 'Eigener Text {keyword}', appendTerms: true, appendPage: false });
+  const t = await e.getChatTemplate(TEAM, 'CORE_TicketBuy', 'open');
+  assert.equal(t.text, 'Eigener Text {keyword}');
+  assert.equal(t.appendTerms, true);
+  assert.equal(t.appendPage, false);
+  // Upsert überschreibt
+  await e.setChatTemplate(TEAM, 'CORE_TicketBuy', 'open', { text: 'Neu', appendPage: true });
+  assert.equal((await e.getChatTemplate(TEAM, 'CORE_TicketBuy', 'open')).text, 'Neu');
+  // Liste fürs Panel
+  const all = await e.listChatTemplates(TEAM);
+  assert.equal(all.length, 1);
+  assert.equal(all[0].core, 'CORE_TicketBuy');
+  // Leerer Text = Standard (Zeile weg)
+  await e.setChatTemplate(TEAM, 'CORE_TicketBuy', 'open', { text: '   ' });
+  assert.equal(await e.getChatTemplate(TEAM, 'CORE_TicketBuy', 'open'), null);
 });

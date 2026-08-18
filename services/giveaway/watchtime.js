@@ -1462,6 +1462,44 @@ class WatchtimeEngine {
     return { users, total: Math.round(total * 10000) / 10000 };
   }
 
+  // ── Chat-Ansagen-Vorlagen (Betreiber 18.8.26) ────────────
+  // Eigene Texte je (Core, Nachricht) — team-weit in Postgres, damit sie
+  // Giveaways und Redis-Wipes überleben. Leerer Text = Standard (Zeile weg).
+  // Katalog/Platzhalter/Rendering: chat-texts.js.
+  async getChatTemplate(teamId, core, key) {
+    const t = sanitizeTeamId(teamId);
+    const r = await this.pg.query(
+      `SELECT text, append_terms, append_page FROM chat_templates WHERE team_id=$1 AND core=$2 AND msg_key=$3`,
+      [t, String(core), String(key)]);
+    if (!r.rowCount) return null;
+    return { text: r.rows[0].text, appendTerms: !!r.rows[0].append_terms, appendPage: !!r.rows[0].append_page };
+  }
+
+  async listChatTemplates(teamId) {
+    const t = sanitizeTeamId(teamId);
+    const r = await this.pg.query(
+      `SELECT core, msg_key, text, append_terms, append_page FROM chat_templates WHERE team_id=$1`, [t]);
+    return r.rows.map(x => ({ core: x.core, key: x.msg_key, text: x.text,
+                              appendTerms: !!x.append_terms, appendPage: !!x.append_page }));
+  }
+
+  async setChatTemplate(teamId, core, key, { text = '', appendTerms = false, appendPage = false } = {}) {
+    const t = sanitizeTeamId(teamId);
+    const body = String(text || '').trim();
+    if (!body) {
+      await this.pg.query(`DELETE FROM chat_templates WHERE team_id=$1 AND core=$2 AND msg_key=$3`,
+        [t, String(core), String(key)]);
+      return { reset: true };
+    }
+    await this.pg.query(
+      `INSERT INTO chat_templates (team_id, core, msg_key, text, append_terms, append_page)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (team_id, core, msg_key)
+       DO UPDATE SET text=$4, append_terms=$5, append_page=$6, updated_at=NOW()`,
+      [t, String(core), String(key), body.slice(0, 500), !!appendTerms, !!appendPage]);
+    return { saved: true };
+  }
+
   // Losanpassung (Betreiber 18.8.26): alle Lose-Konten des Teams auf null —
   // Neustart, weil Guthaben sonst über Giveaways hinweg erhalten bleibt.
   // Append-only: je Konto EINE Gegenbuchung (reset), kein DELETE. Blockiert,

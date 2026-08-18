@@ -211,6 +211,9 @@
       case 'auto_pause':  return 'Auto-Pause (alle Streams offline)';
       case 'auto_resume': return 'Auto-Resume (Stream online)';
       case 'auto_open':   return 'Auto-Open (Stream online)';
+      case 'gw_set_chat_template':
+        return (d.reset ? 'Chat-Ansage zurückgesetzt' : 'Chat-Ansage angepasst')
+             + (d.key ? ' (' + d.core + '/' + d.key + ')' : '');
       case 'gw_reset_credit':
         return d.error ? 'Losanpassung blockiert (' + (d.openPrizes || '?') + ' offene Preise)'
                        : 'Losanpassung: ' + (d.users || 0) + ' Lose-Konten auf 0 (-' + (d.total || 0) + ' Lose)';

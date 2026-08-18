@@ -7,6 +7,21 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 18. August 2026
 
+### Chat-Ansagen editierbar + Bedienpanels einklappbar
+
+Alle Chat-Ansagen der Plattform (Eroeffnung, Pause/Weiter, Fenster offen/zu,
+Preis angelegt/storniert, Voting-Status, Boost, Gewinner — je Mechanik der
+passende Text) lassen sich jetzt je Team anpassen: neue Karte CHAT-ANSAGEN
+im Panel. Eigener Text mit Platzhaltern wie {keyword}, {befehl} oder
+{gewinner}; zwei Haken haengen auf Wunsch den Link zu den
+Teilnahmebedingungen und zur Zuschauer-Seite (Setz-/Contest-/Statusseite)
+an. Leeres Feld = eingebauter Standardtext. Die Gewinn-Zeile der Eroeffnung
+und die Meldefrist-Zeile der Gewinner-Ansage haengt das System immer an.
+Speichern darf der Team-Owner, sehen alle Mitglieder.
+
+Ausserdem sind die Bedienkarten in der rechten Leiste jetzt per Klick auf
+den Titel ein- und ausklappbar; das Panel merkt sich den Zustand je Karte.
+
 ### Los-Giveaway: zwei Roster-Ansichten, Viewtime + tatsaechliche Lose, Losanpassung
 
 Die Teilnehmer-Tabelle des Los-Giveaways hat jetzt zwei Ansichten:
