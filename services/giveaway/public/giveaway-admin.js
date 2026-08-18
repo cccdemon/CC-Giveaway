@@ -161,20 +161,39 @@ function onGiveawayChange() {
 // Kampagne selbst öffnet ihre Teilnehmerliste (campaignDrill).
 var campaignDrill = false;
 
+// Hauptflaechen-Tab: 'roster' (Teilnehmer/Uebersicht) oder 'admin'
+// (Team-Verwaltung: Stream-Verbindungen, Historie, Audit, Chat-Ansagen).
+var mainTab = 'roster';
+function setMainTab(t) {
+  mainTab = t === 'admin' ? 'admin' : 'roster';
+  var a = document.getElementById('mt-roster'), b = document.getElementById('mt-admin');
+  if (a) a.classList.toggle('on', mainTab === 'roster');
+  if (b) b.classList.toggle('on', mainTab === 'admin');
+  if (mainTab === 'admin') { loadHistory(); loadAudit(); ctLoad(); }
+  updateMainView();
+}
+
 function updateMainView() {
   var ov  = document.getElementById('gw-overview');
   var tbl = document.getElementById('gw-table-wrap') || document.querySelector('.gw-table-wrap');
+  var adm = document.getElementById('gw-admin');
   var back = document.getElementById('ov-back');
   var srch = document.getElementById('search');
   var lbl  = document.getElementById('main-label');
-  var showOverview = !currentGiveaway && !campaignDrill;
+  var admin = mainTab === 'admin';
+  var app = document.querySelector('.gw-app');
+  if (app) app.classList.toggle('adm-mode', admin);
+  var showOverview = !admin && !currentGiveaway && !campaignDrill;
+  if (adm) adm.style.display = admin ? '' : 'none';
   if (ov)  ov.style.display  = showOverview ? '' : 'none';
-  if (tbl) tbl.style.display = showOverview ? 'none' : '';
-  if (back) back.style.display = (!currentGiveaway && campaignDrill) ? '' : 'none';
-  if (srch) srch.style.display = showOverview ? 'none' : '';
-  if (lbl) lbl.innerHTML = showOverview
-    ? 'LAUFENDE GIVEAWAYS'
-    : 'TEILNEHMER <em id="list-count">' + (Object.keys(participants).length) + '</em>';
+  if (tbl) tbl.style.display = (showOverview || admin) ? 'none' : '';
+  if (back) back.style.display = (!admin && !currentGiveaway && campaignDrill) ? '' : 'none';
+  if (srch) srch.style.display = (showOverview || admin) ? 'none' : '';
+  if (lbl) lbl.innerHTML = admin
+    ? 'TEAM-VERWALTUNG'
+    : (showOverview
+      ? 'LAUFENDE GIVEAWAYS'
+      : 'TEILNEHMER <em id="list-count">' + (Object.keys(participants).length) + '</em>');
   if (showOverview) renderOverview();
   updateCardNew();
   updateTicketBuyButtons();   // setzt ov-mode/Core-Klassen + Aktionsknoepfe
@@ -525,9 +544,16 @@ function tbCancelEdit(opts) {
   tbUpdatePrizeForm();
 }
 
-function tbCancelPrize(prizeId) {
-  if (!confirm('Preis #' + prizeId + ' stornieren? Alle gesetzten Lose werden den Teilnehmern zurückgebucht.')) return;
-  send({ event: 'gw_cmd', cmd: 'gw_cancel_prize', giveawayId: currentGiveaway, prizeId: prizeId });
+// Storno = Giveaway-Abbruch (Betreiber 18.8.26): kein Preis-Storno mit
+// Neu-Anlegen in derselben Instanz mehr — Einsätze zurück, Zuschauzeit
+// gutschreiben, Giveaway zu und weg. Danach öffnet sich das Start-Fenster
+// für das neue Los-Giveaway (Ack instance_cancelled).
+function tbCancelInstance() {
+  if (!currentGiveaway) return;
+  if (!confirm('Dieses Los-Giveaway stornieren?\n\nEs wird KEIN Gewinner gezogen: alle Einsätze werden zurückgebucht, '
+    + 'die erspielte Zuschauzeit wird als Los-Guthaben gutgeschrieben, das Giveaway wird geschlossen und entfernt '
+    + '(der Nachweis bleibt im Archiv). Danach kannst du direkt ein neues Los-Giveaway starten.')) return;
+  send({ event: 'gw_cmd', cmd: 'gw_cancel_instance', giveawayId: currentGiveaway });
 }
 
 function tbLoadPrizes() { send({ event: 'gw_cmd', cmd: 'gw_list_prizes', giveawayId: currentGiveaway }); }
@@ -538,8 +564,11 @@ function tbLoadPrizes() { send({ event: 'gw_cmd', cmd: 'gw_list_prizes', giveawa
 // Korrigieren (✎) oder solange kein Preis (mehr) eingetragen ist.
 function tbUpdatePrizeForm() {
   var taken = tbPrizes.filter(function(p){ return p.status !== 'cancelled'; }).length;
+  var sg = selectedGiveaway();
+  // Geschlossene Instanz bekommt keinen neuen Preis mehr (Anlegen nur im
+  // laufenden Giveaway); Korrigieren per ✎ geht weiter.
   var form = document.getElementById('tb-prize-form');
-  if (form) form.style.display = (tbEditPrizeId || taken === 0) ? '' : 'none';
+  if (form) form.style.display = (tbEditPrizeId || (taken === 0 && sg && !sg.closed)) ? '' : 'none';
   var t = document.getElementById('tb-prize-form-title');
   if (t && !tbEditPrizeId) t.textContent = 'NEUER PREIS';
 }
@@ -550,6 +579,10 @@ function renderPrizes(prizes) {
   var host = document.getElementById('tb-prizes');
   if (!host) return;
   tbUpdatePrizeForm();
+  // Storno (= Giveaway-Abbruch) nur anbieten, solange ein Preis offen ist —
+  // nach Ziehung oder ohne Preis gibt es nichts zurückzubuchen.
+  var ci = document.getElementById('tb-cancel-inst');
+  if (ci) ci.style.display = tbPrizes.some(function(p){ return p.status === 'open'; }) ? '' : 'none';
   if (!prizes || !prizes.length) { host.innerHTML = '<div class="wsc-empty">Noch kein Preis eingetragen.</div>'; return; }
   // Reihenfolge (alle Mechaniken): SCHLIESSEN → ZIEHEN → AUFRÄUMEN.
   // ★ wird erst scharf, wenn das Giveaway geschlossen ist — vorher liefe die
@@ -563,8 +596,7 @@ function renderPrizes(prizes) {
       + (p.sponsor ? ' <span style="opacity:.55">· ' + esc(p.sponsor) + '</span>' : '') + '</span>'
       + '<span class="s">' + Number(p.total_stake).toFixed(0) + ' 🎟</span>'
       + (p.status === 'open'
-          ? '<button class="btn btn-cyan btn-sm btn-mini" onclick="tbEditPrize(' + p.id + ')" title="Titel/Sponsor/Einsatz-Ende korrigieren">✎</button>'
-            + '<button class="btn btn-red btn-sm btn-mini" onclick="tbCancelPrize(' + p.id + ')" title="Stornieren — Einsätze werden zurückgebucht">✖</button>'
+          ? '<button class="btn btn-cyan btn-sm btn-mini" onclick="tbEditPrize(' + p.id + ')" title="Titel/Sponsor/Beschreibung/Bild/Einsatz-Ende korrigieren">✎</button>'
             + (canDraw
                 ? '<button class="btn btn-solid btn-sm" onclick="tbDrawPrize(' + p.id + ')">★ ZIEHEN</button>'
                 : '<button class="btn btn-solid btn-sm" disabled title="Erst SCHLIESSEN — Reihenfolge: SCHLIESSEN → ZIEHEN → AUFRÄUMEN. Solange nicht gezogen ist, geht WIEDER ÖFFNEN.">★ ZIEHEN</button>')
@@ -1311,6 +1343,15 @@ function handle(msg) {
       if (msg.type === 'instance_reopened') { log('Wieder geöffnet: ' + instanceLabel(msg.giveawayId || '?')
             + ' — Sammeln/Anmelden läuft weiter', 'cyan');
             setTimeout(requestData, 300); }
+      if (msg.type === 'instance_cancelled') {
+        log('Giveaway storniert: ' + instanceLabel(msg.giveawayId || '?')
+            + ' — ' + (msg.refundedUsers || 0) + ' Einsätze zurückgebucht, '
+            + (msg.settledUsers || 0) + ' Konten gutgeschrieben. Nachweis im Archiv.', 'gold');
+        // Auswahl ist weg — zurück zur Übersicht und direkt das Start-Fenster
+        // fürs neue Los-Giveaway anbieten.
+        currentGiveaway = null;
+        setTimeout(function(){ requestData(); updateMainView(); openInstance(); }, 300);
+      }
       if (msg.type === 'instance_cleaned') { log('Instanz aufgeräumt: ' + instanceLabel(msg.giveawayId || '?')
             + ' — Nachweis unter Tools → 🗄 Vergangene Giveaways', 'gold'); }
       if (msg.type === 'instance_paused')  log('Instanz pausiert: '   + (msg.giveawayId || '?'), 'gold');
@@ -1880,7 +1921,8 @@ function renderTable(hlKey=null) {
       return sortDir * (av<bv?-1:av>bv?1:0);
     });
 
-  document.getElementById('list-count').textContent = entries.length;
+  var lc = document.getElementById('list-count');
+  if (lc) lc.textContent = entries.length;
   if (gwDisplayCols) {
     // Core-Spalten: keine Coin-Badges, Aktionen nur BAN (+1/-1 sind
     // Kampagnen-Coins und haben hier keine Wirkung).
@@ -1889,7 +1931,7 @@ function renderTable(hlKey=null) {
     let rows = entries;
     if (selectedCore() === 'CORE_TicketBuy' && tbView !== 'all') {
       rows = entries.filter(([,p]) => p.registered || (parseFloat(p.stake)||0) > 0);
-      document.getElementById('list-count').textContent = rows.length;
+      if (lc) lc.textContent = rows.length;
     }
     document.getElementById('tbl').innerHTML = rows.map(([key,p],i) => `
       <tr class="${p.banned?'banned':''} ${p.eligible?'eligible':''} ${key===hlKey?'winner-row':''}">
@@ -1943,15 +1985,22 @@ function tbWinBadge(p) {
 var ctGroups = null;
 function ctLoad() { send({ event: 'gw_cmd', cmd: 'gw_get_chat_templates' }); }
 
+var CT_GROUP_LABELS = {
+  _common: '⚡ ALLGEMEIN / BOOST',
+  CORE_WatchtimeChatActivity: '📈 KAMPAGNE',
+  CORE_CurrentViewers: '⚡ SOFORTVERLOSUNG',
+  CORE_TicketBuy: '🎟 LOS-GIVEAWAY',
+  CORE_ScreenshotContest: '📸 SCREENSHOT-CONTEST',
+};
 function renderChatTexts() {
   var host = document.getElementById('ct-list');
   if (!host || !ctGroups) return;
   // Nicht neu rendern, während der Bediener in der Karte tippt.
   if (document.activeElement && host.contains(document.activeElement)) return;
-  var vis = ['_common', selectedCore() || 'CORE_WatchtimeChatActivity'];
   var html = '';
   ctGroups.forEach(function(g) {
-    if (vis.indexOf(g.core) < 0) return;
+    if (!(g.entries || []).length) return;
+    html += '<div class="ct-group">' + esc(CT_GROUP_LABELS[g.core] || g.core) + '</div>';
     (g.entries || []).forEach(function(e) {
       var id = 'ct_' + g.core + '_' + e.key;
       html += '<div class="ct-entry">'
@@ -1986,7 +2035,7 @@ function ctReset(core, key) {
 
 // ── Rail-Karten ein-/ausklappbar (Klick auf den Titel) ───
 function initRailCollapse() {
-  document.querySelectorAll('.gw-rail .card').forEach(function(card, i) {
+  document.querySelectorAll('.gw-rail .card, .gw-admin-grid .card').forEach(function(card, i) {
     var title = card.querySelector('.card-title');
     if (!title) return;
     var key = 'cc_clps_' + (card.id || 'card' + i);

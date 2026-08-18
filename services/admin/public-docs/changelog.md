@@ -7,6 +7,30 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 18. August 2026
 
+### Neuer Tab VERWALTUNG im Dashboard
+
+Die team-weiten Dinge haben jetzt einen eigenen Bereich: oben in der
+Hauptflaeche laesst sich zwischen TEILNEHMER und **VERWALTUNG** umschalten.
+Dort stehen — gross und mit Erklaerung statt in schmalen Seitenkarten —
+die **Stream-Verbindungen** (Streamerbot-Tokens je Kanal), die
+**Gewinner-Historie** aller Ziehungen, das **Audit-Log** und die
+**Chat-Ansagen** (jetzt alle Mechaniken auf einmal, mit Gruppentiteln).
+Die rechte Leiste ist damit deutlich schlanker und zeigt nur noch die
+Steuerung des gewaehlten Giveaways.
+
+### Los-Giveaway: Stornieren heisst jetzt Giveaway abbrechen
+
+Der ✖-Knopf am einzelnen Preis ist weg — einen Preis stornieren und in
+derselben Instanz einen neuen anlegen war zwei Werkzeuge fuer denselben
+Zweck und hinterliess stornierte Karteileichen. Korrekturen (Titel,
+Sponsor, Beschreibung, Bild, Einsatz-Ende) laufen weiter ueber ✎.
+
+Neu: **✖ GIVEAWAY STORNIEREN** bricht das ganze Los-Giveaway ab. Es wird
+kein Gewinner gezogen, alle Einsaetze werden zurueckgebucht, die erspielte
+Zuschauzeit wird als Los-Guthaben gutgeschrieben und das Giveaway wird
+geschlossen und entfernt (der Nachweis bleibt im Archiv). Danach oeffnet
+sich direkt das Start-Fenster, um das neue Los-Giveaway anzulegen.
+
 ### Chat-Ansagen editierbar + Bedienpanels einklappbar
 
 Alle Chat-Ansagen der Plattform (Eroeffnung, Pause/Weiter, Fenster offen/zu,

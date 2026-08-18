@@ -72,9 +72,15 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
   angemeldete** Giveaways (Opt-in-Filter in `/api/wager/state`). Instanz-Close bucht `earn` und räumt ab
   („Guthaben wandert") — **blockiert, solange ungezogene Preise offen sind**
   (`openPrizeCount`, erst ziehen oder stornieren; Sammeln stoppen = Pause).
-  Preise korrigierbar (`editPrize`, nur offene) und stornierbar
-  (`cancelPrize` = Gegenzeilen in `prize_wagers` + `refund` im Ledger, dann
-  `status='cancelled'`). Verfall nach 12 Monaten Inaktivität (`runRetention`).
+  Preise korrigierbar (`editPrize`, nur offene). **Storno = Giveaway-Abbruch
+  (Betreiber 18.8.26):** kein Preis-Storno mit Neu-Anlegen in derselben
+  Instanz mehr — `gw_cancel_instance` bucht alle Einsätze zurück
+  (`cancelPrize` je offenem Preis = Gegenzeilen in `prize_wagers` + `refund`
+  im Ledger, `status='cancelled'`), schreibt die Zuschauzeit gut
+  (close+settle), räumt auf und das Panel öffnet direkt das Start-Fenster
+  fürs neue Los-Giveaway (Ack `instance_cancelled`). `gw_cancel_prize`
+  existiert server-seitig weiter, hat aber kein UI mehr. Verfall nach 12
+  Monaten Inaktivität (`runRetention`).
   **Roster hat 2 Ansichten** (18.8.26, Toggle `#tb-view-toggle`): TEILNEHMER
   (nur Angemeldete der Instanz) vs. TICKETSTAND (alle Konten, 🏆 = letzte 3
   echte Ziehungen team-weit, `recentWin` aus `getTicketBuyParticipants`);
@@ -190,6 +196,11 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
   bewusst nicht im Katalog. Cmds: `gw_get_chat_templates` (AUDIT_SKIP,
   Member) / `gw_set_chat_template` (Owner). Panel-Karte `card-chattexts`.
   Rail-Karten sind einklappbar (`initRailCollapse`, localStorage je Karte).
+- **Tab VERWALTUNG in der Hauptfläche (18.8.26):** `setMainTab('roster'|'admin')`
+  + `#gw-admin`-Grid — Stream-Verbindungen (`#ingest-list`), Gewinner-Historie,
+  Audit-Log und Chat-Ansagen (alle Gruppen mit Headern) sind aus der Rail
+  dorthin umgezogen; `updateMainView` schaltet, Klasse `adm-mode` am `.gw-app`.
+  Team-weite Admin-UI gehört künftig in dieses Grid, nicht in die Rail.
 - **Teilnehmer-Vorschau:** `gw_preflight` (read-only, AUDIT_SKIP/MEMBER_CMDS)
   → Engine `previewEligible(teamId, {core, channels, minWatchSec})`: Kampagne
   = Follows+≥1 Coin, CV = Präsenz jetzt, TicketBuy = Ledger-Saldo>0, Contest
@@ -290,7 +301,7 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 `gw_open`(+keyword) · `gw_close` · `gw_draw_winner`(+`giveawayId`,+`prizeId` bei TicketBuy; Ersatzziehung: +`rerollOf`,`reason`,`excludeWinner` → verknüpft via `giveaway_draws.reroll_of/reroll_reason`, alter Claim wird `replaced`) · `gw_set_keyword` · `gw_get_keyword` · `gw_add_ticket`(user,amount) · `gw_sub_ticket` · `gw_ban`/`gw_unban` · `gw_reset`
 `gw_pause`/`gw_resume`/`gw_set_multiplier` (optional `giveawayId` → wirkt auf die Instanz)
 `gw_open_instance`(keyword, channels, core, windowSec, wagerCmd, announce) · `gw_close_instance` · `gw_reopen_instance`(giveawayId — nur geschlossene, noch nicht aufgeräumte Instanz) · `gw_list_giveaways` · `gw_set_announce`(giveawayId, on — CV-Chat-Ansagen stumm/laut, Gewinner-Ansage bleibt immer)
-`gw_add_prize`(giveawayId, title, wagerEndMinutes) · `gw_list_prizes` · `gw_set_wager_cmd`(giveawayId, command) · `gw_edit_prize`(prizeId, title/sponsor/description/wagerEndMinutes — nur offene) · `gw_cancel_prize`(prizeId — storniert + bucht alle Einsätze zurück)
+`gw_add_prize`(giveawayId, title, wagerEndMinutes) · `gw_list_prizes` · `gw_set_wager_cmd`(giveawayId, command) · `gw_edit_prize`(prizeId, title/sponsor/description/wagerEndMinutes — nur offene) · `gw_cancel_prize`(prizeId — storniert + bucht alle Einsätze zurück; ohne UI, Panel nutzt gw_cancel_instance) · `gw_cancel_instance`(giveawayId — Giveaway-Abbruch: Einsätze zurück, Zuschauzeit gutschreiben, close+settle+cleanup)
 `gw_contest_voting`(giveawayId, action: open/pause/resume/close) · `gw_review_entry`(entryId, approve/reject — auch Korrektur bereits entschiedener) · `gw_delete_entry`(entryId — Owner, ENDGÜLTIG: Bild weg, Stimmen CASCADE; jederzeit, für Inhalte die nicht gespeichert bleiben dürfen) · `gw_list_entries`(giveawayId) · `gw_announce_page`(giveawayId — sagt `/viewer/wager` bzw. `/viewer/contest` im Chat an)
 
 ## Data

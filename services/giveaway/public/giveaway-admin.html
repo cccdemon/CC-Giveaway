@@ -62,11 +62,21 @@
   .tb-view-toggle .btn { opacity:.55; }
   .tb-view-toggle .btn.on { opacity:1; border-color:var(--rdoc-accent,#C48A4A); color:var(--rdoc-accent,#C48A4A); }
   .win-badge { color:var(--rdoc-warning); font-size:10px; letter-spacing:.04em; cursor:help; }
-  /* Rail-Karten ein-/ausklappbar: Klick auf den Titel, Zustand je Karte gemerkt */
-  .gw-rail .card > .card-title { cursor:pointer; user-select:none; }
-  .gw-rail .card > .card-title::before { content:'▾'; margin-right:6px; font-size:9px; opacity:.6; }
-  .gw-rail .card.clps > .card-title::before { content:'▸'; }
-  .gw-rail .card.clps > *:not(.card-title) { display:none !important; }
+  /* Rail-/Verwaltungs-Karten ein-/ausklappbar: Klick auf den Titel, Zustand gemerkt */
+  .gw-rail .card > .card-title, .gw-admin-grid .card > .card-title { cursor:pointer; user-select:none; }
+  .gw-rail .card > .card-title::before, .gw-admin-grid .card > .card-title::before { content:'▾'; margin-right:6px; font-size:9px; opacity:.6; }
+  .gw-rail .card.clps > .card-title::before, .gw-admin-grid .card.clps > .card-title::before { content:'▸'; }
+  .gw-rail .card.clps > *:not(.card-title), .gw-admin-grid .card.clps > *:not(.card-title) { display:none !important; }
+  /* Hauptflaechen-Tabs + Verwaltungs-Grid */
+  .main-tabs { display:inline-flex; gap:4px; margin-right:10px; }
+  .main-tabs .btn { opacity:.55; }
+  .main-tabs .btn.on { opacity:1; border-color:var(--rdoc-accent,#C48A4A); color:var(--rdoc-accent,#C48A4A); }
+  .gw-admin { flex:1; min-height:0; overflow-y:auto; padding:10px; }
+  .gw-admin-grid { display:grid; gap:10px; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); align-items:start; }
+  .gw-admin-grid .card { margin:0; }
+  .gw-app.adm-mode #tb-view-toggle { display:none !important; }
+  #ct-list .ct-group { margin-top:12px; padding-top:6px; border-top:1px solid var(--rdoc-border);
+    font-size:10px; letter-spacing:.12em; color:var(--rdoc-text-muted); }
   /* Chat-Ansagen-Editor */
   #ct-list textarea { width:100%; resize:vertical; min-height:54px; font-size:11.5px;
     background:var(--rdoc-bg); color:var(--rdoc-text); border:1px solid var(--rdoc-border);
@@ -207,6 +217,12 @@
     <!-- Teilnehmer -->
     <div class="gw-main" data-help="Teilnehmer der aktuellen Auswahl. Die Spalten passen sich der Mechanik an: Kampagne = Coins + Viewtime je Kanal · Sofortverlosung = Anwesend/Im Topf · Los-Giveaway = Einsatz/Guthaben · Contest = Screenshot/Punkte/Stimmen. Zeilen-Aktionen: ±1 Coin (nur Kampagne, wird auditiert) und BAN. Badges: LOSTOPF = alle Bedingungen erfüllt, VORGEMERKT = angemeldet, Bedingung fehlt noch.">
       <div class="gw-main-head">
+        <!-- Hauptflaechen-Tabs: Teilnehmer/Uebersicht vs. Team-Verwaltung -->
+        <div class="main-tabs" id="main-tabs">
+          <button type="button" class="btn btn-sm on" id="mt-roster" onclick="setMainTab('roster')">TEILNEHMER</button>
+          <button type="button" class="btn btn-sm" id="mt-admin" onclick="setMainTab('admin')"
+                  title="Team-Verwaltung: Stream-Verbindungen, Gewinner-Historie, Audit-Log, Chat-Ansagen">VERWALTUNG</button>
+        </div>
         <span class="panel-label" id="main-label">TEILNEHMER <em id="list-count">0</em></span>
         <!-- Los-Giveaway: zwei Ansichten — Teilnehmer der Instanz vs.
              Ticketstand aller Konten (🏆 = letzte 3 Gewinner team-weit) -->
@@ -234,6 +250,47 @@
           </tr></thead>
           <tbody id="tbl"></tbody>
         </table>
+      </div>
+
+      <!-- ── Team-Verwaltung (Tab VERWALTUNG): team-weite Dinge an einem
+           Ort — unabhaengig vom gewaehlten Giveaway. ────────────────── -->
+      <div class="gw-admin" id="gw-admin" style="display:none">
+        <div class="gw-admin-grid">
+
+          <!-- Stream-Verbindungen · Setup (Ingest) -->
+          <div class="card setup" data-help="Verbindung je Kanal: Streamerbot verbindet sich mit dem hier erzeugten Token zur Plattform. NEU erzeugt einen frischen Token (der alte wird sofort ungültig) — danach im Streamerbot die Variable aktualisieren.">
+            <div class="card-title">STREAM-VERBINDUNGEN · SETUP <span class="ct-badge">STREAMERBOT</span></div>
+            <div class="cfg-hint">Ein Token je Kanal verbindet den Streamerbot mit der Plattform. Ohne Verbindung kommen keine Zuschauer-Meldungen an — dann läuft keine Zuschauzeit auf.</div>
+            <div id="ingest-list"><div class="wsc-empty">Lade…</div></div>
+          </div>
+
+          <!-- Gewinner-Historie -->
+          <div class="card" data-help="Alle Ziehungen des Teams mit Gewinner, Gewicht und Zeitpunkt — Testziehungen lassen sich einblenden. Das vollständige Dossier jeder Sitzung steht unter Tools → Vergangene Giveaways.">
+            <div class="card-title">GEWINNER-HISTORIE <span class="link-cyan" onclick="loadHistory()">↻</span></div>
+            <div class="cfg-hint">Jede Ziehung des Teams, neueste zuerst. Nachweis mit Snapshot: Archiv (🗄 Vergangene Giveaways).</div>
+            <label class="hist-toggle"><input type="checkbox" id="hist-show-tests" onchange="renderHistory()"> Tests zeigen</label>
+            <div class="hist-list" id="history-list"><div class="wsc-empty">Lade Historie...</div></div>
+          </div>
+
+          <!-- Audit-Log -->
+          <div class="card" data-help="Jede zustandsändernde Aktion (wer, was, wann, Ergebnis) — auch Ablehnungen und Fehler. Filter durchsucht Name und Aktion; CSV exportiert die gefilterte Ansicht. Die vollständige Ansicht mit Verdichtung: Tools → Audit.">
+            <div class="card-title">AUDIT-LOG <span class="link-cyan" onclick="loadAudit()">↻</span></div>
+            <div class="cfg-hint">Wer hat wann was gemacht — lückenlos, wird nie gelöscht. Volle Ansicht mit Filtern: Tools → 🔍 Audit.</div>
+            <div class="cfg-row" style="gap:6px">
+              <input type="text" id="audit-filter" placeholder="Filter: Name oder Aktion" class="in-wide" oninput="renderAudit()">
+              <button class="btn btn-cyan btn-sm" onclick="exportAudit()">CSV</button>
+            </div>
+            <div class="audit-list" id="audit-list"><div class="wsc-empty">Lade…</div></div>
+          </div>
+
+          <!-- Chat-Ansagen: editierbare Vorlagen aller Mechaniken -->
+          <div class="card" id="card-chattexts" data-help="Chat-Ansagen anpassen: eigener Text mit {platzhaltern}, die Haken hängen Links an (Teilnahmebedingungen / Zuschauer-Seite). Leeres Feld = eingebauter Standardtext. Gewinn-Zeile und Meldefrist hängt das System immer an. Speichern darf nur der Team-Owner.">
+            <div class="card-title">CHAT-ANSAGEN <span class="link-cyan" onclick="ctLoad()">↻</span></div>
+            <div class="cfg-hint">Eigener Text je Ansage — leer = Standard. Platzhalter in {klammern}, Links per Haken. Speichern kann nur der Team-Owner.</div>
+            <div id="ct-list"><div class="wsc-empty">Lade…</div></div>
+          </div>
+
+        </div>
       </div>
     </div>
 
@@ -338,7 +395,7 @@
       </div>
 
       <!-- Los-Giveaway: Setz-Befehl, Preise, Ziehung je Preis -->
-      <div class="card" id="card-ticketbuy" data-help="Los-Giveaway: Zuschauzeit wird Los-Guthaben (Umrechnung in der Regeln-Karte). Ein Los-Giveaway verlost genau EINEN Preis (Titel, Sponsor, Beschreibung, Bild bis 7 MB, optionales Einsatz-Ende) — für einen weiteren Preis ein zweites Los-Giveaway starten (＋ oben). Preis ✎ korrigieren oder ✖ stornieren (Einsätze werden zurückgebucht). Gesetzt wird per Chat-Befehl („&lt;Befehl&gt; &lt;Anzahl&gt;", nur nach Anmeldung per Teilnahme-Keyword) oder Setz-Seite; Rücknahme bis zum Einsatz-Ende. Reihenfolge: SCHLIESSEN (beendet Sammeln/Setzen, Guthaben wird gutgeschrieben) → ★ ZIEHEN (gewichtet nach Einsatz — danach sind die Einsätze ALLER Setzer verbraucht) → AUFRÄUMEN. Versehentlich geschlossen? WIEDER ÖFFNEN geht, solange nicht gezogen ist.">
+      <div class="card" id="card-ticketbuy" data-help="Los-Giveaway: Zuschauzeit wird Los-Guthaben (Umrechnung in der Regeln-Karte). Ein Los-Giveaway verlost genau EINEN Preis (Titel, Sponsor, Beschreibung, Bild bis 7 MB, optionales Einsatz-Ende) — für einen weiteren Preis ein zweites Los-Giveaway starten (＋ oben). Preis ✎ korrigieren (Titel, Sponsor, Beschreibung, Bild, Einsatz-Ende). ✖ GIVEAWAY STORNIEREN bricht das ganze Giveaway ab: kein Gewinner, alle Einsätze zurück, Zuschauzeit wird als Guthaben gutgeschrieben, das Giveaway wird entfernt (Nachweis im Archiv) — danach einfach ein neues Los-Giveaway starten. Gesetzt wird per Chat-Befehl („&lt;Befehl&gt; &lt;Anzahl&gt;", nur nach Anmeldung per Teilnahme-Keyword) oder Setz-Seite; Rücknahme bis zum Einsatz-Ende. Reihenfolge: SCHLIESSEN (beendet Sammeln/Setzen, Guthaben wird gutgeschrieben) → ★ ZIEHEN (gewichtet nach Einsatz — danach sind die Einsätze ALLER Setzer verbraucht) → AUFRÄUMEN. Versehentlich geschlossen? WIEDER ÖFFNEN geht, solange nicht gezogen ist.">
         <div class="card-title">LOS-GIVEAWAY // PREIS <span class="beta-chip">BETA</span></div>
         <div class="card-sub">SETZ-BEFEHL</div>
         <div class="input-row">
@@ -379,19 +436,18 @@
         </div>
         <div class="card-sub mt-8">PREIS DIESES GIVEAWAYS <span class="link-cyan" onclick="tbLoadPrizes()">↻</span></div>
         <div id="tb-prizes"><div class="wsc-empty">Lade…</div></div>
+        <!-- Storno = Giveaway-Abbruch: Einsätze zurück, Zuschauzeit gutschreiben,
+             Giveaway zu und weg — danach neues Los-Giveaway starten. -->
+        <div class="btn-group mt-6" id="tb-cancel-inst" style="display:none">
+          <button class="btn btn-red btn-sm" onclick="tbCancelInstance()"
+                  title="Kein Gewinner: alle Einsätze zurückbuchen, Zuschauzeit gutschreiben, Giveaway beenden — danach neues Los-Giveaway starten">✖ GIVEAWAY STORNIEREN</button>
+        </div>
         <!-- Losanpassung: Lose bleiben sonst über Giveaways hinweg erhalten -->
         <div class="card-sub mt-8">LOSANPASSUNG</div>
         <div class="cfg-hint">Lose bleiben über Giveaways hinweg erhalten. ZURÜCKSETZEN nullt die Lose-Konten <b>aller</b> Zuschauer im Team per Gegenbuchung im Journal — geht nur, wenn kein offener Preis mehr aussteht.</div>
         <div class="btn-group mt-6">
           <button class="btn btn-red btn-sm" id="tb-reset-btn" onclick="tbResetCredit()">LOSE ZURÜCKSETZEN</button>
         </div>
-      </div>
-
-      <!-- Chat-Ansagen: editierbare Vorlagen je Mechanik (+ Boost) -->
-      <div class="card" id="card-chattexts" data-help="Chat-Ansagen dieser Mechanik anpassen: eigener Text mit {platzhaltern}, die Haken hängen Links an (Teilnahmebedingungen / Zuschauer-Seite). Leeres Feld = eingebauter Standardtext. Gewinn-Zeile und Meldefrist hängt das System immer an. Speichern darf nur der Team-Owner.">
-        <div class="card-title">CHAT-ANSAGEN <span class="link-cyan" onclick="ctLoad()">↻</span></div>
-        <div class="cfg-hint">Eigener Text je Ansage — leer = Standard. Platzhalter in {klammern}, Links per Haken.</div>
-        <div id="ct-list"><div class="wsc-empty">Lade…</div></div>
       </div>
 
       <!-- Screenshot-Contest: Voting-Steuerung + Einsendungen -->
@@ -455,18 +511,8 @@
         </div>
       </div>
 
-      <!-- Stream-Verbindungen · Setup (Ingest) -->
-      <div class="card setup">
-        <div class="card-title">STREAM-VERBINDUNGEN · SETUP <span class="ct-badge">STREAMERBOT</span></div>
-        <div id="ingest-list"><div class="wsc-empty">Lade…</div></div>
-      </div>
-
-      <!-- Gewinner-Historie -->
-      <div class="card">
-        <div class="card-title">GEWINNER-HISTORIE <span class="link-cyan" onclick="loadHistory()">↻</span></div>
-        <label class="hist-toggle"><input type="checkbox" id="hist-show-tests" onchange="renderHistory()"> Tests zeigen</label>
-        <div class="hist-list" id="history-list"><div class="wsc-empty">Lade Historie...</div></div>
-      </div>
+      <!-- Stream-Verbindungen, Gewinner-Historie, Audit-Log und Chat-Ansagen
+           sind in den Tab VERWALTUNG der Hauptflaeche umgezogen (18.8.26). -->
 
       <!-- Export & Verwaltung (Backup/Reset = Kampagnen-Stand) -->
       <div class="card vis-campaign-only" id="card-export" data-help="Export/Backup der Kampagne (CSV-Teilnehmerliste, Gewinnchancen, JSON-Backup) und Wiederherstellung — Import nur für den Owner, jede Wiederherstellung wird protokolliert.">
@@ -487,16 +533,6 @@
         </div>
         <div class="cfg-hint">RESTORE ERSETZEN löscht den aktuellen Stand. Vorher ein Backup ziehen.</div>
         <button class="btn btn-red btn-full mt-6" onclick="resetAll()">GIVEAWAY RESET</button>
-      </div>
-
-      <!-- Audit-Log -->
-      <div class="card">
-        <div class="card-title">AUDIT-LOG <span class="link-cyan" onclick="loadAudit()">↻</span></div>
-        <div class="cfg-row" style="gap:6px">
-          <input type="text" id="audit-filter" placeholder="Filter: Name oder Aktion" class="in-wide" oninput="renderAudit()">
-          <button class="btn btn-cyan btn-sm" onclick="exportAudit()">CSV</button>
-        </div>
-        <div class="audit-list" id="audit-list"><div class="wsc-empty">Lade…</div></div>
       </div>
 
       <!-- Event Log -->
