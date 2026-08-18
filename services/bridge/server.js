@@ -76,6 +76,7 @@ const server = http.createServer(app);
 // großzügig und verhindert Speicher-DoS über Riesen-Frames.
 const wss    = new WebSocket.Server({ server, maxPayload: 128 * 1024 });
 const clients = new Map();   // ws → { channel, ip, authed, connectedAt }
+let evSeq = 0;               // laufende Nummer je Prozess, s. msg.evId
 
 // Drosseln: max. Nachrichten je Verbindung im 10s-Fenster (Ticks kommen je
 // Zuschauer ~1/min — 300 Zuschauer ≈ 50/10s; Limit lässt viel Luft) und
@@ -146,6 +147,13 @@ wss.on('connection', (ws, req) => {
     if (!channels) { log('Ingest', `${msg.event} (unrouted)`); return; }
     msg.team = meta.team;
     msg.channel = meta.channel;
+    // Ereignis-Kennung: heute reine Diagnose (ein Abonnent, genau eine
+    // Zustellung). Sie ist der Haken fuer den Tag, an dem die Zustellung
+    // "mindestens einmal" wird — dann kann der Verbraucher doppelte
+    // Ereignisse erkennen, statt sie ein zweites Mal zu buchen
+    // (docs/SKALIERUNG.md). Kanal + Zeit + Zaehler reicht: der Zaehler
+    // laeuft je Prozess, der Kanal haengt am Token.
+    msg.evId = `${meta.channel}:${Date.now()}:${++evSeq}`;
     const payload = JSON.stringify(msg);
     log('Ingest', `← [${meta.team}/${meta.channel}] ${msg.event}${msg.user ? ' (' + msg.user + ')' : ''}`);
     for (const ch of channels) redisPub.publish(ch, payload).catch(e => logErr('Pub', ch, e.message));

@@ -54,6 +54,11 @@ const CFG = {
   // Ziehungs-Snapshot — in einer laufenden Verlosung waere das erfundene
   // Viewtime. Fuer lokale Entwicklung ALLOW_SIM=true setzen.
   allowSim: process.env.ALLOW_SIM === 'true',
+  // Zeitgeber (Ticker, Sofort-Fenster-Watcher, Retention) laufen genau EINMAL.
+  // Bei einem einzelnen Container ist das der Normalfall (Default true). Wer
+  // den Dienst je repliziert, setzt das Flag auf allen weiteren Instanzen auf
+  // false: sonst bucht jede Replik denselben Tick noch einmal (docs/SKALIERUNG.md).
+  runScheduler: process.env.RUN_SCHEDULER !== 'false',
 };
 
 const redis    = new Redis(CFG.redis);
@@ -260,6 +265,14 @@ const AUDIT_SKIP = new Set([
 // bis dahin gilt die Summe). Konstante, per ENV überschreibbar — bewusst
 // nicht im Admin-Panel einstellbar.
 const MAX_PARALLEL_GIVEAWAYS = Math.max(1, parseInt(process.env.MAX_PARALLEL_GIVEAWAYS || '4', 10) || 4);
+// Abgeschaltete Mechaniken: kein neues Giveaway und kein neuer Entwurf mehr.
+// Laufende Instanzen bleiben bedienbar (Voting, Ziehung, Aufraeumen), damit
+// nichts mitten im Betrieb abbricht. Wieder freigeben = hier austragen und die
+// Typ-Karte in giveaway-admin.html wieder einblenden.
+const DISABLED_CORES = new Set(['CORE_ScreenshotContest']);
+const DRAFT_TYPE_CORE = { campaign: 'CORE_WatchtimeChatActivity', instant: 'CORE_CurrentViewers',
+                          ticketbuy: 'CORE_TicketBuy', contest: 'CORE_ScreenshotContest' };
+const CORE_DISABLED_HINT = 'Diese Mechanik ist vorübergehend abgeschaltet — das System ist noch nicht fertig.';
 // Interner Weg zum admin-Service (Compose-Servicename) — nur für den
 // Terms-Snapshot beim ersten Giveaway eines Teams (P1b), lesend/öffentliche Route.
 const ADMIN_URL = process.env.ADMIN_URL || 'http://admin:3005';
@@ -622,9 +635,34 @@ const clients = new Map(); // clientId → { ws, authUser, teamId, role, ip, con
 const WS_MSG_WINDOW_MS = 10000;
 const WS_MSG_MAX = 300;
 
+// Panel-Nachrichten gehen ueber Redis statt direkt an die lokale Client-Map:
+// bei einem Container ist das derselbe Weg mit einem Hop mehr, bei mehreren
+// erreicht ein Ereignis auch die Browser, die an einer anderen Instanz haengen
+// (docs/SKALIERUNG.md). Absichtlich fire-and-forget — das Panel frischt ohnehin
+// zyklisch nach, ein verlorener Hinweis ist kein Datenverlust.
+const PANEL_CH = 'ch:panel';
 function broadcastTeam(teamId, obj) {
-  const str = JSON.stringify(obj);
+  if (!teamId) return;
+  redisPub.publish(PANEL_CH, JSON.stringify({ team: teamId, payload: obj }))
+    .catch(e => logErr('Panel', 'publish:', e.message));
+}
+
+// Zustellung an die Browser DIESER Instanz.
+function deliverToPanels(teamId, str) {
   for (const [, c] of clients) if (c.teamId === teamId && c.ws.readyState === WebSocket.OPEN) c.ws.send(str);
+}
+
+function subscribeToPanel() {
+  redisSub.subscribe(PANEL_CH, (err) => {
+    if (err) return logErr('Sub', PANEL_CH + ':', err.message);
+    log('Sub', 'Subscribed ' + PANEL_CH);
+  });
+  redisSub.on('message', (channel, payload) => {
+    if (channel !== PANEL_CH) return;
+    let msg; try { msg = JSON.parse(payload); } catch { return; }
+    if (!msg || !msg.team) return;
+    deliverToPanels(msg.team, JSON.stringify(msg.payload));
+  });
 }
 
 function publicHost() {
@@ -966,6 +1004,11 @@ async function runAdminCmd(send, msg, meta, ctx) {
     case 'gw_save_draft': {
       const cfg = (msg.config && typeof msg.config === 'object') ? msg.config : {};
       const dType = ['campaign', 'instant', 'ticketbuy', 'contest'].includes(cfg.type) ? cfg.type : null;
+      if (dType && DISABLED_CORES.has(DRAFT_TYPE_CORE[dType])) {
+        Object.assign(outcome, { error: 'core_disabled', core: DRAFT_TYPE_CORE[dType] });
+        send({ event: 'gw_ack', type: 'error', error: CORE_DISABLED_HINT });
+        break;
+      }
       if (!dType) {
         Object.assign(outcome, { error: 'bad_type' });
         send({ event: 'gw_ack', type: 'error', error: 'Unbekannter Giveaway-Typ.' });
@@ -1076,6 +1119,11 @@ async function runAdminCmd(send, msg, meta, ctx) {
       const keyword = sanitizeStr(msg.keyword || '', 100);
       // Phase 3: Instanz kann einen anderen Core fahren (Registry-validiert).
       const coreId = CoreRegistry.CORES[msg.core] ? msg.core : CoreRegistry.DEFAULT_CORE_ID;
+      if (DISABLED_CORES.has(coreId)) {
+        Object.assign(outcome, { blocked: 'core_disabled', core: coreId });
+        send({ event: 'gw_ack', type: 'open_blocked', error: CORE_DISABLED_HINT });
+        break;
+      }
       const coreMod = CoreRegistry.getCore(coreId);
       // Gewinn ist Pflicht — ausser beim Los-Giveaway (dort sind die einzeln
       // angelegten Preise die Gewinne, je Preis mit eigenem Sponsor).
@@ -1919,12 +1967,22 @@ async function rateLimit(key, seconds) {
   catch { return true; }   // Redis-Störung darf legitime Nutzung nicht blocken
 }
 
-// ── Redis Pub/Sub: consume ch:giveaway ───────────────────
-function subscribeToGiveaway() {
+// ── Ingest-Ereignisse: eine Quelle, ein Einstiegspunkt ───
+// consumeIngest kapselt den Transport. Heute Redis Pub/Sub (jede Replik saehe
+// jedes Ereignis — deshalb laeuft der Dienst einfach); der Umstieg auf Redis
+// Streams mit Consumer-Group ist damit ein Eingriff an genau dieser Stelle
+// statt einer Suche durch die ganze Datei (docs/SKALIERUNG.md).
+function consumeIngest(handler) {
   redisSub.subscribe('ch:giveaway', (err) => { if (err) return logErr('Sub', err.message); log('Sub', 'Subscribed ch:giveaway'); });
   redisSub.on('message', async (channel, payload) => {
     if (channel !== 'ch:giveaway') return;
     let msg; try { msg = JSON.parse(payload); } catch { return; }
+    try { await handler(msg); } catch (e) { logErr('Ingest', 'handler:', e.message); }
+  });
+}
+
+function subscribeToGiveaway() {
+  consumeIngest(async (msg) => {
     const teamId = sanitizeTeamId(msg.team);
 
     switch (msg.event) {
@@ -3582,9 +3640,15 @@ async function main() {
   await ensureSchema();
   await loadMasterSecret();
   subscribeToGiveaway();
-  startWatchtimeTicker();
-  startInstantWatcher();
-  startRetentionJob();
+  subscribeToPanel();
+  // Zeitgeber nur, wenn diese Instanz sie fahren soll (RUN_SCHEDULER).
+  if (CFG.runScheduler) {
+    startWatchtimeTicker();
+    startInstantWatcher();
+    startRetentionJob();
+  } else {
+    log('Sched', 'RUN_SCHEDULER=false — Ticker, Sofort-Watcher und Retention laufen auf einer anderen Instanz');
+  }
   server.listen(CFG.port, () => log('Giveaway', `Service on port ${CFG.port}`));
 }
 

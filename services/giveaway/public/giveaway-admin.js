@@ -102,15 +102,23 @@ function send(obj) {
   else log('WS nicht verbunden', 'red');
 }
 
+// Ohne Team laesst sich nichts oeffnen: die Uebersicht und die Rail-Karte
+// fordern dann zuerst zum Teamanlegen auf (MEINE TEAMS), statt einen
+// Start-Knopf anzubieten, der serverseitig ohnehin abgewiesen wuerde.
+var noTeam = false;
+
 async function loadTeams() {
   try {
     var teams = await (await fetch('/admin/api/teams/mine')).json();
     var sel = document.getElementById('team-select');
     if (!Array.isArray(teams) || !teams.length) {
+      noTeam = true;
       if (sel) sel.innerHTML = '<option>— kein Team —</option>';
       log('Du bist in keinem Team. Lege unter MEINE TEAMS eins an.', 'gold');
+      updateMainView();
       return;
     }
+    noTeam = false;
     if (sel) {
       sel.innerHTML = teams.map(function(t){ return '<option value="'+esc(t.id)+'">'+esc(t.name)+(t.role==='owner'?' ★':'')+'</option>'; }).join('');
       if (!currentTeam || !teams.some(function(t){return t.id===currentTeam;})) currentTeam = teams[0].id;
@@ -168,7 +176,33 @@ function updateMainView() {
     ? 'LAUFENDE GIVEAWAYS'
     : 'TEILNEHMER <em id="list-count">' + (Object.keys(participants).length) + '</em>';
   if (showOverview) renderOverview();
+  updateCardNew();
   updateTicketBuyButtons();   // setzt ov-mode/Core-Klassen + Aktionsknoepfe
+}
+
+// Rail-Karte im Uebersichtsmodus: ohne Team ist der erste Schritt das Team,
+// nicht das Giveaway.
+function updateCardNew() {
+  var t = document.getElementById('card-new-title');
+  var h = document.getElementById('card-new-hint');
+  var b = document.getElementById('card-new-btn');
+  if (!t || !h || !b) return;
+  if (noTeam) {
+    t.textContent = 'KEIN TEAM';
+    h.textContent = 'Ohne Team laesst sich kein Giveaway starten. Lege eins an oder '
+                  + 'tritt per Einladungscode bei.';
+    b.textContent = '＋ TEAM ERSTELLEN';
+  } else {
+    t.textContent = 'KEIN GIVEAWAY GEWÄHLT';
+    h.textContent = 'Wähle links eine Kachel, um ein laufendes Giveaway zu steuern — '
+                  + 'oder starte ein neues.';
+    b.textContent = '＋ GIVEAWAY STARTEN';
+  }
+}
+
+function cardNewAction() {
+  if (noTeam) { location.href = '/admin/teams.html'; return; }
+  openInstance();
 }
 
 function gwShowOverview() {
@@ -195,9 +229,14 @@ function renderOverview() {
   var host = document.getElementById('gw-overview');
   if (!host) return;
   var list = giveawayList.slice();
+  if (noTeam) {
+    host.innerHTML = '<div class="ov-empty">Du bist in keinem Team. Ohne Team laesst sich kein '
+      + 'Giveaway starten — lege zuerst unter MEINE TEAMS eins an oder tritt per Einladungscode bei.</div>';
+    return;
+  }
   if (!list.length) {
     host.innerHTML = '<div class="ov-empty">Kein Giveaway aktiv. Mit ＋ oben startest du eins '
-      + '(Kampagne, Sofortverlosung, Los-Giveaway oder Screenshot-Contest).</div>';
+      + '(Kampagne, Sofortverlosung oder Los-Giveaway).</div>';
     return;
   }
   host.innerHTML = list.map(function(g) {
@@ -660,6 +699,9 @@ var IW_TYPES = {
 };
 
 function openInstance() {
+  // Ohne Team gibt es nichts zu oeffnen — direkt zur Teamverwaltung.
+  if (noTeam) { log('Erst ein Team anlegen — ohne Team kein Giveaway.', 'gold');
+                location.href = '/admin/teams.html'; return; }
   iwType = null;
   iwDraftId = null;
   document.querySelectorAll('.iw-card').forEach(function(c){ c.classList.remove('sel'); });

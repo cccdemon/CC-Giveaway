@@ -5,6 +5,24 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ---
 
+## 18. August 2026
+
+### Screenshot-Contest vorerst abgeschaltet
+
+Die Mechanik ist noch nicht fertig — sie steht deshalb im Start-Fenster nicht
+mehr zur Auswahl, und der Server nimmt auch keine Entwuerfe dieses Typs mehr an.
+Bereits laufende Contests bleiben vollstaendig bedienbar: Einsendungen,
+Freigabe, Voting, Ziehung und Aufraeumen funktionieren wie bisher. Sobald der
+Contest fertig ist, kommt er zurueck.
+
+### Ohne Team fuehrt das Dashboard zuerst zum Team
+
+Wer noch in keinem Team ist, sah bisher nur eine leere Uebersicht. Jetzt steht
+dort, dass ohne Team kein Giveaway startbar ist, und die Karte rechts bietet
+**＋ TEAM ERSTELLEN** an — der Weg fuehrt direkt zu *Meine Teams*.
+
+---
+
 ## 10. August 2026
 
 ### Los-Giveaway und Screenshot-Contest sind als BETA gekennzeichnet

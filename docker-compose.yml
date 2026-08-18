@@ -113,6 +113,9 @@ services:
       # Shared-Secret admin↔giveaway für /internal/team/cleanup (Team-Verwaltung).
       # Leer = Endpunkt tot; Team-Aktionen funktionieren, nur ohne Live-State-Wipe.
       INTERNAL_API_KEY:     ${INTERNAL_API_KEY:-}
+      # Zeitgeber (Ticker, Sofort-Fenster-Watcher, Retention). Genau EINE
+      # Instanz darf sie fahren — bei Replikation auf allen weiteren false.
+      RUN_SCHEDULER:        ${RUN_SCHEDULER:-true}
       TZ: Europe/Berlin
     depends_on:
       redis:

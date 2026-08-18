@@ -73,6 +73,12 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
   (`buildPool` = nur Führende, weight 1; Gleichstand wird gelost). Ersetzen
   der eigenen Einsendung löscht deren Stimmen (Warn-Handshake
   `votes_would_be_lost` + `confirmReplace`). Seite `/giveaway/contest.html`.
+- **`CORE_ScreenshotContest` ist seit 18.8.26 abgeschaltet** (Betreiber: noch nicht
+  fertig). `DISABLED_CORES` in `services/giveaway/server.js` blockt `gw_open_instance`
+  und `gw_save_draft` (`open_blocked`/`error` mit `CORE_DISABLED_HINT`), die Typ-Karte
+  im Start-Modal ist auskommentiert. Core bleibt in der Registry, laufende Instanzen
+  bleiben voll bedienbar (Voting, Ziehung, Aufraeumen). Freigeben = beide Stellen
+  zurueckdrehen.
 - **BETA-Kennzeichnung** kommt aus dem Core-Vertrag (`display.beta` →
   `gw_list_giveaways.coreBeta`): Start-Modal, Auswahl, Übersichtskachel und
   Rail-Karte zeigen den Chip. Neuer Core startet mit `beta: true`, raus kommt es
@@ -124,10 +130,34 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
   Moderations-Karte) und die Einheiten-Map in `CC.audit.summary`; Client-Maps
   (CORE_CSS/LABEL/ICON/PANEL_CARD_FALLBACK) sind nur Fallback für alte
   Server-Payloads. Details im Kopf von docs/ARCHITEKTUR-CORES.md.
+- **Core-Modul, tatsächliche Form (Code schlägt Entwurf):** ein Core exportiert
+  `{id, label, accrual, config, display}` plus **pure Regel- und Textfunktionen**
+  (`aggregate`, `buildPool`, `infoText`, `statusLine`, `winnerText`, `parseWager` ...),
+  die die Engine direkt mit einfachen Argumenten aufruft. `accrual: 'watchtime'|'none'`
+  entscheidet, ob Tick/Chat-Bonus und die `cfg:*`-Kopie überhaupt laufen
+  (`tickPresentUsers`, `handleChatMessage`, `copyCfgToInstance`); `drawWinner` holt
+  über `getCore(...)` den Core und ruft nur `buildPool(poolSource)`.
+  **`docs/ARCHITEKTUR-CORES.md` §4 beschreibt den Entwurf, nicht den Ist-Code:**
+  `ctx`/`kv`, `onOpen`/`onViewerTick`/`onChatMessage`, `afterDraw(ctx, ...)`,
+  `commands`, `auditText` existieren so nicht. Wer solche Methoden schreibt, bekommt
+  toten Code, weil sie niemand aufruft. Verbindlich bleiben aus dem Dokument die
+  Abgrenzung Engine/Core (§3) und die Entscheidungen (§10), nicht die Signaturen.
+- **Neuen Core anlegen (Reihenfolge):** 1. Modul in `services/giveaway/cores/`
+  mit `id/label/accrual/config/display` (`display.beta: true`). 2. Eintrag in
+  `cores/index.js`. 3. Verzweigungen im Server: `watchtime.js` und `server.js`
+  prüfen an rund 57 Stellen die Core-ID (`getCore(g.core).id === 'CORE_TicketBuy'`),
+  Dependency Injection gibt es nicht. 4. Datenpfade: `sendTeamData`-Teilnehmerliste,
+  `previewEligible`, `/api/my-status`, Archiv-Dossier. 5. Panel: `IW_TYPES` im
+  Start-Modal, ggf. `STAT_TILES`- und `PANEL_CARD_LOADERS`-Eintrag. 6. Tests in
+  `tests/cores.test.js` (pure Funktionen, keine Infrastruktur).
 - **Teilnehmer-Vorschau:** `gw_preflight` (read-only, AUDIT_SKIP/MEMBER_CMDS)
   → Engine `previewEligible(teamId, {core, channels, minWatchSec})`: Kampagne
   = Follows+≥1 Coin, CV = Präsenz jetzt, TicketBuy = Ledger-Saldo>0, Contest
   = Follow+minWatch. Anzeige im Start-Modal (`iw-preflight`).
+- **Ohne Team blockt das Panel vorne:** `loadTeams()` setzt `noTeam`, die Übersicht
+  und die Rail-Karte `#card-new` (`updateCardNew`, Aktion `cardNewAction`) fordern dann
+  zum Teamanlegen auf und verlinken `/admin/teams.html`; `openInstance()` leitet dorthin
+  um, statt ein Modal zu zeigen, das der Server ohnehin abweist.
 - **Panel-Startzustand = Übersicht** (`updateMainView`, Klasse `ov-mode` an
   `.gw-app`): ohne Auswahl zeigt die Hauptfläche Kacheln je laufendem Giveaway
   (`renderOverview` aus `gw_list_giveaways`, inkl. `prize/sponsor/startedAt/
@@ -332,6 +362,7 @@ Architekturdiagramme — Nachschlagewerk) ·
 `docs/RECHT-UND-DATENSCHUTZ.md` · `docs/PROJEKTHISTORIE.md` ·
 `docs/ANLEITUNG-TEILNEHMER.md` · `docs/TEILNAHMEBEDINGUNGEN.md` ·
 `docs/ARCHITEKTUR-CORES.md` (Core-Vertrag, verbindlich) ·
+`docs/SKALIERUNG.md` (Engpaesse, offen gehaltene Tueren, Regeln) ·
 `streamerbot/CAMPAIGN_SETUP.md`.
 Öffentlich (ohne Login): `services/admin/public-docs/roadmap.md` +
 `changelog.md` → `/admin/roadmap.html`, `/admin/changelog.html`. Nutzerrelevante
@@ -352,6 +383,14 @@ setup-git` liefert die Credentials. Lokales `git` bleibt für commit/diff/log.
   OBS-Menü und die öffentlichen Caddy-Pfade. `gw_join` **bleibt** — das Panel
   meldet damit neue Teilnehmer und frischt auf. `teams.overlay_key` bleibt als
   unbenutzte Spalte stehen.
+- **Skalierungs-Regeln** (`docs/SKALIERUNG.md`, kosten heute nichts): neue
+  periodische Aufgaben gehoeren hinter `RUN_SCHEDULER`, nicht als freies
+  `setInterval` ins Modul. Kein neuer Prozess-Zustand ohne TTL und
+  Invalidierung. „Erster gewinnt" nie ueber die JS-Reihenfolge, immer
+  DB-Constraint oder `pg_advisory_xact_lock`. `broadcastTeam` publiziert nach
+  `ch:panel`, Zustellung an die eigenen Browser macht `deliverToPanels`;
+  Ingest-Ereignisse kommen ausschliesslich ueber `consumeIngest(handler)`.
+  `watchtime.js` bleibt frei von HTTP und WS.
 - WS-Events `{event:'name',...}`; Admin-Cmds `{event:'gw_cmd',cmd}`. Neue Events/Cmds
   **nur in `services/giveaway/public/cc-defs.js`** eintragen (`ALLOWED_EVENTS`/`ALLOWED_CMDS`) —
   beide Shared-Libs lesen `CC.defs` fail-closed, eine zweite Liste wäre die nächste Dublette.
@@ -401,6 +440,10 @@ gegen den Quelltext geprueft, Default in Klammern:
 - `PLATFORM_ADMINS` (admin, `justcallmedeimos`): Superadmin-Bootstrap, komma-getrennt.
 - `COOKIE_SECURE` (admin, `true`): nur fuer lokales HTTP auf `false`.
 - `DISCORD_FEEDBACK_WEBHOOK` (admin, leer): leer = Rueckmeldungen nur in der DB.
+- `RUN_SCHEDULER` (giveaway, `true`): Zeitgeber (Ticker, Sofort-Fenster-Watcher,
+  Retention). Genau EINE Instanz darf sie fahren. Bei einem Container irrelevant,
+  bei Replikation auf allen weiteren `false` — sonst bucht jede Replik denselben
+  Tick noch einmal (`docs/SKALIERUNG.md`).
 - `ADMIN_PUBLIC_URL` (admin, `https://team.raumdock.org`): Basis-URL fuer
   Login-Redirects und Links des admin-Service.
 

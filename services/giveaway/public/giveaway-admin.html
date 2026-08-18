@@ -214,10 +214,10 @@
       <!-- Übersichtsmodus (kein Giveaway gewählt): die Leiste bleibt leer bis
            auf diese Karte — ohne Auswahl gibt es nichts zu steuern. -->
       <div class="card" id="card-new" style="display:none">
-        <div class="card-title">KEIN GIVEAWAY GEWÄHLT</div>
-        <div class="cfg-hint">Wähle links eine Kachel, um ein laufendes Giveaway zu steuern —
+        <div class="card-title" id="card-new-title">KEIN GIVEAWAY GEWÄHLT</div>
+        <div class="cfg-hint" id="card-new-hint">Wähle links eine Kachel, um ein laufendes Giveaway zu steuern —
         oder starte ein neues.</div>
-        <button class="btn btn-green btn-full mt-6" onclick="openInstance()">＋ GIVEAWAY STARTEN</button>
+        <button class="btn btn-green btn-full mt-6" id="card-new-btn" onclick="cardNewAction()">＋ GIVEAWAY STARTEN</button>
       </div>
 
       <!-- Letzter Gewinner -->
@@ -476,10 +476,15 @@
         <span class="ic">🎟</span><span class="nm">LOS-GIVEAWAY<span class="beta-chip">BETA</span></span>
         <span class="ds">Zuschauzeit wird Los-Guthaben. Einsatz auf Preise per Chat-Befehl oder Web — Ziehung je Preis. Im Livebetrieb noch wenig erprobt.</span>
       </button>
+      <!-- SCREENSHOT-CONTEST vorübergehend abgeschaltet (System noch nicht fertig).
+           Serverseitig blockt DISABLED_CORES in services/giveaway/server.js;
+           laufende Contest-Instanzen bleiben bedienbar. Zum Freigeben: diese
+           Karte wieder einblenden und den Core dort austragen.
       <button type="button" class="iw-card" data-type="contest" onclick="iwSelect('contest')">
         <span class="ic">📸</span><span class="nm">SCREENSHOT-CONTEST<span class="beta-chip">BETA</span></span>
         <span class="ds">Zuschauer senden Screenshots ein, die Community bewertet 1–10. Höchste Punktsumme gewinnt. Im Livebetrieb noch wenig erprobt.</span>
       </button>
+      -->
     </div>
 
     <div id="iw-fields" style="display:none">

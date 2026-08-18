@@ -407,9 +407,18 @@ Frage anlegen  ──►  Frage öffnen  ──►  Antworten im Chat  ──►
   entscheidet in Eintreffreihenfolge; die Frage wird in derselben Transaktion
   geschlossen, in der der Punkt gebucht wird (kein zweiter Gewinner bei
   gleichzeitigen Nachrichten).
-- **Teilnahmebedingung wie bei der Kampagne:** Follow auf einem Instanz-Kanal
-  und Mindest-Zuschauzeit (konfigurierbar, Vorgabe wie Contest 10 Minuten).
-  Ohne diese Hürde gewinnt der schnellste Wegwerf-Account.
+- **Keine Anmeldung, Antworten reicht** (Betreiber, 10.8.26). Es gibt kein
+  Keyword und kein Opt-in vor dem Mitspielen: wer die Frage richtig
+  beantwortet, spielt mit. Damit ist die erste gewertete Antwort der
+  Teilnahmeakt — die Engine bucht dort `recordConsent(..., 'quiz_answer',
+  'chat')`, wie der erste Einsatz beim Los-Giveaway, und die Frage-Ansage
+  verlinkt die Teilnahmebedingungen.
+- **Teilnahmebedingung: Follow auf einem Instanz-Kanal**, dazu eine
+  **optionale** Mindest-Zuschauzeit (`minWatchSec`, konfigurierbar, `0` = aus
+  und Vorgabe — Betreiber, 10.8.26). Die Schwelle liest den Kampagnenstand;
+  ohne laufende Kampagne wäre sie mit einem Wert > 0 eine leere Rangliste,
+  darum ist sie standardmäßig aus. Der Follow bleibt Pflicht, sonst gewinnt
+  der schnellste Wegwerf-Account.
 - **Antwortprüfung** normalisiert beide Seiten: klein schreiben, Satzzeichen
   und Mehrfach-Leerzeichen weg, Umlaute wahlweise entfalten (ae/oe/ue/ss).
   Je Frage sind **mehrere gültige Antworten** hinterlegbar (Synonyme,
@@ -491,8 +500,8 @@ Befehl. Sonst steht die Lösung im Netzwerk-Tab.
 |---|---|
 | `id` / `label` | `CORE_Quiz` / „Rätsel" |
 | `accrual` | `'none'` — Zeit spielt keine Rolle, die Schwellen lesen den Kampagnenstand |
-| `config` | `minWatchSec` (Vorgabe 600), `answerCmd` (leer = jede Nachricht zählt als Antwortversuch), `typoTolerance` (an/aus), `announceSolution` (an/aus) |
-| `aggregate` | `{username, points, questionsWon, eligible}` — `eligible` = Follow + Mindest-Viewtime |
+| `config` | `minWatchSec` (Vorgabe `0` = aus), `answerCmd` (Vorgabe leer = jede Nachricht zählt als Antwortversuch), `typoTolerance` (an/aus), `announceSolution` (an/aus) |
+| `aggregate` | `{username, points, questionsWon, eligible}` — `eligible` = Follow + (falls gesetzt) Mindest-Viewtime; **keine Registrierung** |
 | `buildPool` | nur die Führenden, `weight = 1` (Gleichstand wird gelost) |
 | `display.drawKind` | `'score'` wie der Contest |
 | `display.unit` | `'Punkte'` |
@@ -501,6 +510,14 @@ Befehl. Sonst steht die Lösung im Netzwerk-Tab.
 | `display.panelCard` | `'quiz'` — neue Rail-Karte: Fragenliste, Frage öffnen/schließen, Rangliste |
 | `display.emptyPool` | „Noch niemand hat eine Frage richtig beantwortet." |
 | `display.beta` | `true` bis zum ersten echten Durchlauf |
+
+#### Parallelbetrieb
+
+**Max. eine Quiz-Instanz je Team** (Betreiber, 10.8.26) — Engine wirft
+`duplicate_core` wie beim Contest. Grund: ohne Antwort-Präfix wird jede
+Nachricht gegen die Antwortliste geprüft; zwei Quiz-Instanzen auf demselben
+Kanal könnten eine Nachricht zweimal werten. Die Quiz-Seite findet ihre
+Instanz damit übers Team, ohne Instanz-Auswahl.
 
 #### Engine-Berührungspunkte
 
@@ -882,3 +899,14 @@ Am 5. August 2026 entschieden (CORE_ScreenshotContest, §5.4):
    eine Einsendung pro Person, Ersetzen erlaubt.
 7. **Vote-Schwelle konfigurierbar** (Mindest-Viewtime, 0 = aus) — zusätzlich
    zu Twitch-Session, UNIQUE-Constraint und Rate-Limit.
+
+Am 10. August 2026 entschieden (CORE_Quiz, §5.5):
+
+8. **Antworten reicht, keine Anmeldung.** Kein Keyword, kein Opt-in vor dem
+   Mitspielen; die erste gewertete Antwort ist der Teilnahmeakt und bucht die
+   Kenntnisnahme (`participation_consents`, Aktion `quiz_answer`).
+9. **`answerCmd` bleibt leer als Vorgabe** — eine normale Chatnachricht ist
+   der Antwortversuch. Ein Präfix ist einstellbar, aber nicht nötig.
+10. **Mindest-Zuschauzeit ist optional** (`minWatchSec`, Vorgabe `0` = aus).
+    Der Follow auf einem Instanz-Kanal bleibt Pflicht.
+11. **Ein Quiz je Team** (`duplicate_core` wie Contest).
