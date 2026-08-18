@@ -15,7 +15,8 @@
   /* Layout folgt dem gewählten Core: nur die Felder zeigen, die für DIESES
      Giveaway gelten. Kampagne (keine Instanz gewählt) = alles wie gehabt. */
   .gw-app.core-inst .vis-campaign-only { display:none !important; }
-  .gw-app.core-ticketbuy #card-keyword,
+  /* TicketBuy behaelt die Keyword-Karte: Teilnahme ist Keyword-Opt-in (18.8.26),
+     ohne UI liesse sich das Teilnahme-Keyword einer laufenden Instanz nie aendern. */
   .gw-app.core-contest   #card-keyword { display:none !important; }
   .gw-app.core-instant #card-boost,
   .gw-app.core-contest #card-boost { display:none !important; }

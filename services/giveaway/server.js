@@ -1698,6 +1698,14 @@ async function runAdminCmd(send, msg, meta, ctx) {
       // sonst wie bisher das der Kampagne.
       const kw = sanitizeStr(msg.keyword || '', 100);
       const kGid = validGid(msg.giveawayId);
+      // Los-Giveaway: das Keyword IST der Teilnahme-Opt-in (18.8.26) — leeren
+      // wuerde placeWager wieder fuer Unangemeldete oeffnen. Aendern ja, abschalten nein.
+      if (!kw && await wte.getCoreId(teamId, kGid) === 'CORE_TicketBuy') {
+        Object.assign(outcome, { error: 'keyword_required', giveawayId: kGid });
+        send({ event: 'gw_ack', type: 'error',
+               error: 'Ein Los-Giveaway braucht ein Teilnahme-Keyword — ändern ja, abschalten nein.' });
+        break;
+      }
       const kKey = (kGid && kGid !== await sid()) ? K.gKw(teamId, kGid) : K.gwKeyword(teamId);
       outcome.keywordBefore = await redis.get(kKey) || '';
       outcome.keywordAfter  = kw;

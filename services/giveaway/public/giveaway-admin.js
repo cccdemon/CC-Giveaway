@@ -748,9 +748,12 @@ function iwSelect(type) {
   // Los-Giveaway frisch gewählt: eine leere Preis-Zeile als Einstieg.
   if (type === 'ticketbuy' && !document.querySelector('#iw-prize-list .iw-prize-row')) iwAddPrizeRow();
   if (f.keyword) {
-    document.getElementById('iw-keyword-label').textContent = type === 'instant' ? 'Keyword (Pflicht)' : 'Keyword (optional)';
+    document.getElementById('iw-keyword-label').textContent =
+      (type === 'instant' || type === 'ticketbuy') ? 'Keyword (Pflicht)' : 'Keyword (optional)';
     document.getElementById('iw-keyword-hint').textContent = type === 'instant'
       ? 'Wer es im Zeitfenster schreibt und zuschaut, ist im Topf.'
+      : type === 'ticketbuy'
+      ? 'Teilnahme-Opt-in: nur wer es schreibt, darf setzen. Guthaben sammeln alle.'
       : 'Zuschauer melden sich damit im Chat an. Leer = ohne Chat-Anmeldung.';
   }
   document.getElementById('iw-err').textContent = '';
@@ -1688,10 +1691,9 @@ function setKeyword() {
 }
 
 function clearKeyword() {
+  // Kein optimistisches UI: TicketBuy lehnt Abschalten ab (keyword_required) —
+  // die Anzeige folgt dem keyword_set-Ack bzw. bleibt bei Fehler unveraendert.
   send({ event:'gw_cmd', cmd:'gw_set_keyword', keyword: '' });
-  document.getElementById('kw-input').value = '';
-  document.getElementById('kw-current').textContent = '- (deaktiviert)';
-  log('Keyword deaktiviert', 'gold');
 }
 
 function loadKeyword() { send({ event:'gw_cmd', cmd:'gw_get_keyword' }); }

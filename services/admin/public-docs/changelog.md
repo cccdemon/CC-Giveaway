@@ -7,6 +7,15 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 18. August 2026
 
+### Los-Giveaway: Teilnahme-Keyword im Panel sichtbar und aenderbar
+
+Die Keyword-Karte war beim Los-Giveaway ausgeblendet — seit die Teilnahme
+per Keyword laeuft, gab es damit kein Bedienfeld, um das Teilnahme-Keyword
+einer laufenden Instanz zu sehen oder zu aendern. Die Karte ist jetzt auch
+beim Los-Giveaway da. Aendern geht jederzeit; Abschalten lehnt der Server
+ab, weil ohne Keyword niemand mehr angemeldet setzen koennte. Im
+Start-Assistenten ist das Feld beim Los-Giveaway jetzt als Pflicht markiert.
+
 ### Viewtime-Boost repariert und abgesichert
 
 Der Boost einer Instanz wurde vom Ablauf-Waechter faelschlich sofort fuer
