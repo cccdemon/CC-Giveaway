@@ -42,7 +42,7 @@
     'gw_get_ai_settings', 'gw_set_ai_settings', 'gw_test_ai', 'gw_rotate_ai_secret', 'gw_list_ai_models',
     'gw_get_channels', 'gw_verify_follows',
     'gw_gen_ingest_token', 'gw_get_ingest_tokens',
-    'gw_open_instance', 'gw_close_instance', 'gw_list_giveaways',
+    'gw_open_instance', 'gw_close_instance', 'gw_reopen_instance', 'gw_list_giveaways',
     'gw_add_prize', 'gw_list_prizes', 'gw_set_wager_cmd', 'gw_edit_prize', 'gw_cancel_prize',
     'gw_contest_voting', 'gw_review_entry', 'gw_delete_entry', 'gw_list_entries',
     'gw_save_draft', 'gw_list_drafts', 'gw_delete_draft',

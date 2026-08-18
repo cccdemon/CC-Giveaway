@@ -158,6 +158,8 @@
            title="Hilfemodus: blendet Erklärungen an den Bedienelementen ein/aus — volle Doku unter /admin/funktionsweise.html">？ HILFE: AUS</div>
       <div id="privacy-badge" class="ws-badge priv off" onclick="togglePrivacy()"
            title="Streamermodus: blendet Zuschauernamen und Tokens aus – für Screenshare / Stream">&#128065; STREAMERMODUS: AUS</div>
+      <div id="stream-badge" class="ws-badge off" style="cursor:default"
+           title="Ob gerade ein Kanal des Teams streamt (Ingest-Puls)">STREAM: OFFLINE</div>
       <div id="ws-badge" class="ws-badge off" onclick="reconnect()">WS: OFFLINE</div>
     </div>
   </div>
@@ -167,7 +169,7 @@
   <div class="gw-ingest-warn" id="ingest-warn" style="display:none"></div>
 
   <!-- ── Primäraktionen ───────────────────────────────── -->
-  <div class="actionstrip" data-help="Hauptaktionen für die aktuelle Auswahl: Gewinn (Pflicht) + Sponsor gelten beim ÖFFNEN der Kampagne · FOLLOWS PRÜFEN verifiziert Follows direkt bei Twitch · ★ zieht den Gewinner (das Los-Giveaway zieht stattdessen je Preis in der Preis-Karte) · 📸 BILDER PRÜFEN öffnet die Contest-Moderation · PAUSE stoppt nur das Sammeln, SCHLIESSEN beendet das gewählte Giveaway endgültig.">
+  <div class="actionstrip" data-help="Hauptaktionen für die aktuelle Auswahl: Gewinn (Pflicht) + Sponsor gelten beim ÖFFNEN der Kampagne · FOLLOWS PRÜFEN verifiziert Follows direkt bei Twitch · ★ zieht den Gewinner (das Los-Giveaway zieht stattdessen je Preis in der Preis-Karte) · 📸 BILDER PRÜFEN öffnet die Contest-Moderation · PAUSE stoppt nur das Sammeln · SCHLIESSEN beendet Sammeln/Anmelden (WIEDER ÖFFNEN geht, solange nicht gezogen ist), danach wird gezogen und AUFRÄUMEN entfernt das Giveaway endgültig.">
     <input type="text" id="prize-input" class="vis-campaign-only" placeholder="Gewinn (Pflicht — z.B. Steam-Key)" maxlength="100">
     <input type="text" id="sponsor-input" class="vis-campaign-only" placeholder="Sponsor / bereitgestellt von (optional)" maxlength="100">
     <button class="btn btn-gold vis-campaign-only" id="btn-verify" onclick="verifyFollows()">FOLLOWS PRÜFEN</button>
@@ -178,6 +180,8 @@
     <button class="btn btn-green vis-campaign-only" id="btn-open" onclick="gwOpen()">ÖFFNEN</button>
     <button class="btn btn-gold" id="btn-pause"  onclick="gwPause()">PAUSE</button>
     <button class="btn btn-cyan" id="btn-resume" onclick="gwResume()">FORTSETZEN</button>
+    <button class="btn btn-green" id="btn-reopen" style="display:none" onclick="gwReopen()"
+            title="Geschlossenes Giveaway wieder öffnen — Sammeln/Anmelden läuft weiter (bis zur Ziehung möglich)">WIEDER ÖFFNEN</button>
     <button class="btn btn-red"  id="btn-close" onclick="gwCloseSmart()">SCHLIESSEN</button>
   </div>
 
@@ -310,7 +314,7 @@
       </div>
 
       <!-- Los-Giveaway: Setz-Befehl, Preise, Ziehung je Preis -->
-      <div class="card" id="card-ticketbuy" data-help="Los-Giveaway: Zuschauzeit wird Los-Guthaben (Umrechnung in der Regeln-Karte). Ein Los-Giveaway verlost genau EINEN Preis (Titel, Sponsor, Beschreibung, Bild bis 7 MB, optionales Einsatz-Ende) — für einen weiteren Preis ein zweites Los-Giveaway starten (＋ oben). Preis ✎ korrigieren oder ✖ stornieren (Einsätze werden zurückgebucht). Gesetzt wird per Chat-Befehl („&lt;Befehl&gt; &lt;Anzahl&gt;", nur nach Anmeldung per Teilnahme-Keyword) oder Setz-Seite; Rücknahme bis zum Einsatz-Ende. ★ zieht gewichtet nach Einsatz — danach sind die Einsätze ALLER Setzer verbraucht. SCHLIESSEN geht erst, wenn der Preis gezogen oder storniert ist.">
+      <div class="card" id="card-ticketbuy" data-help="Los-Giveaway: Zuschauzeit wird Los-Guthaben (Umrechnung in der Regeln-Karte). Ein Los-Giveaway verlost genau EINEN Preis (Titel, Sponsor, Beschreibung, Bild bis 7 MB, optionales Einsatz-Ende) — für einen weiteren Preis ein zweites Los-Giveaway starten (＋ oben). Preis ✎ korrigieren oder ✖ stornieren (Einsätze werden zurückgebucht). Gesetzt wird per Chat-Befehl („&lt;Befehl&gt; &lt;Anzahl&gt;", nur nach Anmeldung per Teilnahme-Keyword) oder Setz-Seite; Rücknahme bis zum Einsatz-Ende. Reihenfolge: SCHLIESSEN (beendet Sammeln/Setzen, Guthaben wird gutgeschrieben) → ★ ZIEHEN (gewichtet nach Einsatz — danach sind die Einsätze ALLER Setzer verbraucht) → AUFRÄUMEN. Versehentlich geschlossen? WIEDER ÖFFNEN geht, solange nicht gezogen ist.">
         <div class="card-title">LOS-GIVEAWAY // PREIS <span class="beta-chip">BETA</span></div>
         <div class="card-sub">SETZ-BEFEHL</div>
         <div class="input-row">
@@ -322,6 +326,10 @@
           <button class="btn btn-cyan btn-sm" onclick="copyViewerLink('wager', this)">🔗 SETZ-SEITE</button>
           <button class="btn btn-gold btn-sm" onclick="gwAnnouncePage()">📣 IM CHAT ANSAGEN</button>
         </div>
+        <!-- Formular fuer Anlegen UND Korrigieren (✎). Ein Los-Giveaway hat
+             genau EINEN Preis — solange einer da ist, ist das Formular
+             ausgeblendet statt tot (tbUpdatePrizeForm). -->
+        <div id="tb-prize-form">
         <div class="card-sub mt-8" id="tb-prize-form-title">NEUER PREIS</div>
         <div class="input-row">
           <input type="text" id="tb-prize-title" placeholder="Titel (z.B. Headset)" maxlength="100">
@@ -343,6 +351,7 @@
           <span class="mr-lbl">min Einsatz-Ende (0 = offen)</span>
           <button class="btn btn-gold btn-sm" id="tb-prize-save" onclick="tbAddPrize()">ANLEGEN</button>
           <button class="btn btn-sm" id="tb-prize-cancel-edit" style="display:none" onclick="tbCancelEdit()">ABBRUCH</button>
+        </div>
         </div>
         <div class="card-sub mt-8">PREIS DIESES GIVEAWAYS <span class="link-cyan" onclick="tbLoadPrizes()">↻</span></div>
         <div id="tb-prizes"><div class="wsc-empty">Lade…</div></div>

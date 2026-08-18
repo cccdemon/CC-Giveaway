@@ -53,8 +53,12 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
   `services/giveaway/credit.js`**, Typen erzwingen Vorzeichen; transfer/purchase
   existieren nicht). Preise (`giveaway_prizes`) + Einsätze (`prize_wagers`,
   Rücknahme = negative Zeile). **Ein Giveaway = ein Preis** (Betreiber,
-  9.8.26): `addPrize` wirft `prize_exists`, solange die Instanz einen offenen
-  Preis hat — mehr verlosen heißt mehrere Los-Giveaways parallel starten.
+  9.8.26): `addPrize` wirft `prize_exists`, solange die Instanz einen nicht
+  stornierten Preis hat (seit 18.8.26 auch nach der Ziehung — nur Storno macht
+  den Platz frei) — mehr verlosen heißt mehrere Los-Giveaways parallel
+  starten. Das Preis-Formular der Panel-Karte zeigt sich nur zum Korrigieren
+  (✎) oder solange kein Preis da ist; `giveaway_prizes.id` ist BIGSERIAL und
+  kommt aus pg als **String** (Client-Vergleiche nur über `String(...)`).
   Preisnummern bleiben team-weit eindeutig, die Instanz hängt an
   `giveaway_prizes.session_id` (`prizeGiveawayId`, `listPrizes({gid})`).
   Ziehung **je Preis** (Gewicht = Einsatz),
@@ -113,7 +117,15 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
   (`cleanupGiveawayInstance`, Ack `instance_cleaned`; TicketBuy erst ohne
   offene Preise). Panel: Knopf wechselt SCHLIESSEN ↔ AUFRÄUMEN, ★ bleibt
   aktiv. Kampagne analog: `gw_close` lässt `gwSessionId` stehen, `gw_reset`
-  räumt.
+  räumt. **Schließen ist nicht endgültig (Betreiber 18.8.26):**
+  `gw_reopen_instance` öffnet eine geschlossene, noch nicht aufgeräumte
+  Instanz wieder (Panel-Knopf WIEDER ÖFFNEN, Ack `instance_reopened`).
+  TicketBuy setzt dabei die beim Schließen schon gutgeschriebene Zuschauzeit
+  (`settleTicketBuyInstance` bucht `earn`, lässt `gWatch` aber fürs Panel
+  lesbar) auf null — `reopenGiveawayInstance` löscht die `gWatch`-Keys, sonst
+  würde das nächste Schließen dieselben Sekunden doppelt buchen. Beim
+  TicketBuy-Panel ist ★ ZIEHEN in der Preis-Karte erst nach dem Schließen
+  scharf (Reihenfolge im UI erzwungen); Reroll bleibt unberührt.
 - **Gewinn ist Pflichtangabe je Giveaway** (`sessions.prize`, Server-Gate in
   `gw_open`/`gw_open_instance` — Ausnahme Los-Giveaway: dort je Preis,
   `giveaway_prizes.title/sponsor`), **Sponsor optional** (`sessions.sponsor`).
@@ -257,7 +269,7 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 ## Admin WS `gw_cmd` (`{event:'gw_cmd',cmd,...}`)
 `gw_open`(+keyword) · `gw_close` · `gw_draw_winner`(+`giveawayId`,+`prizeId` bei TicketBuy; Ersatzziehung: +`rerollOf`,`reason`,`excludeWinner` → verknüpft via `giveaway_draws.reroll_of/reroll_reason`, alter Claim wird `replaced`) · `gw_set_keyword` · `gw_get_keyword` · `gw_add_ticket`(user,amount) · `gw_sub_ticket` · `gw_ban`/`gw_unban` · `gw_reset`
 `gw_pause`/`gw_resume`/`gw_set_multiplier` (optional `giveawayId` → wirkt auf die Instanz)
-`gw_open_instance`(keyword, channels, core, windowSec, wagerCmd, announce) · `gw_close_instance` · `gw_list_giveaways` · `gw_set_announce`(giveawayId, on — CV-Chat-Ansagen stumm/laut, Gewinner-Ansage bleibt immer)
+`gw_open_instance`(keyword, channels, core, windowSec, wagerCmd, announce) · `gw_close_instance` · `gw_reopen_instance`(giveawayId — nur geschlossene, noch nicht aufgeräumte Instanz) · `gw_list_giveaways` · `gw_set_announce`(giveawayId, on — CV-Chat-Ansagen stumm/laut, Gewinner-Ansage bleibt immer)
 `gw_add_prize`(giveawayId, title, wagerEndMinutes) · `gw_list_prizes` · `gw_set_wager_cmd`(giveawayId, command) · `gw_edit_prize`(prizeId, title/sponsor/description/wagerEndMinutes — nur offene) · `gw_cancel_prize`(prizeId — storniert + bucht alle Einsätze zurück)
 `gw_contest_voting`(giveawayId, action: open/pause/resume/close) · `gw_review_entry`(entryId, approve/reject — auch Korrektur bereits entschiedener) · `gw_delete_entry`(entryId — Owner, ENDGÜLTIG: Bild weg, Stimmen CASCADE; jederzeit, für Inhalte die nicht gespeichert bleiben dürfen) · `gw_list_entries`(giveawayId) · `gw_announce_page`(giveawayId — sagt `/viewer/wager` bzw. `/viewer/contest` im Chat an)
 

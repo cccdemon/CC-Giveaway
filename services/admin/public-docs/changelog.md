@@ -7,6 +7,24 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 18. August 2026
 
+### Giveaway wieder oeffnen + aufgeraeumte Preis-Karte beim Los-Giveaway
+
+Schliessen ist nicht mehr endgueltig: eine geschlossene, noch nicht
+aufgeraeumte Instanz laesst sich per WIEDER OEFFNEN weiterlaufen lassen —
+ein versehentlicher Klick auf SCHLIESSEN beendet das Giveaway also nicht
+mehr unumkehrbar. Beim Los-Giveaway bleibt dabei das schon gutgeschriebene
+Guthaben erhalten und nichts wird doppelt gebucht.
+
+Die Preis-Karte des Los-Giveaways haelt jetzt die Reihenfolge ein:
+SCHLIESSEN → ZIEHEN → AUFRAEUMEN. Der ★-ZIEHEN-Knopf am Preis wird erst
+scharf, wenn das Giveaway geschlossen ist. Das Preis-Formular zeigt sich
+nur noch, wenn es etwas zu tun gibt (neuen Preis anlegen oder per ✎
+korrigieren) — vorher stand es dauerhaft ausgegraut in der Karte. Der
+✎-Knopf zum Korrigieren eines Preises war ohne Funktion und ist repariert.
+Ausserdem gilt „ein Los-Giveaway = ein Preis" jetzt auch nach der Ziehung:
+der naechste Preis ist ein neues Los-Giveaway, nur eine Stornierung macht
+den Platz wieder frei.
+
 ### Los-Giveaway: Teilnahme-Keyword im Panel sichtbar und aenderbar
 
 Die Keyword-Karte war beim Los-Giveaway ausgeblendet — seit die Teilnahme

@@ -1142,13 +1142,40 @@ class WatchtimeEngine {
     console.log(`[WTE] [${t}] instance ${gid} closed (Topf bleibt bis zur Ziehung)`);
   }
 
+  // Geschlossen, aber noch nicht aufgeraeumt → Sammeln/Anmelden darf wieder
+  // aufmachen (Betreiber 18.8.26). TicketBuy: das Guthaben ist beim Schliessen
+  // schon ins Ledger gewandert (settleTicketBuyInstance) — die verbrauchten
+  // Zeitstaende muessen darum VOR dem Weitersammeln auf null, sonst wuerde
+  // das naechste Schliessen dieselben Sekunden noch einmal gutschreiben.
+  async reopenGiveawayInstance(teamId, gid) {
+    const t = sanitizeTeamId(teamId);
+    if (await this.getCoreId(t, gid) === 'CORE_TicketBuy') {
+      let channels = null;
+      try { const raw = await this.redis.get(K.gChanList(t, gid)); if (raw) channels = JSON.parse(raw); } catch { /* alle */ }
+      if (!Array.isArray(channels) || !channels.length) channels = await this.getChannels(t);
+      for (const u of await this.redis.smembers(K.gwUsers(t))) {
+        for (const ch of channels) await this.redis.del(K.gWatch(t, gid, ch, u));
+      }
+    }
+    await this.redis.set(K.gOpen(t, gid), 'true');
+    await this.redis.sadd(K.openTeams(), t);
+    console.log(`[WTE] [${t}] instance ${gid} reopened`);
+  }
+
   // ── Phase 4b: CORE_TicketBuy — Preise, Einsätze, Guthaben ──
   // Ein Giveaway verlost genau EINEN Preis: ein zweiter offener Preis in
   // derselben Instanz waere ein zweites Giveaway im ersten. Wer mehr
   // verlosen will, startet ein weiteres Los-Giveaway.
   async addPrize(teamId, gid, { title, description = '', wagerEndTs = null } = {}) {
     const t = sanitizeTeamId(teamId);
-    if (gid && await this.openPrizeCount(t, gid) > 0) throw new Error('prize_exists');
+    // Auch NACH der Ziehung bleibt der Platz belegt — der naechste Preis ist
+    // ein neues Los-Giveaway. Nur Storno macht den Platz wieder frei.
+    if (gid) {
+      const r0 = await this.pg.query(
+        `SELECT COUNT(*) AS n FROM giveaway_prizes WHERE team_id=$1 AND session_id=$2 AND status <> 'cancelled'`,
+        [t, gid]);
+      if ((parseInt(r0.rows[0].n, 10) || 0) > 0) throw new Error('prize_exists');
+    }
     const r = await this.pg.query(
       `INSERT INTO giveaway_prizes (team_id, session_id, title, description, wager_end)
        VALUES ($1,$2,$3,$4,$5) RETURNING id`,

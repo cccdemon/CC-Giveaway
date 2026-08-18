@@ -1330,6 +1330,41 @@ async function runAdminCmd(send, msg, meta, ctx) {
       break;
     }
 
+    // Geschlossen, aber noch nicht aufgeraeumt → wieder oeffnen (Betreiber
+    // 18.8.26): ein versehentliches SCHLIESSEN darf das Giveaway nicht
+    // endgueltig beenden. AUFRAEUMEN bleibt der einzige endgueltige Schritt;
+    // Ziehung und Ersatzziehung (reroll) bleiben davon unberuehrt.
+    case 'gw_reopen_instance': {
+      if (!await teamActive(teamId)) {
+        Object.assign(outcome, { blocked: 'team_deactivated' });
+        send({ event: 'gw_ack', type: 'open_blocked', error: DEACTIVATED_HINT });
+        break;
+      }
+      const gid = validGid(msg.giveawayId);
+      const known = gid ? (await wte.listGiveaways(teamId)).find(g => g.gid === gid && !g.primary) : null;
+      if (!known || !known.closed) {
+        Object.assign(outcome, { error: !known ? 'unknown_instance' : 'not_closed', giveawayId: msg.giveawayId || null });
+        send({ event: 'gw_ack', type: 'error',
+               error: !known ? 'Unbekannte Giveaway-Instanz.' : 'Dieses Giveaway ist nicht geschlossen.' });
+        break;
+      }
+      await wte.reopenGiveawayInstance(teamId, gid);
+      await setSessionStatusById(gid, 'open');
+      Object.assign(outcome, { giveawayId: gid, reopened: true });
+      if (known.core === 'CORE_TicketBuy') {
+        await announceChannels(teamId, known.channels,
+          '🎟 Das Los-Giveaway läuft weiter — Zuschauzeit zählt wieder als Los-Guthaben (euer Guthaben bleibt erhalten).');
+      } else if (known.core === 'CORE_CurrentViewers') {
+        if (known.announce !== false) await announceChannels(teamId, known.channels,
+          '⚡ Die Verlosung ist wieder offen!');
+      } else {
+        await announceChannels(teamId, known.channels,
+          '🔓 Das zusätzliche Giveaway ist wieder offen.');
+      }
+      send({ event: 'gw_ack', type: 'instance_reopened', giveawayId: gid });
+      break;
+    }
+
     // ── Phase 4b: Preise (CORE_TicketBuy) ──────────────────
     case 'gw_add_prize': {
       const gid = validGid(msg.giveawayId);

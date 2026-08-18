@@ -75,8 +75,15 @@ function makePg(channels) {
       const r = prizes.filter(x => x.id === p[0]);
       return { rows: r, rowCount: r.length };
     }
+    if (/COUNT\(\*\) AS n FROM giveaway_prizes.*status <> 'cancelled'/.test(sql)) {
+      return { rows: [{ n: prizes.filter(x => x.team_id === p[0] && x.session_id === p[1] && x.status !== 'cancelled').length }] };
+    }
     if (/COUNT\(\*\) AS n FROM giveaway_prizes/.test(sql)) {
       return { rows: [{ n: prizes.filter(x => x.team_id === p[0] && x.session_id === p[1] && x.status === 'open').length }] };
+    }
+    if (/UPDATE giveaway_prizes SET status='drawn'/.test(sql)) {
+      const pr = prizes.find(x => x.id === p[0]); if (pr) pr.status = 'drawn';
+      return { rowCount: pr ? 1 : 0, rows: [] };
     }
     if (/UPDATE giveaway_prizes SET status='cancelled'/.test(sql)) {
       const pr = prizes.find(x => x.id === p[0]); if (pr) pr.status = 'cancelled';
@@ -1184,6 +1191,41 @@ test('lifecycle: ein offener Preis je Instanz, openPrizeCount zaehlt je Instanz'
   // Nach der Stornierung ist der Platz wieder frei.
   await e.addPrize(TEAM, 'sess_2', { title: 'Tastatur' });
   assert.equal(await e.openPrizeCount(TEAM, 'sess_2'), 1);
+});
+
+test('lifecycle: nach der Ziehung bleibt der Preis-Platz belegt — nur Storno macht frei', async () => {
+  const e = engine();
+  await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy' });
+  const p1 = await e.addPrize(TEAM, 'sess_2', { title: 'Headset' });
+  await e.pg.query(`UPDATE giveaway_prizes SET status='drawn' WHERE id=$1`, [p1]);
+  // Ein Giveaway = ein Preis, auch nach der Ziehung: der naechste Preis
+  // ist ein neues Los-Giveaway.
+  await assert.rejects(() => e.addPrize(TEAM, 'sess_2', { title: 'Maus' }), /prize_exists/);
+  await e.pg.query(`UPDATE giveaway_prizes SET status='cancelled' WHERE id=$1`, [p1]);
+  await e.addPrize(TEAM, 'sess_2', { title: 'Tastatur' });
+});
+
+test('lifecycle: reopen — Schliessen ist nicht endgueltig, TicketBuy bucht nicht doppelt', async () => {
+  const e = engine();
+  await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy', wagerCmd: '!setzen' });
+  await e.redis.set(K.gWatch(TEAM, 'sess_2', 'justcallmedeimos', 'bob'), String(SECS_PER_COIN * 2));
+  await e.redis.sadd(K.gwUsers(TEAM), 'bob');
+  await e.closeGiveawayInstance(TEAM, 'sess_2');
+  await e.settleTicketBuyInstance(TEAM, 'sess_2');
+  assert.equal(await e.credit.balance(TEAM, 'bob'), 2);
+  assert.equal((await e.listGiveaways(TEAM)).find(g => g.gid === 'sess_2').closed, true);
+  // Wieder oeffnen: die schon gutgeschriebene Zuschauzeit faellt auf null
+  // (sonst wuerde das naechste Schliessen sie doppelt buchen), Guthaben bleibt.
+  await e.reopenGiveawayInstance(TEAM, 'sess_2');
+  assert.equal(await e.redis.get(K.gWatch(TEAM, 'sess_2', 'justcallmedeimos', 'bob')), null);
+  assert.equal((await e.listGiveaways(TEAM)).find(g => g.gid === 'sess_2').closed, false);
+  assert.equal(await e.credit.balance(TEAM, 'bob'), 2);
+  // Neue Zuschauzeit → das zweite Schliessen bucht NUR die neue Zeit.
+  await e.redis.set(K.gWatch(TEAM, 'sess_2', 'justcallmedeimos', 'bob'), String(SECS_PER_COIN));
+  await e.closeGiveawayInstance(TEAM, 'sess_2');
+  const s2 = await e.settleTicketBuyInstance(TEAM, 'sess_2');
+  assert.equal(s2.total, 1);
+  assert.equal(await e.credit.balance(TEAM, 'bob'), 3);
 });
 
 test('prize: editPrize aendert nur offene Preise', async () => {

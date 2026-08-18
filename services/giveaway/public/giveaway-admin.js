@@ -333,6 +333,7 @@ function instanceLabel(gid) {
 // schlaegt das Panel jeden streamfreien Tag Alarm.
 function renderIngestWarn(pulse) {
   updateBoostAvailability(pulse);
+  setStreamBadge(pulse);
   var el = document.getElementById('ingest-warn');
   if (!el) return;
   if (!Array.isArray(pulse) || !pulse.length) { el.style.display = 'none'; return; }
@@ -358,6 +359,20 @@ function renderIngestWarn(pulse) {
     return;
   }
   el.style.display = 'none';
+}
+
+// Stream-Badge neben dem WS-Badge: online = mindestens ein Kanal des Teams
+// meldet einen laufenden OBS-Stream (Ingest-Puls, gleiche Quelle wie die
+// Warnleiste). Haengt am gw_data-Puls und aktualisiert sich damit selbst.
+function setStreamBadge(pulse) {
+  var el = document.getElementById('stream-badge');
+  if (!el) return;
+  var live = Array.isArray(pulse) ? pulse.filter(function(p){ return p.online; }) : [];
+  el.className = 'ws-badge ' + (live.length ? 'on' : 'off');
+  el.textContent = live.length ? 'STREAM: ONLINE' : 'STREAM: OFFLINE';
+  el.title = live.length
+    ? 'Live: ' + live.map(function(p){ return p.channel || '?'; }).join(', ')
+    : 'Kein Kanal des Teams streamt gerade (kein Ingest-Puls)';
 }
 
 function gwCloseSmart() {
@@ -473,7 +488,9 @@ function tbHandleImageAfterSave(prizeId) {
 }
 
 function tbEditPrize(prizeId) {
-  var p = tbPrizes.find(function(x){ return x.id === prizeId; });
+  // BIGSERIAL kommt aus pg als String, der onclick-Literal als Zahl —
+  // strikter Vergleich fand darum nie etwas (Bug 18.8.26: ✎ ohne Wirkung).
+  var p = tbPrizes.find(function(x){ return String(x.id) === String(prizeId); });
   if (!p) return;
   tbEditPrizeId = prizeId;
   document.getElementById('tb-prize-title').value = p.title || '';
@@ -515,22 +532,16 @@ function tbCancelPrize(prizeId) {
 
 function tbLoadPrizes() { send({ event: 'gw_cmd', cmd: 'gw_list_prizes', giveawayId: currentGiveaway }); }
 
-// Ein Los-Giveaway verlost genau EINEN Preis. Solange einer offen ist,
-// ist das Formular zu — fuer einen weiteren Preis startet man ein zweites
-// Los-Giveaway (der Server lehnt den zweiten Preis ohnehin ab).
+// Ein Los-Giveaway verlost genau EINEN Preis — auch nach der Ziehung (der
+// naechste Preis ist ein neues Los-Giveaway, nur Storno macht den Platz
+// frei). Ohne Funktion zeigt sich das Formular gar nicht: sichtbar nur zum
+// Korrigieren (✎) oder solange kein Preis (mehr) eingetragen ist.
 function tbUpdatePrizeForm() {
-  var openCount = tbPrizes.filter(function(p){ return p.status === 'open'; }).length;
-  var blocked = openCount > 0 && !tbEditPrizeId;
-  var save = document.getElementById('tb-prize-save');
-  if (save) {
-    save.disabled = blocked;
-    save.title = blocked ? 'Dieses Los-Giveaway hat schon einen Preis — fuer einen weiteren ein zweites Los-Giveaway starten (＋ oben).' : '';
-  }
-  ['tb-prize-title','tb-prize-sponsor','tb-prize-desc','tb-prize-end','tb-prize-image'].forEach(function(id){
-    var el = document.getElementById(id); if (el) el.disabled = blocked;
-  });
+  var taken = tbPrizes.filter(function(p){ return p.status !== 'cancelled'; }).length;
+  var form = document.getElementById('tb-prize-form');
+  if (form) form.style.display = (tbEditPrizeId || taken === 0) ? '' : 'none';
   var t = document.getElementById('tb-prize-form-title');
-  if (t && !tbEditPrizeId) t.textContent = blocked ? 'PREIS VERGEBEN — WEITERER PREIS = WEITERES LOS-GIVEAWAY' : 'NEUER PREIS';
+  if (t && !tbEditPrizeId) t.textContent = 'NEUER PREIS';
 }
 
 var TB_STATUS_LABEL = { drawn: 'gezogen', cancelled: 'storniert' };
@@ -540,6 +551,11 @@ function renderPrizes(prizes) {
   if (!host) return;
   tbUpdatePrizeForm();
   if (!prizes || !prizes.length) { host.innerHTML = '<div class="wsc-empty">Noch kein Preis eingetragen.</div>'; return; }
+  // Reihenfolge (alle Mechaniken): SCHLIESSEN → ZIEHEN → AUFRÄUMEN.
+  // ★ wird erst scharf, wenn das Giveaway geschlossen ist — vorher liefe die
+  // Ziehung mitten ins laufende Setzen.
+  var sg = selectedGiveaway();
+  var canDraw = !!(sg && sg.closed);
   host.innerHTML = prizes.map(function(p) {
     return '<div class="tb-prize"><span class="t" title="' + esc(p.sponsor ? 'bereitgestellt von ' + p.sponsor : '') + '">#'
       + p.id + ' ' + esc(p.title)
@@ -549,7 +565,9 @@ function renderPrizes(prizes) {
       + (p.status === 'open'
           ? '<button class="btn btn-cyan btn-sm btn-mini" onclick="tbEditPrize(' + p.id + ')" title="Titel/Sponsor/Einsatz-Ende korrigieren">✎</button>'
             + '<button class="btn btn-red btn-sm btn-mini" onclick="tbCancelPrize(' + p.id + ')" title="Stornieren — Einsätze werden zurückgebucht">✖</button>'
-            + '<button class="btn btn-solid btn-sm" onclick="tbDrawPrize(' + p.id + ')">★ ZIEHEN</button>'
+            + (canDraw
+                ? '<button class="btn btn-solid btn-sm" onclick="tbDrawPrize(' + p.id + ')">★ ZIEHEN</button>'
+                : '<button class="btn btn-solid btn-sm" disabled title="Erst SCHLIESSEN — Reihenfolge: SCHLIESSEN → ZIEHEN → AUFRÄUMEN. Solange nicht gezogen ist, geht WIEDER ÖFFNEN.">★ ZIEHEN</button>')
           : '<span class="cfg-hint">' + (TB_STATUS_LABEL[p.status] || esc(p.status)) + '</span>')
       + '</div>';
   }).join('');
@@ -1025,6 +1043,12 @@ function closeInstance() {
   send({ event: 'gw_cmd', cmd: 'gw_close_instance', giveawayId: currentGiveaway });
 }
 
+// Geschlossen, aber noch nicht gezogen/aufgeraeumt → wieder oeffnen.
+function gwReopen() {
+  if (!currentGiveaway) { log('Keine Instanz gewählt', 'red'); return; }
+  send({ event: 'gw_cmd', cmd: 'gw_reopen_instance', giveawayId: currentGiveaway });
+}
+
 function refresh() { requestData(); loadKeyword(); loadHistory(); loadAudit(); loadClaims(); loadDrafts(); }
 
 // ── Gewinn-Abwicklung (Rail-Karte, nur Owner) ─────────────
@@ -1179,7 +1203,9 @@ function handle(msg) {
         msg.warnings.forEach(function(w){ log('Startwarnung: ' + w, 'gold'); });
       }
       // Read-only Antworten (NIE requestData → sonst Endlosschleife)
-      if (msg.type === 'giveaways')     { giveawayList = msg.giveaways || []; renderGiveawaySelect(); updateMainView(); break; }
+      if (msg.type === 'giveaways')     { giveawayList = msg.giveaways || []; renderGiveawaySelect(); updateMainView();
+                                          // ★-Gate der Preis-Zeilen haengt am closed-Stand der Auswahl.
+                                          if (selectedCore() === 'CORE_TicketBuy') renderPrizes(tbPrizes); break; }
       if (msg.type === 'drafts')        { drafts = msg.drafts || []; renderDrafts(); break; }
       if (msg.type === 'preflight')     { renderPreflight(msg); break; }
       if (msg.type === 'entries')       { renderEntries(msg); break; }
@@ -1274,7 +1300,11 @@ function handle(msg) {
       if (msg.type === 'entry_reviewed') { log('Einsendung #' + msg.entryId + ' → ' + (msg.decision === 'approve' ? 'FREIGEGEBEN' : 'abgelehnt'), 'gold'); scLoadEntries(); }
       if (msg.type === 'entry_deleted')  { log('Einsendung #' + msg.entryId + ' von „' + maskName((msg.username || '').toLowerCase(), msg.username || '?') + '" endgültig gelöscht', 'gold'); scLoadEntries(); }
       if (msg.type === 'instance_closed') { log('Instanz geschlossen: ' + instanceLabel(msg.giveawayId || '?')
-            + ' — jetzt ziehen (★), danach AUFRÄUMEN', 'gold'); }
+            + ' — jetzt ziehen (★), danach AUFRÄUMEN (WIEDER ÖFFNEN geht, solange nicht gezogen ist)', 'gold');
+            setTimeout(requestData, 300); }
+      if (msg.type === 'instance_reopened') { log('Wieder geöffnet: ' + instanceLabel(msg.giveawayId || '?')
+            + ' — Sammeln/Anmelden läuft weiter', 'cyan');
+            setTimeout(requestData, 300); }
       if (msg.type === 'instance_cleaned') { log('Instanz aufgeräumt: ' + instanceLabel(msg.giveawayId || '?')
             + ' — Nachweis unter Tools → 🗄 Vergangene Giveaways', 'gold'); }
       if (msg.type === 'instance_paused')  log('Instanz pausiert: '   + (msg.giveawayId || '?'), 'gold');
@@ -1547,6 +1577,10 @@ function updateActionButtons() {
       ? 'Giveaway ist geschlossen — entfernt es nach der Ziehung aus der Liste'
       : 'Sammeln/Anmelden beenden. Gezogen wird danach.';
   }
+  // Versehentlich geschlossen? Solange nicht aufgeraeumt ist, darf die
+  // Instanz wieder aufmachen (der Server prueft closed selbst noch einmal).
+  var rb = document.getElementById('btn-reopen');
+  if (rb) rb.style.display = (currentGiveaway && closedPending) ? '' : 'none';
   // Beschriftung folgt dem Ziehungs-Modus des Cores (drawKind aus dem Vertrag).
   var db = document.getElementById('btn-draw');
   if (db) {
