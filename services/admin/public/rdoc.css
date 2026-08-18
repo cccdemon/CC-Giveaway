@@ -262,15 +262,17 @@ textarea { resize:vertical; width:100%; }
 .link-dim:hover { color:var(--rdoc-error); }
 
 /* ── Grid + Spalten ──────────────────────────────────────── */
-.gw-grid { flex:1; display:grid; grid-template-columns:1fr 400px; overflow:hidden; }
-.gw-main { display:flex; flex-direction:column; overflow:hidden; border-right:1px solid var(--rdoc-border); }
+/* min-height:0: als Flex-Kind waechst das Grid sonst ueber .gw-app hinaus
+   (min-height:auto) — die Rail wird unten abgeschnitten statt zu scrollen. */
+.gw-grid { flex:1; display:grid; grid-template-columns:1fr 400px; overflow:hidden; min-height:0; }
+.gw-main { display:flex; flex-direction:column; overflow:hidden; min-height:0; border-right:1px solid var(--rdoc-border); }
 .gw-main-head { padding:10px 14px; border-bottom:1px solid var(--rdoc-border); display:flex; align-items:center; gap:10px; flex-shrink:0; background:var(--rdoc-surface); }
 .panel-label { font-family:var(--rdoc-font-mono); font-size:9px; color:var(--rdoc-text-muted); letter-spacing:0.07em; white-space:nowrap; text-transform:uppercase; }
 .panel-label em { color:var(--rdoc-text); font-style:normal; margin-left:6px; }
 .gw-main-head #search { margin-left:auto; width:200px; }
 .gw-table-wrap { flex:1; overflow-y:auto; }
 
-.gw-rail { overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:12px; }
+.gw-rail { overflow-y:auto; min-height:0; padding:12px; display:flex; flex-direction:column; gap:12px; }
 
 /* ── Tabelle ─────────────────────────────────────────────── */
 table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
