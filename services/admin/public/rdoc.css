@@ -168,7 +168,10 @@ a { color:inherit; }
 ::-webkit-scrollbar-thumb:hover { background:var(--rdoc-border-strong); }
 
 /* ── App-Shell (Dashboard) ───────────────────────────────── */
-.gw-app { display:flex; flex-direction:column; height:calc(100vh - 44px); overflow:hidden; }
+/* 44px Top-Nav + 28px Debug-Console-Leiste (cc-dbg-handle, fixed bottom aus
+   den Shared-Libs) — ohne den zweiten Abzug scrollt die letzte Rail-Karte
+   hinter die Leiste und ist nicht lesbar. */
+.gw-app { display:flex; flex-direction:column; height:calc(100vh - 44px - 28px); overflow:hidden; }
 
 /* ── Command bar ─────────────────────────────────────────── */
 .cmdbar {
@@ -355,7 +358,7 @@ tbody td:last-child { width:118px; text-align:right; }
 
 /* ── Event-Log ───────────────────────────────────────────── */
 .wsc-empty { color:var(--rdoc-text-muted); font-style:italic; font-family:var(--rdoc-font-mono); font-size:10px; }
-.event-log { font-family:var(--rdoc-font-mono); font-size:10px; max-height:180px; overflow-y:auto; background:var(--rdoc-bg); border:1px solid var(--rdoc-line-on-surface); border-radius:6px; padding:8px 10px; }
+.event-log { font-family:var(--rdoc-font-mono); font-size:10px; min-height:60px; max-height:180px; overflow-y:auto; background:var(--rdoc-bg); border:1px solid var(--rdoc-line-on-surface); border-radius:6px; padding:8px 10px; }
 .log-e { padding:2px 0; color:var(--rdoc-text-muted); }
 .log-e.cyan { color:var(--rdoc-info); } .log-e.gold { color:var(--rdoc-warning); } .log-e.red { color:var(--rdoc-error); }
 
