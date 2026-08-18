@@ -283,7 +283,7 @@ function selectedGiveaway() {
 // deklariert display.panelCard und (falls die Karte Daten lädt) einen
 // Eintrag hier; updateTicketBuyButtons verzweigt nicht mehr auf Core-IDs.
 var PANEL_CARD_LOADERS = {
-  ticketbuy: function(){ tbLoadPrizes(); },
+  ticketbuy: function(){ tbLoadPrizes(); tbFillWagerCmd(); },
   contest:   function(){ scLoadEntries(); },
   instant:   null,   // card-instant lebt allein von gw_data/Fenster-Acks
 };
@@ -1205,7 +1205,7 @@ function handle(msg) {
       // Read-only Antworten (NIE requestData → sonst Endlosschleife)
       if (msg.type === 'giveaways')     { giveawayList = msg.giveaways || []; renderGiveawaySelect(); updateMainView();
                                           // ★-Gate der Preis-Zeilen haengt am closed-Stand der Auswahl.
-                                          if (selectedCore() === 'CORE_TicketBuy') renderPrizes(tbPrizes); break; }
+                                          if (selectedCore() === 'CORE_TicketBuy') { renderPrizes(tbPrizes); tbFillWagerCmd(); } break; }
       if (msg.type === 'drafts')        { drafts = msg.drafts || []; renderDrafts(); break; }
       if (msg.type === 'preflight')     { renderPreflight(msg); break; }
       if (msg.type === 'entries')       { renderEntries(msg); break; }
@@ -1296,7 +1296,8 @@ function handle(msg) {
       if (msg.type === 'prize_cancelled') { log('Preis #' + msg.prizeId + ' storniert — ' + (msg.refundedUsers || 0) + ' Einsätze zurückgebucht', 'gold'); tbLoadPrizes(); }
       if (msg.type === 'credit_reset')  { log('Losanpassung: ' + (msg.users || 0) + ' Konten auf 0 (-' + (msg.total || 0) + ' Lose)', 'gold'); liveRefresh(); }
       if (msg.type === 'page_announced') log('Zuschauer-Link im Chat angesagt', 'gold');
-      if (msg.type === 'wager_cmd_set') log('Setz-Befehl geändert: „' + (msg.command || '') + '"', 'gold');
+      if (msg.type === 'wager_cmd_set') { log('Setz-Befehl geändert: „' + (msg.command || '') + '"', 'gold');
+                                          setTimeout(requestData, 300); }   // Liste neu — Feld bleibt nach Reload gefüllt
       if (msg.type === 'contest_voting') log('Contest-Voting: ' + (msg.voting || '?'), 'gold');
       if (msg.type === 'entry_reviewed') { log('Einsendung #' + msg.entryId + ' → ' + (msg.decision === 'approve' ? 'FREIGEGEBEN' : 'abgelehnt'), 'gold'); scLoadEntries(); }
       if (msg.type === 'entry_deleted')  { log('Einsendung #' + msg.entryId + ' von „' + maskName((msg.username || '').toLowerCase(), msg.username || '?') + '" endgültig gelöscht', 'gold'); scLoadEntries(); }
@@ -1930,6 +1931,15 @@ function tbWinBadge(p) {
   var t = 'Gewinner einer der letzten 3 Ziehungen (#' + p.recentWin.rank
         + (p.recentWin.prize ? ': ' + p.recentWin.prize : '') + (d ? ', ' + d : '') + ')';
   return ' <span class="win-badge" title="' + esc(t) + '">&#127942;' + p.recentWin.rank + '</span>';
+}
+
+// Setz-Befehl-Feld aus der gewählten Instanz befüllen (kommt via
+// gw_list_giveaways.wagerCmd) — nie während der Bediener darin tippt.
+function tbFillWagerCmd() {
+  var el = document.getElementById('tb-wagercmd');
+  if (!el || document.activeElement === el) return;
+  var g = selectedGiveaway();
+  if (g && g.core === 'CORE_TicketBuy') el.value = g.wagerCmd || '';
 }
 
 // Zweistufiger Reset (kein confirm()-Dialog): erst scharf schalten, dann senden.

@@ -1658,3 +1658,10 @@ test('resetTeamCredit: blockiert bei offenen Preisen, sonst Gegenbuchung je Kont
   // Journal bleibt: Gegenbuchungen, kein DELETE
   assert.ok(e.pg.ledger.some(x => x.entry_type === 'reset' && x.username === 'bob' && x.amount === -5));
 });
+
+test('listGiveaways liefert den Setz-Befehl der Instanz (Panel-Reload)', async () => {
+  const e = engine();
+  await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy', keyword: 'los', wagerCmd: '!buy' });
+  const g = (await e.listGiveaways(TEAM)).find(x => x.gid === 'sess_2');
+  assert.equal(g.wagerCmd, '!buy');
+});

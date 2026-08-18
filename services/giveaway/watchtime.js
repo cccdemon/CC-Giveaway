@@ -1109,6 +1109,9 @@ class WatchtimeEngine {
                  channels: Array.isArray(chans) && chans.length ? chans : null,
                  windowEndsAt: parseInt(await this.redis.get(K.gWinEnd(t, g)), 10) || null,
                  announce: await this.redis.get(K.gAnnounce(t, g)) !== 'false',
+                 // Setz-Befehl mitliefern — sonst steht das Panel-Feld nach
+                 // einem Reload leer, obwohl der Befehl in Redis liegt.
+                 wagerCmd: await this.redis.get(K.gWagerCmd(t, g)) || '',
                  name: await this.redis.get(K.gName(t, g)) || '' });
     }
     if (stats) {
