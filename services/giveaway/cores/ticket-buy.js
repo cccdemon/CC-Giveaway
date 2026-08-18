@@ -28,18 +28,18 @@
 
 const WAGER_CMD_DEF = '!setzen';
 
-// "!setzen <preis-nr> <anzahl>" → { prizeId, amount } | { help: true } | null.
-// Der Befehl selbst ist per Team/Instanz konfigurierbar (WebUI, gWagerCmd).
+// "!setzen <anzahl>" → { amount } | { help: true } | null.
+// Seit "ein Giveaway = ein Preis" braucht der Befehl keine Preis-Nummer mehr:
+// der Setz-Befehl selbst (per Instanz konfigurierbar, WebUI/gWagerCmd) waehlt
+// das Los-Giveaway — er muss darum je Team eindeutig sein (wagerCmdTaken).
 function parseWager(message, cmd) {
   const c = String(cmd || WAGER_CMD_DEF).toLowerCase();
   const words = String(message || '').trim().toLowerCase().split(/\s+/);
   if (!words.length || words[0] !== c) return null;
   if (words.length === 1) return { help: true };
-  const prizeId = parseInt(words[1], 10);
-  const amount  = words.length >= 3 ? parseInt(words[2], 10) : 1;
-  if (!Number.isFinite(prizeId) || prizeId <= 0) return { help: true };
-  if (!Number.isFinite(amount) || amount < 0)    return { help: true };
-  return { prizeId, amount };   // amount 0 = Rücknahme des kompletten Einsatzes
+  const amount = parseInt(words[1], 10);
+  if (!Number.isFinite(amount) || amount < 0) return { help: true };
+  return { amount };   // amount 0 = Rücknahme des kompletten Einsatzes
 }
 
 // stakes: [{ username, stake }] (SUM je User, nur > 0) → Pool je Preis.
@@ -53,12 +53,12 @@ function buildPool(stakes) {
 }
 
 // ── Chat-Texte ────────────────────────────────────────────
-// prizes = offene Preise ALLER Los-Giveaways des Kanals (je Instanz einer).
+// prizes = offene Preise DIESES Los-Giveaways (ein Giveaway = ein Preis).
 function helpText(cmd, prizes) {
-  const list = (prizes || []).map(p => `#${p.id} ${p.title}`).join(' · ');
-  return `🎟 Lose setzen: „${cmd} <preis-nr> <anzahl>" — z.B. „${cmd} ${prizes && prizes[0] ? prizes[0].id : 1} 2". `
-       + (list ? `Preise: ${list}. ` : 'Aktuell keine offenen Preise. ')
-       + `Rücknahme bis zum Einsatz-Ende: „${cmd} <preis-nr> 0".`;
+  const p = prizes && prizes[0];
+  return `🎟 Lose setzen: „${cmd} <anzahl>" — z.B. „${cmd} 2". `
+       + (p ? `Preis: ${p.title}. ` : 'Aktuell kein offener Preis. ')
+       + `Rücknahme bis zum Einsatz-Ende: „${cmd} 0".`;
 }
 
 function wagerOkText({ username, prizeTitle, amount, stake, balance }) {
@@ -70,26 +70,31 @@ function retractOkText({ username, prizeTitle, refunded, balance }) {
   return `@${username} ↩ Einsatz auf „${prizeTitle}" zurückgenommen (${refunded} zurück, Guthaben: ${balance.toFixed(2)}).`;
 }
 
-function wagerErrText(username, reason) {
+function wagerErrText(username, reason, extra = {}) {
   const msgs = {
     no_prize:      'diesen Preis gibt es nicht (oder er ist schon gezogen).',
     wager_closed:  'das Einsatz-Ende dieses Preises ist vorbei — Einsätze sind jetzt gebunden.',
     no_credit:     'nicht genug Guthaben. Guthaben entsteht aus Zuschauzeit (Stand: Setz-Seite).',
     nothing_to_refund: 'du hast auf diesen Preis nichts gesetzt.',
+    not_registered: extra.keyword
+      ? `du bist bei diesem Giveaway noch nicht angemeldet — schreib zuerst „${extra.keyword}" in den Chat.`
+      : 'du bist bei diesem Giveaway noch nicht angemeldet — schreib zuerst das Teilnahme-Keyword in den Chat.',
   };
   return `@${username} ❌ ${msgs[reason] || 'Einsatz nicht möglich.'}`;
 }
 
 // url optional: Ansagen aus dem Server hängen den Link zur Setz-Seite an
 // (ohne url bleiben die Texte byte-gleich — eingefrorene Tests).
-function infoText({ cmd, url } = {}) {
-  return `🎁 Los-Giveaway: Zuschauzeit wird zu Los-Guthaben. Setze deine Lose gezielt auf Preise: „${cmd} <preis-nr> <anzahl>". Gezogen wird je Preis, gewichtet nach Einsatz — jedes Los kann gewinnen. Nach der Ziehung sind die Einsätze aller Teilnehmer dieses Preises verbraucht.`
+function infoText({ cmd, url, keyword } = {}) {
+  return `🎁 Los-Giveaway: Zuschauzeit wird zu Los-Guthaben.`
+       + (keyword ? ` Mitmachen: schreib „${keyword}" in den Chat.` : '')
+       + ` Setze deine Lose auf den Preis: „${cmd} <anzahl>". Gezogen wird gewichtet nach Einsatz — jedes Los kann gewinnen. Nach der Ziehung sind die Einsätze aller Teilnehmer dieses Preises verbraucht.`
        + (url ? ` Setz-Seite: ${url}` : '');
 }
 
 // Eine Zeile für !los, wenn diese Instanz parallel zur Kampagne läuft.
 function statusLine({ cmd, url } = {}) {
-  return `🎟 Außerdem läuft ein Los-Giveaway — Lose setzen mit „${cmd || WAGER_CMD_DEF} <preis-nr> <anzahl>" oder auf der Setz-Seite.`
+  return `🎟 Außerdem läuft ein Los-Giveaway — Lose setzen mit „${cmd || WAGER_CMD_DEF} <anzahl>" oder auf der Setz-Seite.`
        + (url ? ` → ${url}` : '');
 }
 

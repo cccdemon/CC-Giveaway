@@ -100,9 +100,13 @@ Zuschauzeit wird zu Guthaben, das gezielt eingesetzt wird.
   nächste Los-Giveaway erhalten.
 - Der Veranstalter legt **Preise** an (mit Titel, Sponsor, Beschreibung,
   Bild und optionalem Einsatz-Ende).
-- **Setzen:** per Chat-Befehl (Standard `!setzen <preis-nr> <anzahl>`,
-  frei konfigurierbar) oder auf der Setz-Seite im Web. Bis zum
-  Einsatz-Ende kann ein Einsatz komplett zurückgenommen werden.
+- **Teilnahme ist Opt-in:** erst das Teilnahme-Keyword im Chat schreiben —
+  wer das nicht tut, sammelt zwar Guthaben, kann aber nicht setzen und
+  taucht auch auf der Setz-Seite nicht auf.
+- **Setzen:** per Chat-Befehl (Standard `!setzen <anzahl>`, frei
+  konfigurierbar — der Befehl wählt das Los-Giveaway, darum je Team
+  eindeutig) oder auf der Setz-Seite im Web. Bis zum Einsatz-Ende kann
+  ein Einsatz komplett zurückgenommen werden.
 - **Ziehung je Preis**, gewichtet nach Einsatz. Nach der Ziehung sind die
   Einsätze **aller** Setzer dieses Preises verbraucht — sonst wäre Setzen
   risikolos. Jede Buchung steht in einem Journal, das nur Gegenbuchungen

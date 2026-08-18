@@ -28,7 +28,7 @@ Coins werden immer aus der gespeicherten Zuschauzeit berechnet, nie eingefroren.
 | **Coin-Basis** | Wie viel Zuschauzeit ein Los kostet. Gleichzeitig die Schwelle für den Lostopf: drin ist, wer ≥1 Los hat. | 2 Stunden | 1 Minute – 100 Stunden |
 | **Follow-Bedingung** | Wie vielen der teilnehmenden Kanäle jemand folgen muss. `0` schaltet die Bedingung ganz ab. | 2 Kanäle | 0 – 10 |
 | **Keyword** | Das Wort, mit dem sich Zuschauer anmelden. Leer = keine Anmeldung nötig. | frei wählbar | beliebiger Text |
-| **Chat-Bonus** | Zuschauzeit-Gutschrift für sinnvolle Nachrichten, mit Cooldown gegen Spam. | +2 s ab 4 Wörtern, 10 s Cooldown | 0–300 s, 1–50 Wörter, 0–3600 s |
+| **Chat-Bonus** | Zuschauzeit-Gutschrift für sinnvolle Nachrichten, mit Cooldown gegen Spam. Per Haken komplett abschaltbar — die Regeln bleiben dabei gespeichert. | an; +2 s ab 4 Wörtern, 10 s Cooldown | an/aus, 0–300 s, 1–50 Wörter, 0–3600 s |
 | **KI-Bewertung** | Statt der Wortzahl entscheidet ein Modell, ob eine Nachricht sinnvoll ist. Anbieter und Modell pro Team, eigener API-Key. | aus | Anthropic / OpenAI / Gemini |
 | **Viewtime-Multiplier** | Zeitlich begrenzter Faktor auf Zuschauzeit und Chat-Bonus. | aus | Faktor 1–10, 1 s – 24 h |
 | **Automatik** | Giveaway startet/pausiert automatisch mit dem Stream-Status. | aus | an/aus |
@@ -52,7 +52,7 @@ jemand schaut.
 |---|---|---|---|
 | **Kampagne** (Zuschauzeit & Chat) | Keyword + Follows + ≥1 Los | gesammelte Lose | das klassische Langzeit-Giveaway |
 | **Sofortverlosung** | Keyword im Zeitfenster (= Anwesenheitsnachweis) **und** Follow **und** Mindest-Zuschauzeit | gleich für alle | Anmeldefenster 10 s – 1 h, mehrfach öffenbar; Mindest-Zuschauzeit Vorgabe 10 min, beim Start einstellbar (0 = aus, nötig wenn keine Kampagne läuft); Ziehung macht der Streamer selbst (★) nach dem Schließen; Chat-Ansagen je Instanz schaltbar (Default an, Gewinner-Ansage immer) |
-| **Los-Giveaway** (BETA) | wer Lose auf einen Preis setzt | Einsatz auf diesen Preis | Zuschauzeit wird Guthaben (bleibt teamweit erhalten, verfällt nach 12 Monaten Inaktivität); genau ein Preis je Los-Giveaway (mehrere Preise = mehrere Los-Giveaways parallel), Einsatz-Ende optional; Setzen per Chat-Befehl (Standard `!setzen`, umbenennbar) oder Seite „Lose setzen"; Rücknahme bis Einsatz-Ende; Ziehung je Preis, danach sind alle Einsätze des Preises verbraucht |
+| **Los-Giveaway** (BETA) | wer Lose auf einen Preis setzt | Einsatz auf diesen Preis | Zuschauzeit wird Guthaben (bleibt teamweit erhalten, verfällt nach 12 Monaten Inaktivität); genau ein Preis je Los-Giveaway (mehrere Preise = mehrere Los-Giveaways parallel), Einsatz-Ende optional; Teilnahme per Keyword-Opt-in (ohne Keyword: Guthaben sammeln ja, setzen nein); Setzen per Chat-Befehl (`!setzen <anzahl>`, umbenennbar — Befehl wählt das Giveaway, je Team eindeutig) oder Seite „Lose setzen"; Rücknahme bis Einsatz-Ende; Ziehung je Preis, danach sind alle Einsätze des Preises verbraucht |
 | **Screenshot-Contest** (BETA) | eingesendete Screenshots echter Zuschauer (Follow + Mindest-Viewtime, 1 pro Person) | höchste Punktsumme gewinnt (kein Zufall; Gleichstand wird ausgelost) | Freigabe jeder Einsendung durch den Streamer; Community-Voting 1–10 (eine Stimme je Person und Bild, Re-Vote überschreibt, eigenes Bild nicht wertbar, Viewtime-Schwelle gegen Votebots); Voting öffnen/pausieren/fortsetzen/schließen; Ersetzen der eigenen Einsendung verwirft deren Stimmen (mit Warnung) |
 
 ---

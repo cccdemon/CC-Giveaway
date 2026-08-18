@@ -306,14 +306,14 @@
       </div>
 
       <!-- Los-Giveaway: Setz-Befehl, Preise, Ziehung je Preis -->
-      <div class="card" id="card-ticketbuy" data-help="Los-Giveaway: Zuschauzeit wird Los-Guthaben (Umrechnung in der Regeln-Karte). Ein Los-Giveaway verlost genau EINEN Preis (Titel, Sponsor, Beschreibung, Bild bis 7 MB, optionales Einsatz-Ende) — für einen weiteren Preis ein zweites Los-Giveaway starten (＋ oben). Preis ✎ korrigieren oder ✖ stornieren (Einsätze werden zurückgebucht). Gesetzt wird per Chat-Befehl oder Setz-Seite; Rücknahme bis zum Einsatz-Ende. ★ zieht gewichtet nach Einsatz — danach sind die Einsätze ALLER Setzer verbraucht. SCHLIESSEN geht erst, wenn der Preis gezogen oder storniert ist.">
+      <div class="card" id="card-ticketbuy" data-help="Los-Giveaway: Zuschauzeit wird Los-Guthaben (Umrechnung in der Regeln-Karte). Ein Los-Giveaway verlost genau EINEN Preis (Titel, Sponsor, Beschreibung, Bild bis 7 MB, optionales Einsatz-Ende) — für einen weiteren Preis ein zweites Los-Giveaway starten (＋ oben). Preis ✎ korrigieren oder ✖ stornieren (Einsätze werden zurückgebucht). Gesetzt wird per Chat-Befehl („&lt;Befehl&gt; &lt;Anzahl&gt;", nur nach Anmeldung per Teilnahme-Keyword) oder Setz-Seite; Rücknahme bis zum Einsatz-Ende. ★ zieht gewichtet nach Einsatz — danach sind die Einsätze ALLER Setzer verbraucht. SCHLIESSEN geht erst, wenn der Preis gezogen oder storniert ist.">
         <div class="card-title">LOS-GIVEAWAY // PREIS <span class="beta-chip">BETA</span></div>
         <div class="card-sub">SETZ-BEFEHL</div>
         <div class="input-row">
           <input type="text" id="tb-wagercmd" placeholder="!setzen" maxlength="30">
           <button class="btn btn-cyan btn-sm" onclick="tbSetWagerCmd()">SETZEN</button>
         </div>
-        <div class="cfg-hint">Zuschauer setzen mit „&lt;Befehl&gt; &lt;Preis-Nr&gt; &lt;Anzahl&gt;" — Anzahl 0 = Rücknahme.</div>
+        <div class="cfg-hint">Zuschauer setzen mit „&lt;Befehl&gt; &lt;Anzahl&gt;" — Anzahl 0 = Rücknahme. Setzen kann nur, wer das Teilnahme-Keyword geschrieben hat.</div>
         <div class="btn-group mt-6">
           <button class="btn btn-cyan btn-sm" onclick="copyViewerLink('wager', this)">🔗 SETZ-SEITE</button>
           <button class="btn btn-gold btn-sm" onclick="gwAnnouncePage()">📣 IM CHAT ANSAGEN</button>
@@ -373,9 +373,13 @@
         <div class="cfg-row"><span>1 Coin =</span><input type="number" id="cfg-draw-min" min="0.05" max="100" step="0.25" value="2" class="in-narrow" onchange="saveStreamSettings()"><span>Std Viewtime</span></div>
         <div class="cfg-hint">Gleicher Wert für beides: 1 Coin pro X Std — und im Lostopf ist, wer <b>≥1 Coin</b> hat. Chance bleibt nach Coins gewichtet.</div>
         <div class="card-sub mt-8">CHAT-BONUS</div>
-        <div class="cfg-row"><span>Nachricht ab</span><input type="number" id="cfg-chat-words" min="1" max="50" step="1" value="4" class="in-narrow" onchange="saveStreamSettings()"><span>Wörtern gibt</span><input type="number" id="cfg-chat-bonus" min="0" max="300" step="0.5" value="2" class="in-narrow" onchange="saveStreamSettings()"><span>Sek.</span></div>
-        <div class="cfg-row"><span>Cooldown</span><input type="number" id="cfg-chat-cool" min="0" max="3600" step="1" value="10" class="in-narrow" onchange="saveStreamSettings()"><span>Sek. zwischen zwei Boni</span></div>
-        <div class="cfg-hint">0 Sek. Bonus = Chat zählt gar nicht. Der Viewtime-Multiplier gilt auch für den Chat-Bonus.</div>
+        <label class="cfg-row"><input type="checkbox" id="cfg-chat-on" checked onchange="onChatBonusToggle()"><span>Sinnvolle Chatnachrichten geben <b>Zuschauzeit-Bonus</b></span></label>
+        <div id="chat-bonus-fields">
+          <div class="cfg-row"><span>Nachricht ab</span><input type="number" id="cfg-chat-words" min="1" max="50" step="1" value="4" class="in-narrow" onchange="saveStreamSettings()"><span>Wörtern gibt</span><input type="number" id="cfg-chat-bonus" min="0" max="300" step="0.5" value="2" class="in-narrow" onchange="saveStreamSettings()"><span>Sek.</span></div>
+          <div class="cfg-row"><span>Cooldown</span><input type="number" id="cfg-chat-cool" min="0" max="3600" step="1" value="10" class="in-narrow" onchange="saveStreamSettings()"><span>Sek. zwischen zwei Boni</span></div>
+          <div class="cfg-hint">Der Viewtime-Multiplier gilt auch für den Chat-Bonus.</div>
+        </div>
+        <div class="cfg-hint" id="chat-bonus-off-hint" style="display:none">Chat-Bonus ist aus — Nachrichten geben keine Zuschauzeit. Die Regeln bleiben gespeichert.</div>
         <div class="card-sub mt-8">CHAT-BEWERTUNG PER KI · GILT TEAM-WEIT <span class="ct-badge" id="ai-state">AUS</span></div>
         <label class="cfg-row"><input type="checkbox" id="cfg-ai-enabled" onchange="saveAiSettings()"><span>KI entscheidet, ob eine Nachricht <b>sinnvoll</b> ist</span></label>
         <div class="cfg-row"><span>Anbieter</span><select id="cfg-ai-provider" class="in-wide" onchange="onAiProviderChange()"></select></div>
@@ -523,7 +527,7 @@
       <div class="iw-field" id="iw-f-wagercmd">
         <label for="iw-wagercmd">Chat-Befehl zum Setzen</label>
         <input type="text" id="iw-wagercmd" maxlength="30" value="!setzen">
-        <div class="hint">Zuschauer setzen mit „&lt;Befehl&gt; &lt;Preis-Nr&gt; &lt;Anzahl&gt;". Später änderbar (⌨).</div>
+        <div class="hint">Zuschauer setzen mit „&lt;Befehl&gt; &lt;Anzahl&gt;". Muss je Team eindeutig sein — der Befehl wählt das Los-Giveaway. Später änderbar (⌨).</div>
       </div>
       <div class="iw-field" id="iw-f-minwatch">
         <label for="iw-minwatch">Mindest-Zuschauzeit (Minuten)</label>

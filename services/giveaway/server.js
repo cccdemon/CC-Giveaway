@@ -1152,7 +1152,22 @@ async function runAdminCmd(send, msg, meta, ctx) {
       // TicketBuy: Setz-Befehl kommt aus der WebUI (Default aus der Core-Config).
       let wagerCmd = '';
       if (coreId === 'CORE_TicketBuy') {
+        // Teilnahme ist Opt-in: ohne Keyword sammelt jeder Guthaben, aber
+        // niemand kann setzen — darum Pflicht wie bei der Sofortverlosung.
+        if (!keyword) {
+          Object.assign(outcome, { blocked: 'no_keyword', core: coreId });
+          send({ event: 'gw_ack', type: 'open_blocked',
+                 error: 'Ein Los-Giveaway braucht ein Teilnahme-Keyword — nur wer es schreibt, nimmt teil (Guthaben sammeln alle).' });
+          break;
+        }
         wagerCmd = sanitizeStr(msg.wagerCmd || '', 30).trim().toLowerCase() || coreMod.config.wagerCmd.def;
+        // Der Befehl routet den Chat-Einsatz — muss je Team eindeutig sein.
+        if (await wte.wagerCmdTaken(teamId, wagerCmd)) {
+          Object.assign(outcome, { blocked: 'wager_cmd_taken', wagerCmd });
+          send({ event: 'gw_ack', type: 'open_blocked',
+                 error: `„${wagerCmd}" wird schon von einem laufenden Los-Giveaway benutzt — bitte einen anderen Setz-Befehl wählen.` });
+          break;
+        }
       }
       // Mindest-Viewtime: Contest (Einsenden/Voten) und Sofortverlosung
       // (Teilnahmeschwelle, Default 10 Minuten) — beide WebUI-konfigurierbar.
@@ -1218,7 +1233,7 @@ async function runAdminCmd(send, msg, meta, ctx) {
                                                 minWatchSec: minWatchSec !== null ? minWatchSec : undefined })
                            : coreMod.prepText({ keyword }))
         : coreId === 'CORE_ScreenshotContest' ? coreMod.infoText({ url: publicHost() + '/viewer/contest' })
-        : coreId === 'CORE_TicketBuy' ? coreMod.infoText({ cmd: wagerCmd, url: publicHost() + '/viewer/wager' })
+        : coreId === 'CORE_TicketBuy' ? coreMod.infoText({ cmd: wagerCmd, keyword, url: publicHost() + '/viewer/wager' })
         : '🎁 Zusätzliches Giveaway gestartet!' + (keyword ? ` Mitmachen: schreib "${keyword}" im Chat.` : ''))
         + prizeLine(iPrize, iSponsor));
       // P6: vorbereitete Preise direkt beim Start anlegen (Los-Giveaway) —
@@ -1421,10 +1436,16 @@ async function runAdminCmd(send, msg, meta, ctx) {
         send({ event: 'gw_ack', type: 'error', error: 'Instanz oder Befehl fehlt.' });
         break;
       }
+      if (await wte.wagerCmdTaken(teamId, cmd, gid)) {
+        Object.assign(outcome, { error: 'wager_cmd_taken', wagerCmd: cmd });
+        send({ event: 'gw_ack', type: 'error',
+               error: `„${cmd}" wird schon von einem laufenden Los-Giveaway benutzt.` });
+        break;
+      }
       const before = await redis.get(K.gWagerCmd(teamId, gid));
       await redis.set(K.gWagerCmd(teamId, gid), cmd);
       Object.assign(outcome, { giveawayId: gid, cmdBefore: before, cmdAfter: cmd });
-      await announceChannels(teamId, inst.channels, `🎟 Lose setzen geht ab jetzt mit „${cmd} <preis-nr> <anzahl>".`);
+      await announceChannels(teamId, inst.channels, `🎟 Lose setzen geht ab jetzt mit „${cmd} <anzahl>".`);
       send({ event: 'gw_ack', type: 'wager_cmd_set', giveawayId: gid, command: cmd });
       break;
     }
@@ -1461,7 +1482,7 @@ async function runAdminCmd(send, msg, meta, ctx) {
       let txt = null;
       if (inst && inst.core === 'CORE_TicketBuy') {
         const cmd = await redis.get(K.gWagerCmd(teamId, gid)) || '!setzen';
-        txt = `🎟 Lose setzen: ${publicHost()}/viewer/wager (Login mit Twitch) — oder im Chat mit „${cmd} <preis-nr> <anzahl>".`;
+        txt = `🎟 Lose setzen: ${publicHost()}/viewer/wager (Login mit Twitch) — oder im Chat mit „${cmd} <anzahl>".`;
       } else if (inst && inst.core === 'CORE_ScreenshotContest') {
         txt = `📸 Screenshot-Contest: Einsenden und Bewerten auf ${publicHost()}/viewer/contest (Login mit Twitch).`;
       }
@@ -1578,6 +1599,7 @@ async function runAdminCmd(send, msg, meta, ctx) {
       if (msg.drawMinHours !== undefined && msg.drawMinHours !== null) dm = await wte.setDrawMinSec(teamId, parseFloat(msg.drawMinHours) * 3600, sGid);
       const chatBefore = await wte.getChatConfig(teamId, sGid);
       const chat = await wte.setChatConfig(teamId, {
+        enabled: typeof msg.chatEnabled === 'boolean' ? msg.chatEnabled : undefined,
         bonusSec: msg.chatBonusSec, minWords: msg.chatMinWords, cooldown: msg.chatCooldown }, sGid);
       Object.assign(outcome, { scope: sGid || 'team_defaults',
                                followMinBefore: fmBefore, followMinAfter: fm,
@@ -1585,7 +1607,8 @@ async function runAdminCmd(send, msg, meta, ctx) {
                                chatBefore, chatAfter: chat });
       send({ event: 'gw_ack', type: 'stream_settings', scope: sGid || 'defaults',
                 autoPause: ap, autoResume: ar, followMin: fm, drawMinHours: dm / 3600,
-                chatBonusSec: chat.bonusSec, chatMinWords: chat.minWords, chatCooldown: chat.cooldown });
+                chatEnabled: chat.enabled, chatBonusSec: chat.bonusSec,
+                chatMinWords: chat.minWords, chatCooldown: chat.cooldown });
       log('GW', `[${teamId}] settings(${sGid || 'defaults'}): pause=${ap} resume=${ar} followMin=${fm} drawMin=${dm}s`);
       break;
     }
@@ -1662,7 +1685,8 @@ async function runAdminCmd(send, msg, meta, ctx) {
         autoResume: await redis.get(K.cfgAutoResume(teamId)) === '1',
         followMin:  await wte.getFollowMin(teamId, sGid),
         drawMinHours: (await wte.getDrawMinSec(teamId, sGid)) / 3600,
-        chatBonusSec: chat.bonusSec, chatMinWords: chat.minWords, chatCooldown: chat.cooldown });
+        chatEnabled: chat.enabled, chatBonusSec: chat.bonusSec,
+        chatMinWords: chat.minWords, chatCooldown: chat.cooldown });
       break;
     }
     case 'gw_set_keyword': {
@@ -2341,7 +2365,15 @@ app.get('/api/wager/state', async (req, res) => {
       const tName = await teamName(t);
       // Je laufendem Los-Giveaway ein Block: eigener Preis, eigener
       // Setz-Befehl, eigene Kanaele (ein Giveaway = ein Preis).
+      let visible = 0;
       for (const g of insts) {
+        // Opt-in-Filter: die Seite zeigt nur Giveaways, bei denen die Person
+        // per Keyword angemeldet ist. Instanzen ohne Keyword (Altbestand)
+        // bleiben sichtbar. Fremde Teams verschwinden damit von selbst.
+        const kw = await redis.get(K.gKw(t, g.gid));
+        const registered = await redis.get(K.gReg(t, g.gid, user)) === '1';
+        if (kw && !registered) continue;
+        visible++;
         const prizes = await wte.listPrizes(t, { gid: g.gid });
         const withStake = [];
         for (const pz of prizes) withStake.push({ ...pz, myStake: await wte.prizeStake(pz.id, user) });
@@ -2349,11 +2381,12 @@ app.get('/api/wager/state', async (req, res) => {
           WHERE team_id=$1 AND session_id=$2 AND username=$3 AND action='wager'`, [t, g.gid, user]);
         out.push({ teamId: t, teamName: tName, available, prizes: withStake,
                    wagerCmd: (await redis.get(K.gWagerCmd(t, g.gid))) || '!setzen',
-                   consented: seen.rowCount > 0, giveawayId: g.gid, name: g.name || null,
+                   consented: seen.rowCount > 0, registered: registered || !kw,
+                   giveawayId: g.gid, name: g.name || null,
                    channels: g.channels || await wte.getChannels(t) });
       }
-      // Kein laufendes Los-Giveaway, aber Guthaben da: Stand trotzdem zeigen.
-      if (!insts.length && available > 0) {
+      // Kein (angemeldetes) Los-Giveaway, aber Guthaben da: Stand trotzdem zeigen.
+      if (!visible && available > 0) {
         out.push({ teamId: t, teamName: tName, available, prizes: [], wagerCmd: null,
                    consented: false, giveawayId: null, name: null,
                    channels: await wte.getChannels(t) });

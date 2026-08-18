@@ -694,7 +694,7 @@ var iwType = null;
 var IW_TYPES = {
   campaign:  { core: null,                      fields: { keyword: true } },
   instant:   { core: 'CORE_CurrentViewers',     fields: { keyword: true, window: true, minwatch: true } },
-  ticketbuy: { core: 'CORE_TicketBuy',          fields: { wagercmd: true } },
+  ticketbuy: { core: 'CORE_TicketBuy',          fields: { keyword: true, wagercmd: true } },
   contest:   { core: 'CORE_ScreenshotContest',  fields: { minwatch: true } },
 };
 
@@ -850,6 +850,11 @@ function iwCollect() {
     payload.keyword = CC.validate.sanitize(document.getElementById('iw-keyword').value, 'keyword').trim();
     if (iwType === 'instant' && !payload.keyword) {
       err.textContent = 'Die Sofortverlosung braucht ein Keyword — ohne Anmeldung kein Teilnehmer.';
+      document.getElementById('iw-keyword').focus();
+      return null;
+    }
+    if (iwType === 'ticketbuy' && !payload.keyword) {
+      err.textContent = 'Das Los-Giveaway braucht ein Teilnahme-Keyword — nur wer es schreibt, nimmt teil.';
       document.getElementById('iw-keyword').focus();
       return null;
     }
@@ -1212,6 +1217,8 @@ function handle(msg) {
         var arEl = document.getElementById('cfg-auto-resume'); if (arEl) arEl.checked = !!msg.autoResume;
         var fmEl = document.getElementById('cfg-follow-min');  if (fmEl && msg.followMin !== undefined) fmEl.value = msg.followMin;
         var dmEl = document.getElementById('cfg-draw-min');    if (dmEl && msg.drawMinHours !== undefined) dmEl.value = msg.drawMinHours;
+        var coEl = document.getElementById('cfg-chat-on');
+        if (coEl && msg.chatEnabled !== undefined) { coEl.checked = !!msg.chatEnabled; applyChatBonusVisibility(); }
         var cwEl = document.getElementById('cfg-chat-words'); if (cwEl && msg.chatMinWords !== undefined) cwEl.value = msg.chatMinWords;
         var cbEl = document.getElementById('cfg-chat-bonus'); if (cbEl && msg.chatBonusSec !== undefined) cbEl.value = msg.chatBonusSec;
         var ccEl = document.getElementById('cfg-chat-cool');  if (ccEl && msg.chatCooldown !== undefined) ccEl.value = msg.chatCooldown;
@@ -1327,10 +1334,29 @@ function saveStreamSettings() {
   var dmRaw = parseFloat((document.getElementById('cfg-draw-min') || {}).value);
   var dm = isFinite(dmRaw) && dmRaw >= 0.05 ? Math.min(100, dmRaw) : 2;
   var num = function(id, def) { var v = parseFloat((document.getElementById(id) || {}).value); return isFinite(v) ? v : def; };
+  var chatOn = !!(document.getElementById('cfg-chat-on') || { checked: true }).checked;
   send({ event: 'gw_cmd', cmd: 'gw_set_stream_settings', giveawayId: currentGiveaway,
-         autoPause: ap, autoResume: ar, followMin: fm, drawMinHours: dm,
+         autoPause: ap, autoResume: ar, followMin: fm, drawMinHours: dm, chatEnabled: chatOn,
          chatMinWords: num('cfg-chat-words', 4), chatBonusSec: num('cfg-chat-bonus', 2), chatCooldown: num('cfg-chat-cool', 10) });
-  log('Einstellungen: folge≥' + fm + ' · Pause=' + ap + ' Start=' + ar, 'cyan');
+  log('Einstellungen: folge≥' + fm + ' · Pause=' + ap + ' Start=' + ar + ' · Chat-Bonus=' + (chatOn ? 'an' : 'aus'), 'cyan');
+}
+
+// Chat-Bonus-Haken: Felder nur zeigen, wenn der Bonus an ist. Die Werte
+// bleiben beim Ausschalten gespeichert (Engine: cfg chat_enabled='0').
+function applyChatBonusVisibility() {
+  var on = !!(document.getElementById('cfg-chat-on') || { checked: true }).checked;
+  var fields = document.getElementById('chat-bonus-fields');
+  var off = document.getElementById('chat-bonus-off-hint');
+  if (fields) fields.style.display = on ? '' : 'none';
+  if (off) off.style.display = on ? 'none' : '';
+  ['cfg-chat-words', 'cfg-chat-bonus', 'cfg-chat-cool'].forEach(function(id) {
+    var el = document.getElementById(id); if (el) el.disabled = !on;
+  });
+}
+
+function onChatBonusToggle() {
+  applyChatBonusVisibility();
+  saveStreamSettings();
 }
 
 let _multTimer = null;

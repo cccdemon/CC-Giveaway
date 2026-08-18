@@ -250,7 +250,7 @@
     B -- keine --&gt; E1["Ende"]
     B -- ja --&gt; C["Präsenz + Follow merken,&lt;br/&gt;Nutzer indizieren"]
     C --&gt; D{"Setz-Befehl&lt;br/&gt;(Los-Giveaway)?"}
-    D -- ja --&gt; D1["Preis-Nr → Instanz auflösen"]
+    D -- ja --&gt; D1["Befehl → Instanz, deren offener Preis"]
     D1 --&gt; D2["placeWager() in einer TX"]
     D2 --&gt; D3["Chat-Antwort, ENDE&lt;br/&gt;(zählt nicht als Chat)"]
     D -- nein --&gt; F{"Keyword einer Instanz?"}

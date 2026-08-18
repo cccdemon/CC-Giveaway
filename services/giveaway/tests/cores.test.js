@@ -226,7 +226,7 @@ test('statusLine: jede Sekundär-Mechanik liefert eine !los-Zusatzzeile', () => 
 
   // Los-Einsatz: nennt den (konfigurierten) Setz-Befehl, Fallback = Default.
   assert.strictEqual(tb.statusLine({ cmd: '!lose' }),
-    '🎟 Außerdem läuft ein Los-Giveaway — Lose setzen mit „!lose <preis-nr> <anzahl>" oder auf der Setz-Seite.');
+    '🎟 Außerdem läuft ein Los-Giveaway — Lose setzen mit „!lose <anzahl>" oder auf der Setz-Seite.');
   assert.ok(tb.statusLine({}).includes('!setzen'));
 
   // Contest: Voting-Zustand entscheidet die Zeile.

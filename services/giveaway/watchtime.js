@@ -54,6 +54,7 @@ const K = {
   cfgAutoResume:(t) => `${TP(t)}gw:cfg:auto_resume`,      // '1' = Start/Resume wenn ein Stream online
   cfgFollowMin: (t) => `${TP(t)}gw:cfg:follow_min`,       // wie vielen Kanälen muss man folgen (Teilnahmebedingung)
   cfgDrawMinSec:(t) => `${TP(t)}gw:cfg:draw_min_sec`,     // min. Viewtime (Sek.) um im Lostopf berücksichtigt zu werden
+  cfgChatOn:    (t) => `${TP(t)}gw:cfg:chat_enabled`,     // '0' = Chat-Bonus aus (Wert bleibt erhalten)
   cfgChatBonus: (t) => `${TP(t)}gw:cfg:chat_bonus_sec`,   // Sek. Viewtime pro sinnvoller Chatnachricht
   cfgChatWords: (t) => `${TP(t)}gw:cfg:chat_min_words`,   // ab wie vielen Wörtern eine Nachricht zählt
   cfgChatCool:  (t) => `${TP(t)}gw:cfg:chat_cooldown`,    // Sek. Sperre zwischen zwei Boni
@@ -105,6 +106,7 @@ const K = {
   // der Fallback für Alt-Instanzen ohne Kopie.
   gCfgFollowMin: (t, g) => `${K.GP(t, g)}cfg:follow_min`,
   gCfgCoinBase:  (t, g) => `${K.GP(t, g)}cfg:draw_min_sec`,
+  gCfgChatOn:    (t, g) => `${K.GP(t, g)}cfg:chat_enabled`,
   gCfgChatBonus: (t, g) => `${K.GP(t, g)}cfg:chat_bonus_sec`,
   gCfgChatWords: (t, g) => `${K.GP(t, g)}cfg:chat_min_words`,
   gCfgChatCool:  (t, g) => `${K.GP(t, g)}cfg:chat_cooldown`,
@@ -242,6 +244,9 @@ class WatchtimeEngine {
     };
     const cc = CORE.config;   // Defaults + Grenzen aus der Core-Deklaration
     return {
+      // Expliziter An/Aus-Schalter: '0' = aus. Der Bonuswert bleibt dabei
+      // gespeichert — Wiedereinschalten stellt die alten Regeln wieder her.
+      enabled: (await this._cfgRaw(teamId, gid, K.gCfgChatOn, K.cfgChatOn)) !== '0',
       bonusSec: await num(K.gCfgChatBonus, K.cfgChatBonus, cc.chatBonusSec.def, cc.chatBonusSec.min, cc.chatBonusSec.max),
       minWords: await num(K.gCfgChatWords, K.cfgChatWords, cc.chatMinWords.def, cc.chatMinWords.min, cc.chatMinWords.max),
       cooldown: await num(K.gCfgChatCool,  K.cfgChatCool,  cc.chatCooldown.def, cc.chatCooldown.min, cc.chatCooldown.max),
@@ -257,6 +262,9 @@ class WatchtimeEngine {
       await this.redis.set(gid ? gKey(t, gid) : tKey(t), String(v));
     };
     const cc = CORE.config;
+    if (cfg.enabled !== undefined && cfg.enabled !== null) {
+      await this.redis.set(gid ? K.gCfgChatOn(t, gid) : K.cfgChatOn(t), cfg.enabled ? '1' : '0');
+    }
     await put(K.gCfgChatBonus, K.cfgChatBonus, cfg.bonusSec, cc.chatBonusSec.min, cc.chatBonusSec.max, false);
     await put(K.gCfgChatWords, K.cfgChatWords, cfg.minWords, cc.chatMinWords.min, cc.chatMinWords.max, true);
     await put(K.gCfgChatCool,  K.cfgChatCool,  cfg.cooldown, cc.chatCooldown.min, cc.chatCooldown.max, true);
@@ -272,6 +280,7 @@ class WatchtimeEngine {
     const chat = await this.getChatConfig(t);
     await this.redis.set(K.gCfgFollowMin(t, gid), String(await this.getFollowMin(t)));
     await this.redis.set(K.gCfgCoinBase(t, gid),  String(await this.getCoinBaseSec(t)));
+    await this.redis.set(K.gCfgChatOn(t, gid), chat.enabled ? '1' : '0');
     await this.redis.set(K.gCfgChatBonus(t, gid), String(chat.bonusSec));
     await this.redis.set(K.gCfgChatWords(t, gid), String(chat.minWords));
     await this.redis.set(K.gCfgChatCool(t, gid),  String(chat.cooldown));
@@ -503,16 +512,13 @@ class WatchtimeEngine {
       const w = TB.parseWager(cleanMsg, cmd);
       if (!w) continue;
       if (await this.redis.get(K.gwBanned(t, u)) === '1') return null;
-      if (w.help) {
-        const help = [];
-        for (const x of tbTargets) help.push(...await this.listPrizes(t, { gid: x.gid }));
-        return { chatReply: TB.helpText(cmd, help), channel: ch };
-      }
-      const ownerGid = await this.prizeGiveawayId(t, w.prizeId);
-      const owner = tbTargets.find(x => x.gid === ownerGid);
-      if (!owner) return { chatReply: TB.wagerErrText(u, 'no_prize'), channel: ch };
-      const res = await this.placeWager(t, owner.gid, u, w.prizeId, w.amount);
-      if (res.error) return { chatReply: TB.wagerErrText(u, res.error), channel: ch };
+      // Ein Giveaway = ein Preis: der Setz-Befehl waehlt die Instanz (darum
+      // team-weit eindeutig, wagerCmdTaken), der Preis kommt aus der Instanz.
+      const prizes = await this.listPrizes(t, { gid: g.gid });
+      if (w.help) return { chatReply: TB.helpText(cmd, prizes), channel: ch };
+      if (!prizes.length) return { chatReply: TB.wagerErrText(u, 'no_prize'), channel: ch };
+      const res = await this.placeWager(t, g.gid, u, prizes[0].id, w.amount);
+      if (res.error) return { chatReply: TB.wagerErrText(u, res.error, res), channel: ch };
       if (res.refunded !== undefined) {
         return { chatReply: TB.retractOkText({ username: u, prizeTitle: res.prizeTitle,
                  refunded: res.refunded, balance: res.balance }), channel: ch };
@@ -523,7 +529,7 @@ class WatchtimeEngine {
 
     // Keyword-Anmeldung je Giveaway (Keyword kann je Instanz abweichen;
     // Primary nutzt den Legacy-Schlüssel).
-    let regResult = null, matchedAny = false, cvConfirm = null;
+    let regResult = null, matchedAny = false, cvConfirm = null, tbConfirm = null;
     for (const g of targets) {
       const kw = g.primary ? await this.redis.get(K.gwKeyword(t))
                            : await this.redis.get(K.gKw(t, g.gid));
@@ -540,12 +546,20 @@ class WatchtimeEngine {
       if (g.primary) regResult = r;
       // P6: Bestätigung der Instant-Anmeldung — bisher blieb sie stumm.
       else if (getCore(g.core).id === 'CORE_CurrentViewers' && r.isNew) cvConfirm = g;
+      // Los-Giveaway: Opt-in bestätigen und den Setz-Befehl gleich mitsagen.
+      else if (getCore(g.core).id === 'CORE_TicketBuy' && r.isNew) tbConfirm = g;
     }
     if (matchedAny) {
       if (!regResult && cvConfirm
           && await this.redis.get(K.gAnnounce(t, cvConfirm.gid)) !== 'false') {
         return { channel: ch,
           chatReply: `@${u} ⚡ Du bist bei der Sofortverlosung angemeldet — bleib im Stream, gezogen wird live!` };
+      }
+      if (!regResult && tbConfirm) {
+        const tbCmd = (await this.redis.get(K.gWagerCmd(t, tbConfirm.gid)))
+                   || getCore(tbConfirm.core).config.wagerCmd.def;
+        return { channel: ch,
+          chatReply: `@${u} 🎟 Du bist beim Los-Giveaway angemeldet — Lose setzen mit „${tbCmd} <anzahl>" oder auf der Setz-Seite.` };
       }
       return regResult;
     }
@@ -567,7 +581,7 @@ class WatchtimeEngine {
     let primaryResult = null;
     for (const g of accrualTargets) {
       const chatCfg = await this.getChatConfig(t, g.gid);
-      if (!chatCfg.bonusSec) continue;                      // Bonus für dieses Giveaway abgeschaltet
+      if (!chatCfg.enabled || !chatCfg.bonusSec) continue;  // Bonus für dieses Giveaway abgeschaltet
       const { meaningful, judgedBy } = CORE.chatMeaningful({
         message: cleanMsg, minWords: chatCfg.minWords, aiVerdict });
       if (!meaningful) continue;
@@ -1159,6 +1173,23 @@ class WatchtimeEngine {
     return r.rows;
   }
 
+  // Seit "!setzen <anzahl>" routet der Setz-Befehl den Chat-Einsatz auf die
+  // Instanz — er muss darum je Team unter den offenen Los-Giveaways eindeutig
+  // sein. Prueft gegen die effektiven Befehle (konfiguriert oder Default).
+  async wagerCmdTaken(teamId, cmd, excludeGid = null) {
+    const t = sanitizeTeamId(teamId);
+    const c = String(cmd || '').trim().toLowerCase();
+    if (!c) return false;
+    const def = getCore('CORE_TicketBuy').config.wagerCmd.def;
+    for (const g of await this.listGiveaways(t)) {
+      if (g.closed || !g.gid || g.gid === excludeGid) continue;
+      if (getCore(g.core).id !== 'CORE_TicketBuy') continue;
+      const eff = (await this.redis.get(K.gWagerCmd(t, g.gid))) || def;
+      if (eff === c) return true;
+    }
+    return false;
+  }
+
   // Instanz, zu der ein Preis gehoert — Prizes sind global nummeriert, die
   // Zuordnung darf nicht aus "erster TicketBuy-Instanz" geraten werden.
   async prizeGiveawayId(teamId, prizeId) {
@@ -1295,6 +1326,13 @@ class WatchtimeEngine {
       const prizeGid = prize.session_id || gid || null;
       if (prize.wager_end && new Date(prize.wager_end).getTime() < Date.now()) {
         await client.query('ROLLBACK'); return { error: 'wager_closed' };
+      }
+      // Teilnahme-Gate: Guthaben sammelt jeder, aber setzen (= teilnehmen)
+      // kann nur, wer das Teilnahme-Keyword der Instanz geschrieben hat.
+      // Instanzen ohne Keyword (Altbestand) bleiben permissiv.
+      const tbKw = prizeGid ? await this.redis.get(K.gKw(t, prizeGid)) : null;
+      if (tbKw && await this.redis.get(K.gReg(t, prizeGid, u)) !== '1') {
+        await client.query('ROLLBACK'); return { error: 'not_registered', keyword: tbKw };
       }
 
       if (amount === 0) {   // Rücknahme: kompletter Einsatz zurück (bis Einsatz-Ende)

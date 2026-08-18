@@ -292,7 +292,7 @@ flowchart TD
     B -- keine --> E1["Ende"]
     B -- ja --> C["Präsenz + Follow merken,<br/>Nutzer indizieren"]
     C --> D{"Setz-Befehl<br/>(Los-Giveaway)?"}
-    D -- ja --> D1["Preis-Nr → Instanz auflösen"]
+    D -- ja --> D1["Befehl → Instanz, deren offener Preis"]
     D1 --> D2["placeWager() in einer TX"]
     D2 --> D3["Chat-Antwort, ENDE<br/>(zählt nicht als Chat)"]
     D -- nein --> F{"Keyword einer Instanz?"}

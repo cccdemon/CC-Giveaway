@@ -382,7 +382,7 @@ test('chat bonus is configurable per team', async () => {
 
   // Schwelle hoch, Bonus hoch, Cooldown aus
   await e.setChatConfig(TEAM, { minWords: 6, bonusSec: 5, cooldown: 0 });
-  assert.deepEqual(await e.getChatConfig(TEAM), { bonusSec: 5, minWords: 6, cooldown: 0 });
+  assert.deepEqual(await e.getChatConfig(TEAM), { enabled: true, bonusSec: 5, minWords: 6, cooldown: 0 });
   assert.equal(await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'eins zwei drei vier', true), null);
   r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'eins zwei drei vier fuenf sechs', true);
   assert.equal(r.added, 5);
@@ -398,6 +398,37 @@ test('chat bonus is configurable per team', async () => {
   assert.equal(c.bonusSec, 300);
   assert.equal(c.minWords, 1);
   assert.equal(c.cooldown, 0);
+});
+
+test('chat bonus toggle: enabled=false stops the bonus, values survive', async () => {
+  const e = engine();
+  await e.redis.set(K.gwOpen(TEAM), 'true');
+  await e.redis.set(K.chFollows(TEAM, 'justcallmedeimos', 'bob'), '1');
+  await e.setChatConfig(TEAM, { bonusSec: 5, minWords: 4, cooldown: 0 });
+
+  // Aus: kein Bonus, aber die Regeln bleiben gespeichert
+  await e.setChatConfig(TEAM, { enabled: false });
+  let cfg = await e.getChatConfig(TEAM);
+  assert.equal(cfg.enabled, false);
+  assert.equal(cfg.bonusSec, 5);                            // Wert bleibt erhalten
+  assert.equal(await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'eins zwei drei vier', true), null);
+
+  // Wieder an: alte Regeln wirken sofort
+  await e.setChatConfig(TEAM, { enabled: true });
+  const r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'eins zwei drei vier', true);
+  assert.equal(r.added, 5);
+});
+
+test('chat bonus toggle is per giveaway and copied on open', async () => {
+  const e = engine();
+  // Team-Vorgabe: aus. Copy-on-Open übernimmt den Schalter in die Instanz.
+  await e.setChatConfig(TEAM, { enabled: false });
+  await e.copyCfgToInstance(TEAM, 'sess_9');
+  assert.equal((await e.getChatConfig(TEAM, 'sess_9')).enabled, false);
+  // Instanz einzeln wieder einschalten — Vorgabe bleibt aus.
+  await e.setChatConfig(TEAM, { enabled: true }, 'sess_9');
+  assert.equal((await e.getChatConfig(TEAM, 'sess_9')).enabled, true);
+  assert.equal((await e.getChatConfig(TEAM)).enabled, false);
 });
 
 test('chat bonus honours the viewtime multiplier', async () => {
@@ -870,41 +901,58 @@ test('phase4b: Setz-Befehl per Chat, konfigurierbarer Befehl', async () => {
   await e.credit.book(TEAM, 'bob', 'earn', 5);
   await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy', wagerCmd: '!lose' });
   const prizeId = await e.addPrize(TEAM, 'sess_2', { title: 'Headset' });
-  // konfigurierter Befehl wirkt:
-  let r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', `!lose ${prizeId} 2`, true);
+  // konfigurierter Befehl wirkt — ohne Preis-Nr, der Befehl waehlt die Instanz:
+  let r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', '!lose 2', true);
   assert.ok(r.chatReply.includes('✅'));
   assert.equal(await e.prizeStake(prizeId, 'bob'), 2);
   // Default-Befehl wirkt NICHT (Instanz hat !lose konfiguriert):
-  r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', `!setzen ${prizeId} 1`, true);
+  r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', '!setzen 1', true);
   assert.ok(!r || !r.chatReply);
   // Hilfe ohne Argumente:
   r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', '!lose', true);
   assert.ok(r.chatReply.includes('Lose setzen'));
   // Rücknahme per Chat:
-  r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', `!lose ${prizeId} 0`, true);
+  r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', '!lose 0', true);
   assert.ok(r.chatReply.includes('↩'));
   assert.equal(await e.prizeStake(prizeId, 'bob'), 0);
 });
 
-test('phase4b: zwei Los-Giveaways parallel — die Preis-Nummer waehlt die Instanz', async () => {
+test('phase4b: zwei Los-Giveaways parallel — der Setz-Befehl waehlt die Instanz', async () => {
   const e = engine();
   await e.credit.book(TEAM, 'bob', 'earn', 10);
-  await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy', wagerCmd: '!setzen' });
-  await e.openGiveawayInstance(TEAM, 'sess_3', { core: 'CORE_TicketBuy', wagerCmd: '!setzen' });
+  await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy', wagerCmd: '!seta' });
+  await e.openGiveawayInstance(TEAM, 'sess_3', { core: 'CORE_TicketBuy', wagerCmd: '!setb' });
   const pA = await e.addPrize(TEAM, 'sess_2', { title: 'Headset' });
   const pB = await e.addPrize(TEAM, 'sess_3', { title: 'Maus' });
-  // Beide Instanzen hoeren auf denselben Befehl — der Einsatz landet trotzdem
-  // beim richtigen Preis, weil die Nummer die Instanz bestimmt.
-  let r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', `!setzen ${pB} 3`, true);
+  // Der Befehl bestimmt die Instanz — Einsatz landet beim richtigen Preis.
+  let r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', '!setb 3', true);
   assert.ok(r.chatReply.includes('Maus'));
   assert.equal(await e.prizeStake(pB, 'bob'), 3);
   assert.equal(await e.prizeStake(pA, 'bob'), 0);
-  // Unbekannte Nummer wird beantwortet, nicht stillschweigend als Chat gewertet.
-  r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', '!setzen 999 1', true);
-  assert.ok(r.chatReply.includes('@bob'));
+  // Eindeutigkeit: belegte Befehle werden erkannt, freie nicht.
+  assert.equal(await e.wagerCmdTaken(TEAM, '!seta'), true);
+  assert.equal(await e.wagerCmdTaken(TEAM, '!seta', 'sess_2'), false);   // eigene Instanz zaehlt nicht
+  assert.equal(await e.wagerCmdTaken(TEAM, '!frei'), false);
   // Preisliste je Instanz getrennt.
   assert.deepEqual((await e.listPrizes(TEAM, { gid: 'sess_2' })).map(x => x.id), [pA]);
   assert.deepEqual((await e.listPrizes(TEAM, { gid: 'sess_3' })).map(x => x.id), [pB]);
+});
+
+test('phase4b: Teilnahme-Keyword gatet den Einsatz, Guthaben sammelt trotzdem', async () => {
+  const e = engine();
+  await e.credit.book(TEAM, 'bob', 'earn', 5);
+  await e.openGiveawayInstance(TEAM, 'sess_2', { core: 'CORE_TicketBuy', wagerCmd: '!setzen', keyword: 'dabei' });
+  const prizeId = await e.addPrize(TEAM, 'sess_2', { title: 'Headset' });
+  // Ohne Keyword-Anmeldung: Einsatz blockiert, Antwort nennt das Keyword.
+  let r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', '!setzen 2', true);
+  assert.ok(r.chatReply.includes('dabei'));
+  assert.equal(await e.prizeStake(prizeId, 'bob'), 0);
+  assert.equal((await e.placeWager(TEAM, 'sess_2', 'bob', prizeId, 2)).error, 'not_registered');
+  // Keyword schreiben = anmelden — danach geht der Einsatz.
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'dabei', true);
+  r = await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', '!setzen 2', true);
+  assert.ok(r.chatReply.includes('✅'));
+  assert.equal(await e.prizeStake(prizeId, 'bob'), 2);
 });
 
 test('phase4b: verfuegbares Guthaben = Ledger + Live-Stand laufender Instanz', async () => {

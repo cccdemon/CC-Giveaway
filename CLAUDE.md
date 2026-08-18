@@ -12,7 +12,9 @@ keine Abhängigkeit zu Spacefight, Alerts, HUD-Chat, Gamescenes, Stats oder Haul
 
 ## Mechanik (Spec)
 - **Viewtime pro Zuschauer.** **Regeln (Coin-Basis, Follow-Min, Chat-Bonus) gelten PRO GIVEAWAY**: Team-Keys (`cfgDrawMinSec` etc.) sind nur noch die **Vorgaben** — beim Öffnen kopiert `copyCfgToInstance()` sie in `t:<team>:g:<sid>:cfg:*` (nur Accrual-Cores). Die Regeln-Karte bearbeitet das laufende gewählte Giveaway (live, nur dieses), bei geschlossenem die Vorgaben (`gw_get/set_stream_settings` + `giveawayId`, Ack-Feld `scope`). Getter: `getCoinBaseSec(teamId, gid)`, `getFollowMin(teamId, gid)`, `getChatConfig(teamId, gid)` — per-gid-Key vor Team-Fallback. Coin-Basis = auch Lostopf-Schwelle (≥1 Coin). KI-Bewertung + Auto-Pause/Resume bleiben team-weit.
-- **Chat = selber Pott wie Viewtime, als BONUS.** Jede sinnvolle Nachricht ab der konfigurierten Mindestlänge (Default >3 Wörter, `CHAT_MIN_WORDS=4`) gibt den konfigurierten Viewtime-Bonus (Default +2s, `CHAT_BONUS_SEC=2`), Cooldown gegen Spam. Chat ist NICHT Pflicht — reine Zuschauzeit zählt nach den konfigurierten Regeln voll (Coins = watchSec/coinBase). Viewtime-Multiplier gilt auch für den Bonus (×2 → +4s).
+- **Chat = selber Pott wie Viewtime, als BONUS — per Haken abschaltbar** (Regeln-Karte,
+  `chatEnabled` in `gw_get/set_stream_settings`; Engine-Key `cfg:chat_enabled`, per-gid
+  vor Team-Fallback, Copy-on-Open; Werte bleiben beim Ausschalten erhalten).** Jede sinnvolle Nachricht ab der konfigurierten Mindestlänge (Default >3 Wörter, `CHAT_MIN_WORDS=4`) gibt den konfigurierten Viewtime-Bonus (Default +2s, `CHAT_BONUS_SEC=2`), Cooldown gegen Spam. Chat ist NICHT Pflicht — reine Zuschauzeit zählt nach den konfigurierten Regeln voll (Coins = watchSec/coinBase). Viewtime-Multiplier gilt auch für den Bonus (×2 → +4s).
 - **KI-Bewertung (optional, per Team):** `services/giveaway/cores/chat-ai.js` ersetzt NUR die Wortzählung — Provider `anthropic|openai|gemini`, Modell + eigener API-Key pro Team (verschlüsselt in `teams.ai_key_enc` unter dem Master aus `app_secrets`, `encryptKey`/`decryptKey`). **fail-open**: Timeout (`TIMEOUT_MS=4000`) oder Fehler → zurück auf Wortregel, Chat blockiert nie. Antwort ist ein Wort (JA/NEIN), Cache pro (Provider, Modell, Nachricht). Keys nie loggen, nie exportieren, nie ins Audit.
 - **Viewtime-Multiplier:** Admin kann zeitlich begrenzt beschleunigen („nächste 15 min doppelte Viewtime", gilt auch für Chat) — time-boxed Faktor auf Tick + Chat-Bonus.
 - **Teilnahme (Kampagne):** Keyword im Chat registriert (= Zustimmung Teilnahmebedingungen) — das kann jeder. **Berechtigung (`eligible`) ist eine separate Prüfung:** registered + Follows ≥ followMin (konfigurierbar, Default 2) + ≥1 Coin. Lurken MIT Follow sammelt Coins und erhöht die Chance; Chat gibt nur den Zusatzbonus.
@@ -56,9 +58,14 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
   Preisnummern bleiben team-weit eindeutig, die Instanz hängt an
   `giveaway_prizes.session_id` (`prizeGiveawayId`, `listPrizes({gid})`).
   Ziehung **je Preis** (Gewicht = Einsatz),
-  afterDraw bindet Einsätze aller Setzer in der Ziehungs-TX. Setz-Befehl je
-  Instanz konfigurierbar (`gWagerCmd`, Default `!setzen`); Web-Seite
-  `/giveaway/wager.html`. Instanz-Close bucht `earn` und räumt ab
+  afterDraw bindet Einsätze aller Setzer in der Ziehungs-TX. **Teilnahme ist
+  Keyword-Opt-in** (18.8.26): `gw_open_instance` erzwingt ein Keyword, `placeWager`
+  blockt Unangemeldete (`not_registered`, Instanzen ohne Keyword = Altbestand
+  permissiv); Guthaben sammelt jeder. **Setz-Befehl `!setzen <anzahl>`** (keine
+  Preis-Nr mehr — der Befehl wählt die Instanz, darum je Team eindeutig,
+  `wagerCmdTaken` in `gw_open_instance`/`gw_set_wager_cmd`); je Instanz
+  konfigurierbar (`gWagerCmd`). Web-Seite `/giveaway/wager.html` zeigt **nur
+  angemeldete** Giveaways (Opt-in-Filter in `/api/wager/state`). Instanz-Close bucht `earn` und räumt ab
   („Guthaben wandert") — **blockiert, solange ungezogene Preise offen sind**
   (`openPrizeCount`, erst ziehen oder stornieren; Sammeln stoppen = Pause).
   Preise korrigierbar (`editPrize`, nur offene) und stornierbar
@@ -145,7 +152,8 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
 - **Neuen Core anlegen (Reihenfolge):** 1. Modul in `services/giveaway/cores/`
   mit `id/label/accrual/config/display` (`display.beta: true`). 2. Eintrag in
   `cores/index.js`. 3. Verzweigungen im Server: `watchtime.js` und `server.js`
-  prüfen an rund 57 Stellen die Core-ID (`getCore(g.core).id === 'CORE_TicketBuy'`),
+  prüfen die Core-ID an vielen Stellen (~58 in server.js, ~18 in watchtime.js;
+   `getCore(g.core).id === 'CORE_TicketBuy'`),
   Dependency Injection gibt es nicht. 4. Datenpfade: `sendTeamData`-Teilnehmerliste,
   `previewEligible`, `/api/my-status`, Archiv-Dossier. 5. Panel: `IW_TYPES` im
   Start-Modal, ggf. `STAT_TILES`- und `PANEL_CARD_LOADERS`-Eintrag. 6. Tests in
@@ -333,17 +341,20 @@ Auth zentral über Caddy `forward_auth` → `admin:3005/auth/verify` (Session-Co
 Login per Twitch-OAuth, Selbstregistrierung beim ersten Login (Upsert in `streamers`).
 Öffentlich erreichbare Pfade stehen in der `@needsauth not path`-Liste in
 `caddy/Caddyfile.team` — **neue öffentliche Seite dort eintragen**, sonst verlangt
-Caddy Login. Secrets (KI-API-Keys) verschlüsselt in `app_secrets`, nie in ENV/Repo.
+Caddy Login. Dritte Stelle derselben Pflege: die `SITEMAP`-Liste in
+`services/admin/server.js` muss zur Caddy-Whitelist passen — was in der Sitemap
+steht, aber bei Caddy fehlt, liefert Crawlern ein 302 auf Login. Secrets (KI-API-Keys) verschlüsselt in `app_secrets`, nie in ENV/Repo.
 
 ## Recht & Compliance
-- Plattformtexte: `services/admin/public-docs/` (`impressum`, `datenschutz`,
-  `nutzungsbedingungen`, `haftungsausschluss`) → Whitelist `PUB_DOCS`, Auslieferung
-  über `GET /admin/pub/doc/:name`, ohne Login.
+- Plattformtexte: `services/admin/public-docs/` → Whitelist `PUB_DOCS` (9 Einträge:
+  `impressum`, `datenschutz`, `nutzungsbedingungen`, `haftungsausschluss`, `help`,
+  `setup`, `funktionsweise`, `roadmap`, `changelog`), Auslieferung über
+  `GET /admin/pub/doc/:name`, ohne Login.
 - **Zustimmung ist versioniert und erzwungen:** Tabelle `tos_acceptances`,
   `requireTos()` (HTTP 451) im admin-Service, `ownerAcceptedTos(teamId)` vor
   `gw_open`/Auto-Open im giveaway-Service, blockierendes Overlay in `admin-shared.js`.
   **`TOS_VERSION` steht doppelt** (`services/admin/server.js` +
-  `services/giveaway/server.js`) — bei Textänderung **beide** erhöhen.
+  `services/giveaway/server.js`, aktuell `2`) — bei Textänderung **beide** erhöhen.
 - **DSGVO-Selbstbedienung:** `/admin/meine-daten.html`, `GET /api/me/data`,
   `POST /api/me/delete`. Benutzername kommt nur aus der Session. Ziehungsnachweise
   werden pseudonymisiert (`geloescht_<sha256[0:8]>`), nicht gelöscht

@@ -71,7 +71,7 @@ function renderGiveaway(t) {
     + '<div class="wg-balance">Dein Guthaben: <b>' + Number(t.available).toFixed(2) + '</b> Lose'
     + '<span class="wg-meta"> (gilt für alle Los-Giveaways dieses Teams)</span></div>'
     + (t.wagerCmd ? '<div class="wg-cmd">Geht auch im Chat: „' + esc(t.wagerCmd)
-        + ' &lt;preis-nr&gt; &lt;anzahl&gt;" · Rücknahme mit Anzahl 0.</div>' : '')
+        + ' &lt;anzahl&gt;" · Rücknahme mit Anzahl 0.</div>' : '')
     + (t.consented || !t.giveawayId ? '' : consentHtml(t.teamId, t.giveawayId))
     + prizes + '</div>';
 }

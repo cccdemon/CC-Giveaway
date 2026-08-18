@@ -7,6 +7,29 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ## 18. August 2026
 
+### Los-Giveaway: Anmeldung per Keyword, einfacherer Setz-Befehl
+
+Drei Aenderungen am Los-Giveaway:
+
+- **Teilnahme ist jetzt Opt-in.** Jedes Los-Giveaway bekommt beim Start ein
+  Teilnahme-Keyword. Wer es nicht in den Chat schreibt, sammelt zwar weiter
+  Guthaben, kann aber keine Lose setzen. Die Anmeldung wird im Chat bestaetigt.
+- **Setzen ohne Preis-Nummer.** Ein Los-Giveaway verlost genau einen Preis —
+  darum reicht jetzt `!setzen <anzahl>` (Rücknahme: `!setzen 0`). Der
+  Setz-Befehl waehlt bei mehreren parallelen Los-Giveaways das richtige aus
+  und muss deshalb je Team eindeutig sein.
+- **Die Setz-Seite zeigt nur noch deine Giveaways.** Bisher erschienen dort
+  alle laufenden Los-Giveaways der Plattform — jetzt nur die, bei denen du
+  per Keyword angemeldet bist (plus dein vorhandenes Guthaben).
+
+### Chat-Bonus mit An/Aus-Haken
+
+Der Chat-Bonus laesst sich jetzt in der Regeln-Karte per Haken komplett
+abschalten — vorher musste man dafuer den Bonuswert auf 0 stellen. Beim
+Ausschalten verschwinden die zugehoerigen Eingabefelder, die eingestellten
+Regeln (Wortschwelle, Bonus, Cooldown) bleiben gespeichert und gelten beim
+Wiedereinschalten sofort wieder. Wie alle Regeln gilt der Haken je Giveaway.
+
 ### Screenshot-Contest vorerst abgeschaltet
 
 Die Mechanik ist noch nicht fertig — sie steht deshalb im Start-Fenster nicht
