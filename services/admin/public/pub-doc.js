@@ -107,8 +107,10 @@
       .catch(function () { el.innerHTML = '<span class="err">Ladefehler.</span>'; });
   }
 
-  // Theme-Umschalter rechts in der Krümelnavigation (rdoc-theme.js liefert RDOC).
+  // Theme-Umschalter nur, wenn diese Seite keine Hauptnavigation hat — die
+  // bringt ihren eigenen mit (/admin/nav.js), sonst staenden hier zwei.
   function mountTheme() {
+    if (document.querySelector('.gwnav') || document.querySelector('script[src*="/admin/nav.js"]')) return;
     var crumbs = document.querySelector('.crumbs');
     if (crumbs && global.RDOC && global.RDOC.mountToggle) global.RDOC.mountToggle(crumbs);
   }

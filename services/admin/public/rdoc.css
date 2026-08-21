@@ -493,7 +493,29 @@ footer { background:var(--rdoc-surface); border-top:1px solid var(--rdoc-border)
 .gwnav-theme { display:grid; place-items:center; width:32px; height:32px; border-radius:8px; border:1px solid var(--rdoc-line-on-surface); color:var(--rdoc-text-muted); cursor:pointer; background:transparent; }
 .gwnav-theme:hover { color:var(--rdoc-text); border-color:var(--rdoc-border-strong); }
 .gwnav-theme svg { width:15px; height:15px; }
-@media(max-width:680px){ .gwnav-item .lbl{display:none;} .gwnav-uname{display:none;} .gwnav-brand b{display:none;} }
+.gwnav-di.active { background:var(--rdoc-surface); color:var(--rdoc-text); }
+.gwnav-di.active .ic { opacity:1; }
+.gwnav-login { padding:6px 12px; border:1px solid var(--rdoc-border); }
+.gwnav-burger { display:none; place-items:center; width:32px; height:32px; border-radius:8px; border:1px solid var(--rdoc-line-on-surface); color:var(--rdoc-text-muted); cursor:pointer; background:transparent; }
+.gwnav-burger svg { width:16px; height:16px; }
+/* Mobil: echtes Menue statt gekappter Labels — Drawer unter der Leiste,
+   Bereiche als Akkordeon, Labels IMMER sichtbar (Icons allein sind mehrdeutig). */
+@media(max-width:680px){
+  .gwnav-burger { display:grid; }
+  .gwnav-primary { display:none; position:absolute; top:100%; left:0; right:0; flex-direction:column; align-items:stretch; height:auto; gap:1px; background:var(--rdoc-bg); border-bottom:1px solid var(--rdoc-border-strong); padding:6px; max-height:calc(100vh - 44px); overflow-y:auto; z-index:70; }
+  .gwnav.mob-open .gwnav-primary { display:flex; }
+  .gwnav-drop { height:auto; }
+  .gwnav-drop > .gwnav-item { width:100%; height:40px; border-bottom:0; border-radius:6px; }
+  .gwnav-drop.open > .gwnav-item { background:var(--rdoc-surface); }
+  .gwnav-item.active { border-bottom:0; color:var(--rdoc-accent); }
+  .gwnav-item .lbl { display:inline; }
+  .gwnav-caret { margin-left:auto; }
+  .gwnav-menu { position:static; display:none; min-width:0; border:0; border-radius:0; padding:2px 0 6px 20px; background:transparent; }
+  .gwnav-drop.open .gwnav-menu { display:flex; }
+  .gwnav-sep { display:none; }
+  .gwnav-uname { display:none; }
+  .gwnav-brand b { display:none; }
+}
 
 /* ── Verwarnungs-Banner ──────────────────────────────────── */
 .gwwarn { background:var(--rdoc-tint-warning); border-bottom:1px solid var(--rdoc-warning); padding:10px 16px; font-family:var(--rdoc-font-text); font-size:13px; color:var(--rdoc-text); }

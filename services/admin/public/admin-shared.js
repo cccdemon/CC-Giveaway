@@ -179,162 +179,19 @@
   global.escHtml = escHtml;
 })(window);
 
-// ── Navigation ────────────────────────────────────────────
-(function() {
-
-  function e(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
-
-  var ICON = {
-    doc:'<svg viewBox="0 0 16 16" fill="none"><path d="M4 1.8h5l3 3v9.4H4z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 1.8v3h3M6 8h4M6 10.5h4" stroke="currentColor" stroke-width="1.3"/></svg>',
-    grid:'<svg viewBox="0 0 16 16" fill="none"><rect x="1.5" y="1.5" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="9.5" y="1.5" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="1.5" y="9.5" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="9.5" y="9.5" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/></svg>',
-    teams:'<svg viewBox="0 0 16 16" fill="none"><circle cx="5.5" cy="5" r="2.4" stroke="currentColor" stroke-width="1.3"/><circle cx="11" cy="6" r="1.9" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 13c0-2 1.8-3.2 4-3.2s4 1.2 4 3.2M10 13c0-1.6 1-2.6 2.6-2.6s2.9 1 2.9 2.6" stroke="currentColor" stroke-width="1.3"/></svg>',
-    tools:'<svg viewBox="0 0 16 16" fill="none"><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.6 3.6l1.4 1.4M11 11l1.4 1.4M12.4 3.6L11 5M5 11l-1.4 1.4" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="2.2" stroke="currentColor" stroke-width="1.2"/></svg>',
-    logout:'<svg viewBox="0 0 16 16" fill="none"><path d="M6 2H3.5A1.5 1.5 0 0 0 2 3.5v9A1.5 1.5 0 0 0 3.5 14H6M10.5 11l3-3-3-3M13 8H6" stroke="currentColor" stroke-width="1.3"/></svg>'
-  };
-  var PRIMARY = [
-    { href:'/giveaway/giveaway-admin.html', label:'DASHBOARD', icon:ICON.grid },
-    { href:'/admin/teams.html',             label:'TEAMS',     icon:ICON.teams },
-    { href:'/admin/doku.html',              label:'DOKU',      icon:ICON.doc }
-  ];
-  var TOOLS = [
-    { head:'Verwaltung' },
-    { href:'/giveaway/archive.html', label:'Vergangene Giveaways', ic:'🗄' },
-    { href:'/giveaway/claims.html', label:'Gewinn-Abwicklung', ic:'📬' },
-    { href:'/giveaway/audit.html', label:'Audit-Log', ic:'🧾' },
-    { href:'/giveaway/claim.html', label:'Gewinn melden', ic:'🏆' },
-    { href:'/giveaway/wager.html', label:'Lose setzen', ic:'🎟' },
-    { href:'/giveaway/contest.html', label:'Screenshot-Contest', ic:'📸' },
-    { href:'/admin/nutzungsbedingungen.html', label:'Nutzungsbedingungen', ic:'§' },
-    { href:'/admin/meine-daten.html', label:'Meine Daten', ic:'🔎' },
-    { href:'/admin/haftungsausschluss.html', label:'Haftungsausschluss', ic:'⚖' },
-    { href:'/viewer/help',      label:'Anleitung', ic:'📖' },
-    { href:'/admin/setup.html', label:'Setup-Guide', ic:'⚙' },
-    { href:'/admin/feedback.html', label:'Fehler melden & Idee schicken', ic:'🐛' },
-    { href:'/admin/changelog.html', label:'Änderungsprotokoll', ic:'📋' },
-    { href:'/admin/roadmap.html', label:'Roadmap', ic:'🧭' }
-  ];
-  // Eigener ADMIN-Punkt (nicht unter Tools): Plattform-Verwaltung, Betrieb
-  // und die Entwicklerwerkzeuge. Das ganze Menue ist superadmin-only.
-  var ADMIN_MENU = [
-    { head:'Plattform' },
-    { href:'/admin/platform.html', label:'Plattform-Verwaltung', ic:'🏛' },
-    { href:'/admin/betrieb.html', label:'Betrieb & Diagnose', ic:'🩺' },
-    { href:'/admin/users.html', label:'Benutzer', ic:'👥' },
-    { href:'/admin/datenschutz-admin.html', label:'Betroffenenrechte', ic:'🛡' },
-    { head:'Diagnose' },
-    { href:'/admin/giveaway-test.html',     label:'Test Console', ic:'▶', sub:'DEV' },
-    { href:'/admin/tests/test-runner.html', label:'Test Suite',   ic:'✓', sub:'DEV' }
-  ];
-
-  var cur = window.location.pathname.replace(/^\/+/, '');
-  function isCur(h){ return cur === h.split('?')[0].replace(/^\//,''); }
-
-  // Styles der Nav liegen zentral in /admin/rdoc.css (.gwnav*) — hier nur Markup.
-  var prim = PRIMARY.map(function(p){
-    return '<a class="gwnav-item'+(isCur(p.href)?' active':'')+'" href="'+p.href+'">'+p.icon+'<span class="lbl">'+e(p.label)+'</span></a>';
-  }).join('');
-
-  function menu(list){
-    return list.map(function(x){
-      // admin:true → erst sichtbar, wenn /auth/me die Rolle superadmin meldet.
-      var adm = x.admin ? ' gwnav-adminonly" style="display:none' : '';
-      if(x.head) return '<div class="gwnav-head'+adm+'">'+e(x.head)+'</div>';
-      return '<a class="gwnav-di'+adm+'" href="'+x.href+'"><span class="ic">'+x.ic+'</span>'+e(x.label)+(x.sub?'<span class="sub">'+e(x.sub)+'</span>':'')+'</a>';
-    }).join('');
-  }
-
-  var nav = document.createElement('nav');
-  nav.className = 'gwnav';
-  nav.innerHTML =
-    // RDOC-Signet (Micro-Cut, Minimum 24 px) + typografischer Projektname.
-    '<a class="gwnav-brand" href="/admin/" aria-label="RDOC Giveaway"><svg width="24" height="24" viewBox="0 0 200 200" fill="none" role="img" aria-label="RDOC"><g transform="translate(-60 -60) scale(0.3125)"><path fill="var(--rdoc-accent,#C48A4A)" d="M528.748,192.439 A320 320 0 0 1 779.563,336.473 L679.227,402.295 A200 200 0 0 0 522.467,312.274 Z M796.445,365.402 A320 320 0 0 1 805.202,640.19 L695.251,592.119 A200 200 0 0 0 689.778,420.376 Z M790.196,670.136 A320 320 0 0 1 667.139,791.878 L608.962,686.924 A200 200 0 0 0 685.872,610.835 Z M444.124,680 L579.876,680 L631.874,808.699 A320 320 0 0 1 586.703,823.158 L575.497,776.485 A272 272 0 0 0 589.252,772.799 L573.612,720 L450.388,720 L434.748,772.799 A272 272 0 0 0 448.503,776.485 L437.297,823.158 A320 320 0 0 1 392.126,808.699 Z M356.861,791.878 A320 320 0 0 1 233.804,670.136 L338.128,610.835 A200 200 0 0 0 415.038,686.924 Z M218.798,640.19 A320 320 0 0 1 227.555,365.402 L334.222,420.376 A200 200 0 0 0 328.749,592.119 Z M244.437,336.473 A320 320 0 0 1 495.252,192.439 L501.533,312.274 A200 200 0 0 0 344.773,402.295 Z"/></g></svg><span class="brand-name">RDOC</span><b>GIVEAWAY</b></a>' +
-    '<div class="gwnav-primary">' + prim +
-      '<div class="gwnav-sep"></div>' +
-      '<div class="gwnav-drop" data-drop="tools"><div class="gwnav-item">'+ICON.tools+'<span class="lbl">TOOLS</span><span class="gwnav-caret">▾</span></div><div class="gwnav-menu">'+menu(TOOLS)+'</div></div>' +
-      '<div class="gwnav-drop gwnav-adminonly" data-drop="admin" style="display:none"><div class="gwnav-item">⚙<span class="lbl">ADMIN</span><span class="gwnav-caret">▾</span></div><div class="gwnav-menu">'+menu(ADMIN_MENU)+'</div></div>' +
-    '</div>' +
-    '<div class="gwnav-spacer"></div>' +
-    '<div class="gwnav-right">' +
-      '<div class="gwnav-user" id="gwnav-user" style="display:none"><div class="gwnav-av" id="gwnav-av">?</div><span class="gwnav-uname" id="gwnav-uname"></span></div>' +
-      '<button class="gwnav-logout" id="gwnav-logout" title="Logout">'+ICON.logout+'</button>' +
-    '</div>';
-
-  nav.querySelectorAll('.gwnav-drop > .gwnav-item').forEach(function(h){
-    h.addEventListener('click', function(ev){ ev.stopPropagation();
-      var d = h.parentNode;
-      nav.querySelectorAll('.gwnav-drop').forEach(function(o){ if(o!==d) o.classList.remove('open'); });
-      d.classList.toggle('open');
-    });
-  });
-  document.addEventListener('click', function(){ nav.querySelectorAll('.gwnav-drop').forEach(function(o){ o.classList.remove('open'); }); });
-
-
-  nav.querySelector('#gwnav-logout').addEventListener('click', function(ev){ ev.preventDefault();
-    fetch('/admin/auth/logout', { method:'POST' }).catch(function(){}).then(function(){ window.location.href='/admin/login.html'; });
-  });
-
-  // Theme-Umschalter (rdoc-theme.js muss im <head> geladen sein).
-  if (window.RDOC && RDOC.mountToggle) {
-    var navRight = nav.querySelector('.gwnav-right');
-    var tbtn = RDOC.mountToggle(navRight);
-    if (tbtn) navRight.insertBefore(tbtn, nav.querySelector('#gwnav-logout'));
-  }
-
-  var body = document.body || document.getElementsByTagName('body')[0];
-  if (body) body.insertBefore(nav, body.firstChild);
-  else document.addEventListener('DOMContentLoaded', function(){ document.body.insertBefore(nav, document.body.firstChild); });
-
-  fetch('/admin/auth/me').then(function(r){ return r.ok ? r.json() : null; }).then(function(u){
-    // Rolle fuer Seiten bereitstellen, die Elemente ausblenden muessen. Das ist
-    // reine Anzeige-Logik — durchgesetzt wird der Zugriff in Caddy und im
-    // admin-Service, nicht hier.
-    window.CC = window.CC || {};
-    CC.session = u || null;
-    CC.isSuperadmin = !!(u && u.role === 'superadmin');
-    document.documentElement.setAttribute('data-role', (u && u.role) || 'anon');
-    document.dispatchEvent(new CustomEvent('cc:session', { detail: u || null }));
-
-    var login = u && (u.user || u.login);
-    if (!login) return;
-    document.getElementById('gwnav-uname').textContent = login;
-    document.getElementById('gwnav-av').textContent = String(login).charAt(0).toUpperCase();
-    var el = document.getElementById('gwnav-user'); if (el) el.style.display = 'flex';
-    if (CC.isSuperadmin) {
-      nav.querySelectorAll('.gwnav-adminonly').forEach(function(n){ n.style.display = ''; });
-    }
-    showPlatformWarnings(nav);
-  }).catch(function(){});
-
-  // ── Verwarnungs-Banner ──────────────────────────────────
-  // Unquittierte Verwarnungen der Plattform-Verwaltung, nicht-blockierend
-  // (anders als das TOS-Overlay). Fehler werden still geschluckt — das
-  // Banner darf keine Seite lahmlegen.
-  function showPlatformWarnings(nav) {
-    fetch('/admin/api/me/warnings').then(function(r){ return r.ok ? r.json() : null; }).then(function(list){
-      if (!list || !list.length) return;
-      // Styles: .gwwarn in /admin/rdoc.css
-      var box = document.createElement('div');
-      box.className = 'gwwarn';
-      list.forEach(function(w){
-        var row = document.createElement('div');
-        row.className = 'row';
-        var when = new Date(w.created_at).toLocaleDateString('de-DE');
-        var scope = w.subject_type === 'team' && w.team_name ? ' (Team ' + w.team_name + ')' : '';
-        var tx = document.createElement('span');
-        tx.className = 'tx';
-        tx.innerHTML = '<b>Verwarnung vom ' + e(when) + e(scope) + ':</b> ' + e(w.reason);
-        var btn = document.createElement('button');
-        btn.textContent = 'Zur Kenntnis genommen';
-        btn.addEventListener('click', function(){
-          fetch('/admin/api/me/warnings/' + w.id + '/ack', { method:'POST' })
-            .catch(function(){})
-            .then(function(){ row.remove(); if (!box.querySelector('.row')) box.remove(); });
-        });
-        row.appendChild(tx); row.appendChild(btn); box.appendChild(row);
-      });
-      nav.after(box);
-    }).catch(function(){});
-  }
+// ── Navigation ────────────────────────────────────────
+// Die Nav lebt in EINER Datei (/admin/nav.js) — Konfiguration, Rollenfilter,
+// Aktivmarkierung, Mobile-Drawer und Tastaturbedienung inklusive. Vorher stand
+// sie doppelt (hier und in der anderen Shared-Lib) und lief bereits auseinander.
+// nav.js setzt CC.session/CC.isSuperadmin und feuert das Event 'cc:session'.
+(function () {
+  // Die Tests laden diese Lib in Node (kein document) — dort gibt es nichts zu tun.
+  if (typeof document === 'undefined') return;
+  if (document.querySelector('script[data-cc-nav]')) return;   // nur einmal laden
+  var s = document.createElement('script');
+  s.src = '/admin/nav.js';
+  s.setAttribute('data-cc-nav', '1');
+  (document.head || document.documentElement).appendChild(s);
 })();
 
 // ── Debug Console ─────────────────────────────────────────

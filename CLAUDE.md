@@ -72,15 +72,20 @@ bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
   angemeldete** Giveaways (Opt-in-Filter in `/api/wager/state`). Instanz-Close bucht `earn` und räumt ab
   („Guthaben wandert") — **blockiert, solange ungezogene Preise offen sind**
   (`openPrizeCount`, erst ziehen oder stornieren; Sammeln stoppen = Pause).
-  Preise korrigierbar (`editPrize`, nur offene). **Storno = Giveaway-Abbruch
-  (Betreiber 18.8.26):** kein Preis-Storno mit Neu-Anlegen in derselben
-  Instanz mehr — `gw_cancel_instance` bucht alle Einsätze zurück
+  Preise korrigierbar (`editPrize`, nur offene). **Storno = Alternative zur
+  Ziehung (Betreiber 18.8.26):** kein Preis-Storno mit Neu-Anlegen in
+  derselben Instanz mehr, kein eigener Karten-Knopf — ✖ steht in der
+  Preis-Zeile NEBEN ★ und ist wie ★ erst nach dem SCHLIESSEN aktiv (Server
+  wirft sonst `not_closed`). `gw_cancel_instance` bucht alle Einsätze zurück
   (`cancelPrize` je offenem Preis = Gegenzeilen in `prize_wagers` + `refund`
-  im Ledger, `status='cancelled'`), schreibt die Zuschauzeit gut
-  (close+settle), räumt auf und das Panel öffnet direkt das Start-Fenster
-  fürs neue Los-Giveaway (Ack `instance_cancelled`). `gw_cancel_prize`
-  existiert server-seitig weiter, hat aber kein UI mehr. Verfall nach 12
-  Monaten Inaktivität (`runRetention`).
+  im Ledger, `status='cancelled'`), räumt auf (Guthaben ist beim Schließen
+  schon gutgeschrieben) und das Panel öffnet direkt das Start-Fenster fürs
+  neue Los-Giveaway (Ack `instance_cancelled`). `gw_cancel_prize` existiert
+  server-seitig weiter, hat aber kein UI mehr. **Die team-weite Preisnummer
+  (`giveaway_prizes.id`) taucht im Panel nirgends mehr auf** — angezeigt
+  wird nur der Titel. **LOSE ZURÜCKSETZEN (`gw_reset_credit`) wohnt in der
+  Regeln-Karte** (`#tb-reset-sec`, CSS nur bei `core-ticketbuy`). Verfall
+  nach 12 Monaten Inaktivität (`runRetention`).
   **Roster hat 2 Ansichten** (18.8.26, Toggle `#tb-view-toggle`): TEILNEHMER
   (nur Angemeldete der Instanz) vs. TICKETSTAND (alle Konten, 🏆 = letzte 3
   echte Ziehungen team-weit, `recentWin` aus `getTicketBuyParticipants`);
@@ -265,7 +270,11 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 - `services/giveaway/public/claims.html|js` — Gewinn-Abwicklung/Inbox (nur Owner: Fristen, Stand kontaktiert/versendet/erledigt, Kontaktdaten-Löschung; `draw_claims.handling/handled_at/handled_by`)
 - `services/giveaway/targz.js` — minimaler ustar-Writer für die Archive (getestet)
 - `services/admin/server.js` — Login/OAuth, Teams, TOS-Gate, DSGVO, `PUB_DOCS`, Health
-- `services/admin/public/admin-shared.js` — `CC.validate`, Nav, Debug-Console, TOS-Overlay
+- `services/admin/public/nav.js` — **einzige Quelle der Hauptnavigation** (Bereiche,
+  Rollenfilter `audience`, aktive Markierung, Mobile-Drawer, Tastatur/ARIA). Beide
+  Shared-Libs laden sie nach; pure Logik ist als CommonJS exportiert und in
+  `services/admin/tests/nav.test.js` geprueft
+- `services/admin/public/admin-shared.js` — `CC.validate`, Nav-Loader, Debug-Console, TOS-Overlay
 - `services/admin/public/teams.js` — Team-Verwaltung + Rechts-/Giveaway-Linkblock
 - `services/admin/public/betrieb.html|js` — Betrieb & Diagnose (nur Superadmin: Dienste-Health,
   Ingest-Puls je Kanal, Kennzahlen, Fehler/Ablehnungen aus dem Audit, Rückmeldungen, debug_log)
@@ -301,7 +310,7 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 `gw_open`(+keyword) · `gw_close` · `gw_draw_winner`(+`giveawayId`,+`prizeId` bei TicketBuy; Ersatzziehung: +`rerollOf`,`reason`,`excludeWinner` → verknüpft via `giveaway_draws.reroll_of/reroll_reason`, alter Claim wird `replaced`) · `gw_set_keyword` · `gw_get_keyword` · `gw_add_ticket`(user,amount) · `gw_sub_ticket` · `gw_ban`/`gw_unban` · `gw_reset`
 `gw_pause`/`gw_resume`/`gw_set_multiplier` (optional `giveawayId` → wirkt auf die Instanz)
 `gw_open_instance`(keyword, channels, core, windowSec, wagerCmd, announce) · `gw_close_instance` · `gw_reopen_instance`(giveawayId — nur geschlossene, noch nicht aufgeräumte Instanz) · `gw_list_giveaways` · `gw_set_announce`(giveawayId, on — CV-Chat-Ansagen stumm/laut, Gewinner-Ansage bleibt immer)
-`gw_add_prize`(giveawayId, title, wagerEndMinutes) · `gw_list_prizes` · `gw_set_wager_cmd`(giveawayId, command) · `gw_edit_prize`(prizeId, title/sponsor/description/wagerEndMinutes — nur offene) · `gw_cancel_prize`(prizeId — storniert + bucht alle Einsätze zurück; ohne UI, Panel nutzt gw_cancel_instance) · `gw_cancel_instance`(giveawayId — Giveaway-Abbruch: Einsätze zurück, Zuschauzeit gutschreiben, close+settle+cleanup)
+`gw_add_prize`(giveawayId, title, wagerEndMinutes) · `gw_list_prizes` · `gw_set_wager_cmd`(giveawayId, command) · `gw_edit_prize`(prizeId, title/sponsor/description/wagerEndMinutes — nur offene) · `gw_cancel_prize`(prizeId — storniert + bucht alle Einsätze zurück; ohne UI, Panel nutzt gw_cancel_instance) · `gw_cancel_instance`(giveawayId — Storno statt Ziehung, nur geschlossene Instanz: Einsätze zurück + cleanup)
 `gw_contest_voting`(giveawayId, action: open/pause/resume/close) · `gw_review_entry`(entryId, approve/reject — auch Korrektur bereits entschiedener) · `gw_delete_entry`(entryId — Owner, ENDGÜLTIG: Bild weg, Stimmen CASCADE; jederzeit, für Inhalte die nicht gespeichert bleiben dürfen) · `gw_list_entries`(giveawayId) · `gw_announce_page`(giveawayId — sagt `/viewer/wager` bzw. `/viewer/contest` im Chat an)
 
 ## Data
@@ -351,10 +360,10 @@ Token-Widerruf läuft über `POST giveaway:/internal/team/cleanup` — Shared-Se
 `gw_open`/`gw_open_instance`/Auto-Open prüfen `teamActive()` (deaktivierte Teams öffnen nichts).
 
 ## Admin-Bereich (nur Superadmin)
-Eigener Menüpunkt **ADMIN** in beiden Shared-Libs (`ADMIN_MENU`, Dropdown mit
-`gwnav-adminonly`, sichtbar erst wenn `/auth/me` die Rolle `superadmin` meldet):
-Plattform-Verwaltung, Betrieb & Diagnose, Benutzer, Betroffenenrechte, Test
-Console, Test Suite. Superadmin = `streamers.is_platform_admin` (Bootstrap
+Eigener Menüpunkt **PLATTFORM** in `services/admin/public/nav.js` (Sektion
+`platform`, `audience:'sa'` — sichtbar erst wenn `/auth/me` die Rolle
+`superadmin` meldet): Plattform-Verwaltung, Betrieb & Diagnose, Benutzer,
+Betroffenenrechte, Control Center, Test Console, Test Suite. Superadmin = `streamers.is_platform_admin` (Bootstrap
 `PLATFORM_ADMINS`), durchgesetzt in Caddy (`@superadmin` →
 `/auth/verify-superadmin`) UND je Endpunkt (`requireSuperadmin`). **Neue
 Superadmin-Seite? Dann in die `@superadmin path`-Liste in
@@ -431,6 +440,16 @@ setup-git` liefert die Credentials. Lokales `git` bleibt für commit/diff/log.
 - **Streamermodus** (`giveaway-admin.js`): maskiert Zuschauernamen + Ingest-Tokens im
   Admin-Panel für Screenshare. Neue UI, die Namen oder Tokens zeigt, muss ihn beachten.
 - Deutsche UI. Admin-Pages laden `admin-shared.js` zuerst.
+- **Navigation steht genau einmal** (`services/admin/public/nav.js`, seit 21.8.26).
+  Neuer Menüpunkt = ein Eintrag in `SECTIONS` (mit `audience` und ggf.
+  `activePaths` für Alias-Routen wie `/viewer/status` ↔ `/admin/status.html`),
+  **nicht** in einer Shared-Lib. Die Libs laden die Datei nur noch nach; wer dort
+  wieder Menü-Markup einbaut, hat die alte Dublette zurück. Rollen entscheidet
+  `/auth/me` (`{user, role, teams}`) — reine Anzeige-Logik, durchgesetzt wird in
+  Caddy und je Endpunkt. Startseite je Rolle liefert `homeFor()` (nav.js) bzw.
+  `homeFor()` in `services/admin/server.js` — beide Regeln müssen gleich bleiben.
+  Neue Seite ohne Nav? Dann `<script src="/admin/nav.js" defer>` einbinden,
+  sonst ist sie eine Sackgasse.
 - **Keine OBS-Overlays mehr** (10.8.26, Betreiber): Gewinner-Overlay und
   Join-Animation sind ersatzlos raus — Seiten, WS-Events (`overlay_subscribe`,
   `overlay_ok`, `overlay_denied`, `gw_overlay`), `verifyOverlayKey`, `/overlay-ws`,

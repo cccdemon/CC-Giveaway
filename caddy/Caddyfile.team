@@ -34,7 +34,7 @@
         # (Discord, WhatsApp, X) haben keine Session und wuerden sonst 302 bekommen.
         # Brand-Assets (rdoc.css, Fonts, Favicons) muessen offen sein, sonst
         # laden oeffentliche Seiten (Home, Rechtstexte, Viewer) ohne Styling.
-        @needsauth not path / /admin/home.html /admin/login.html /admin/join.html /admin/setup.html /admin/impressum.html /admin/datenschutz.html /admin/nutzungsbedingungen.html /admin/haftungsausschluss.html /admin/roadmap.html /admin/changelog.html /admin/funktionsweise.html /admin/pub-doc.js /admin/pub-doc.css /admin/og-preview.png /admin/rdoc.css /admin/rdoc-theme.js /admin/fonts/* /admin/icons/* /admin/favicon.ico /admin/favicon.svg /admin/site.webmanifest /favicon.ico /favicon.svg /admin/auth/* /admin/pub/* /viewer/* /healthz /sitemap.xml /robots.txt /ingest*
+        @needsauth not path / /admin/home.html /admin/login.html /admin/join.html /admin/setup.html /admin/impressum.html /admin/datenschutz.html /admin/nutzungsbedingungen.html /admin/haftungsausschluss.html /admin/roadmap.html /admin/changelog.html /admin/funktionsweise.html /admin/pub-doc.js /admin/pub-doc.css /admin/og-preview.png /admin/rdoc.css /admin/rdoc-theme.js /admin/nav.js /admin/fonts/* /admin/icons/* /admin/favicon.ico /admin/favicon.svg /admin/site.webmanifest /favicon.ico /favicon.svg /admin/auth/* /admin/pub/* /viewer/* /healthz /sitemap.xml /robots.txt /ingest*
         # method GET ist PFLICHT: ohne das schickt Caddy Methode UND Body der
         # Originalanfrage an /auth/verify. Der Body ist danach verbraucht und
         # kommt beim eigentlichen Dienst leer an — jedes POST hinter dem Gate
@@ -51,7 +51,7 @@
         # Live-State, /health nennt interne Servicenamen und Fehlertexte.
         # Beides nur fuer Plattform-Administratoren. Laeuft NACH dem
         # allgemeinen Gate, prueft also nur noch die Rolle.
-        @superadmin path /health /redis-ui /redis-ui/* /admin/platform.html /admin/betrieb.html /admin/betrieb.js
+        @superadmin path /health /redis-ui /redis-ui/* /admin/platform.html /admin/betrieb.html /admin/betrieb.js /admin/users.html /admin/users.js /admin/datenschutz-admin.html /admin/datenschutz-admin.js /admin/giveaway-test.html /admin/giveaway-test.js /admin/tests/*
         forward_auth @superadmin admin:3005 {
             uri /auth/verify-superadmin
             method GET

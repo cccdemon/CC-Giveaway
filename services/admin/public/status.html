@@ -7,6 +7,7 @@
 <title>RDOC Giveaway: Mein Status</title>
 <link rel="stylesheet" href="/admin/rdoc.css">
 <script src="/admin/rdoc-theme.js"></script>
+<script src="/admin/nav.js" defer></script>
 <link rel="icon" href="/admin/favicon.ico" sizes="32x32">
 <link rel="icon" href="/admin/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/admin/icons/apple-touch-icon.png">
@@ -315,6 +316,6 @@
     }catch(e){ body.innerHTML='<div class="err">Ladefehler. Bitte später erneut.</div>'; }
   })();
 </script>
-<script>if (window.RDOC && RDOC.mountToggle) { var h = document.querySelector('.head'); if (h) RDOC.mountToggle(h); }</script>
+<!-- Theme-Umschalter kommt aus der Nav (/admin/nav.js) -->
 </body>
 </html>

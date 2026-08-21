@@ -880,14 +880,15 @@ Die tragenden Teile stehen in Abschnitt 6.10; hier der Rest:
 | Datei | Umfang | Aufgabe |
 |---|---|---|
 | `giveaway/public/giveaway-admin.js` | 150 Funktionen | Panel: Übersicht, Teilnehmer, Regeln, Preise, Contest, Ziehung, Protokoll |
-| `giveaway/public/giveaway-shared.js` | Bibliothek | `CC.validate.*`, `CC.audit.summary`, Navigation |
+| `giveaway/public/giveaway-shared.js` | Bibliothek | `CC.validate.*`, `CC.audit.summary`, laedt die Nav |
 | `giveaway/public/cc-defs.js` | Konstanten | einzige Quelle der Event- und Befehlslisten (fail-closed) |
 | `giveaway/public/archive.js` | 24 | Archiv, Dossier, Nachweis-Export |
 | `giveaway/public/audit.js` | 18 | Protokollseite mit Filtern und Verdichtung |
 | `giveaway/public/claims.js` · `claim.js` | 13 · 7 | Gewinn-Abwicklung (Owner) · Gewinnermeldung (Gewinner) |
 | `giveaway/public/wager.js` | 11 | Lose setzen, ein Block je Los-Giveaway |
 | `giveaway/public/contest.js` | 9 | Einsenden und Bewerten |
-| `admin/public/admin-shared.js` | Bibliothek | `CC.validate`, Navigation, TOS-Overlay, Verwarnungs-Banner |
+| `admin/public/nav.js` | Bibliothek | **einzige Quelle der Hauptnavigation**: Bereiche, Rollenfilter, aktive Markierung, Mobile-Drawer, Tastatur/ARIA |
+| `admin/public/admin-shared.js` | Bibliothek | `CC.validate`, laedt die Nav, TOS-Overlay, Verwarnungs-Banner |
 | `admin/public/teams.js` | 29 | Team-Verwaltung, Rechtstexte, Ingest-Kanäle |
 | `admin/public/platform.js` | 20 | Plattform-Verwaltung (Teams, Streamer, Verwarnungen) |
 | `admin/public/betrieb.js` | 13 | Betrieb und Diagnose |

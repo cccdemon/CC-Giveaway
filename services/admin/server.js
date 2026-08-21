@@ -141,12 +141,30 @@ app.get('/auth/verify-superadmin', (req, res) => {
   res.status(200).end();
 });
 
-app.get('/auth/me', (req, res) => {
+app.get('/auth/me', async (req, res) => {
   const sess = sessionFromReq(req);
   if (!sess) return res.status(401).json({ error: 'unauthenticated' });
   if (bannedLogins.has(sess.user)) return res.status(401).json({ error: 'banned' });
-  res.json({ user: sess.user, role: sess.role });
+  // teams = Anzahl Teammitgliedschaften. Die Navigation blendet daran die
+  // Veranstalter-Bereiche ein oder aus (Anzeige-Logik, keine Rechtepruefung —
+  // die bleibt in Caddy und an jedem Endpunkt).
+  res.json({ user: sess.user, role: sess.role, teams: await teamCount(sess.user) });
 });
+
+async function teamCount(login) {
+  try {
+    const r = await pg.query('SELECT COUNT(*)::int AS n FROM team_members WHERE login=$1', [login]);
+    return (r.rows[0] && r.rows[0].n) || 0;
+  } catch (e) { logErr('Auth', 'teamCount:', e.message); return 0; }
+}
+
+// Startseite je Rolle: Veranstalter ins Giveaway-Panel, alle anderen auf ihre
+// Teilnahme-Uebersicht. Dieselbe Regel steckt in nav.js (homeFor) — Brand-Link,
+// Login-Redirect und Hauptpunkt fuehren damit an denselben Ort.
+async function homeFor(login, role) {
+  if (role === 'superadmin') return '/giveaway/giveaway-admin.html';
+  return (await teamCount(login)) > 0 ? '/giveaway/giveaway-admin.html' : '/viewer/status';
+}
 
 // Bruteforce-Bremse für den Passwort-Login (ChatGPT-Review #5): 5 Fehl-
 // versuche je (IP|User) → 15 min Sperre. In-Memory reicht (ein Prozess);
@@ -315,12 +333,13 @@ app.get('/auth/twitch/callback', async (req, res) => {
 
     issueSession(res, login, role);
     res.append('Set-Cookie', `oauth_state=; Path=/; Max-Age=0`);
-    const next = cookies.oauth_next ? decodeURIComponent(cookies.oauth_next) : '/admin/teams.html';
+    const home = await homeFor(login, role);
+    const next = cookies.oauth_next ? decodeURIComponent(cookies.oauth_next) : home;
     res.append('Set-Cookie', `oauth_next=; Path=/; Max-Age=0`);
     // Nur interne Pfade: "//host" und "/\host" werden von Browsern als
     // externe URL interpretiert (Open Redirect nach erfolgreichem Login).
     const safeNext = (next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/\\'))
-      ? next : '/admin/teams.html';
+      ? next : home;
     res.redirect(302, safeNext);
   } catch (e) {
     logErr('Auth', 'twitch callback:', e.message);

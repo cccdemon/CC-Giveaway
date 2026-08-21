@@ -5,6 +5,39 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ---
 
+## 21. August 2026
+
+### Neue Menuefuehrung: nach Aufgaben statt nach Technik
+
+Das Menue folgt jetzt dem, was man vorhat, nicht der Seitenstruktur. Statt drei
+Punkten plus einem 14 Eintraege langen `TOOLS` gibt es fuenf klare Bereiche:
+
+- **GIVEAWAYS** — Uebersicht, Gewinne abwickeln, Archiv, Protokoll
+- **TEAM** — Meine Teams, Streamerbot einrichten
+- **TEILNEHMEN** — Meine Teilnahmen, Gewinn melden, Lose setzen, Contest, Meine Daten
+- **HILFE** — Anleitung, So funktioniert es, Fehler melden, Doku, Rechtliches
+- **PLATTFORM** — nur fuer die Plattform-Verwaltung sichtbar
+
+Was du siehst, haengt jetzt an deiner Rolle: Wer in keinem Team ist, bekommt die
+Veranstalter-Bereiche gar nicht erst angezeigt — sie fuehrten vorher ins Leere.
+Nach dem Login landest du dort, wo du arbeitest: Veranstalter im Giveaway-Panel,
+alle anderen bei „Meine Teilnahmen". Der Klick auf das Logo fuehrt an denselben Ort.
+
+Ausserdem:
+
+- **Du siehst, wo du bist.** Der aktive Bereich und die aktive Seite sind im Menue
+  markiert — auch in den Untermenues, auch auf Archiv-, Protokoll- und Setup-Seiten.
+- **Keine Sackgassen mehr.** „Meine Daten", „Mein Status" und „Streamerbot
+  einrichten" hatten bisher gar kein Menue; von dort kam man nur mit dem
+  Zurueck-Knopf weg.
+- **Mobil ein echtes Menue.** Unter 680 px gibt es einen Menue-Knopf mit
+  ausklappbarem Bereich und lesbaren Beschriftungen statt blosser Symbole.
+- **Ohne Maus bedienbar.** Die Menues lassen sich mit Tab und Pfeiltasten
+  oeffnen und durchlaufen, Escape schliesst sie; Screenreader sagen Zustand und
+  aktuelle Seite an.
+
+---
+
 ## 18. August 2026
 
 ### Neuer Tab VERWALTUNG im Dashboard
@@ -25,11 +58,16 @@ derselben Instanz einen neuen anlegen war zwei Werkzeuge fuer denselben
 Zweck und hinterliess stornierte Karteileichen. Korrekturen (Titel,
 Sponsor, Beschreibung, Bild, Einsatz-Ende) laufen weiter ueber ✎.
 
-Neu: **✖ GIVEAWAY STORNIEREN** bricht das ganze Los-Giveaway ab. Es wird
-kein Gewinner gezogen, alle Einsaetze werden zurueckgebucht, die erspielte
-Zuschauzeit wird als Los-Guthaben gutgeschrieben und das Giveaway wird
-geschlossen und entfernt (der Nachweis bleibt im Archiv). Danach oeffnet
-sich direkt das Start-Fenster, um das neue Los-Giveaway anzulegen.
+Stornieren ist jetzt die Alternative zur Ziehung: erst SCHLIESSEN (dabei
+wird die Zuschauzeit als Los-Guthaben gutgeschrieben), dann steht am Preis
+neben ★ ZIEHEN ein ✖ — es wird kein Gewinner gezogen, alle Einsaetze
+werden zurueckgebucht und das Giveaway wird entfernt (der Nachweis bleibt
+im Archiv). Danach oeffnet sich direkt das Start-Fenster, um das neue
+Los-Giveaway anzulegen.
+
+Ausserdem aufgeraeumt: die interne Preis-Nummer („#11") taucht im Panel
+nicht mehr auf — angezeigt wird nur der Titel. LOSE ZURUECKSETZEN ist von
+der Preis-Karte in die Regeln-Karte umgezogen.
 
 ### Chat-Ansagen editierbar + Bedienpanels einklappbar
 
