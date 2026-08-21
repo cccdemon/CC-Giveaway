@@ -1396,17 +1396,22 @@ async function runAdminCmd(send, msg, meta, ctx) {
       break;
     }
 
-    // Storno = Giveaway-Abbruch (Betreiber 18.8.26): statt einen Gewinner zu
-    // ziehen werden alle Einsätze zurückgebucht, die erspielte Zuschauzeit
-    // wird als Guthaben gutgeschrieben, dann wird geschlossen UND aufgeräumt.
-    // Wer weiter verlosen will, startet schlicht ein neues Los-Giveaway —
-    // einen Preis-Austausch in derselben Instanz gibt es nicht mehr.
+    // Storno = Alternative zur Ziehung (Betreiber 18.8.26): erst SCHLIESSEN
+    // (bucht das Guthaben), dann statt ★ ziehen ✖ stornieren — alle Einsätze
+    // zurück, kein Gewinner, aufräumen. Wer weiter verlosen will, startet
+    // schlicht ein neues Los-Giveaway.
     case 'gw_cancel_instance': {
       const gid = validGid(msg.giveawayId);
       const known = gid ? (await wte.listGiveaways(teamId)).find(g => g.gid === gid && !g.primary && g.core === 'CORE_TicketBuy') : null;
       if (!known) {
         Object.assign(outcome, { error: 'no_ticketbuy_instance', giveawayId: msg.giveawayId || null });
-        send({ event: 'gw_ack', type: 'error', error: 'Stornieren geht nur bei einem laufenden Los-Giveaway.' });
+        send({ event: 'gw_ack', type: 'error', error: 'Stornieren geht nur bei einem Los-Giveaway.' });
+        break;
+      }
+      if (!known.closed) {
+        Object.assign(outcome, { error: 'not_closed', giveawayId: gid });
+        send({ event: 'gw_ack', type: 'error',
+               error: 'Erst SCHLIESSEN — Storno ersetzt danach die Ziehung.' });
         break;
       }
       const openPrizes = await wte.listPrizes(teamId, { openOnly: true, gid });
@@ -1421,21 +1426,15 @@ async function runAdminCmd(send, msg, meta, ctx) {
         const r = await wte.cancelPrize(teamId, p.id);
         refunded += r.refundedUsers || 0;
       }
-      let settled = { users: 0, total: 0 };
-      if (!known.closed) {
-        await wte.closeGiveawayInstance(teamId, gid);
-        settled = await wte.settleTicketBuyInstance(teamId, gid);
-      }
       await wte.cleanupGiveawayInstance(teamId, gid);
       await setSessionStatusById(gid, 'closed');
-      Object.assign(outcome, { giveawayId: gid, cancelled: true,
-                               refundedUsers: refunded, settledUsers: settled.users, settledCredit: settled.total });
+      Object.assign(outcome, { giveawayId: gid, cancelled: true, refundedUsers: refunded });
       await announceChannels(teamId, known.channels,
         '🎟 Das Los-Giveaway wurde storniert — es wird kein Gewinner gezogen. '
         + 'Alle Einsätze sind zurückgebucht und eure Zuschauzeit ist als Los-Guthaben gutgeschrieben; '
         + 'es bleibt erhalten und zählt beim nächsten Los-Giveaway weiter.');
       send({ event: 'gw_ack', type: 'instance_cancelled', giveawayId: gid,
-             refundedUsers: refunded, settledUsers: settled.users });
+             refundedUsers: refunded });
       break;
     }
 

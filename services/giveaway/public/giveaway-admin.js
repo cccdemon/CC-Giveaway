@@ -520,7 +520,7 @@ function tbEditPrize(prizeId) {
   var endEl = document.getElementById('tb-prize-end');
   if (endEl) endEl.value = p.wager_end
     ? Math.max(0, Math.round((new Date(p.wager_end).getTime() - Date.now()) / 60000)) : 0;
-  document.getElementById('tb-prize-form-title').textContent = 'PREIS #' + prizeId + ' KORRIGIEREN';
+  document.getElementById('tb-prize-form-title').textContent = 'PREIS KORRIGIEREN';
   document.getElementById('tb-prize-save').textContent = 'SPEICHERN';
   document.getElementById('tb-prize-cancel-edit').style.display = '';
   tbUpdatePrizeForm();          // Korrektur darf tippen, auch bei offenem Preis
@@ -550,8 +550,8 @@ function tbCancelEdit(opts) {
 // für das neue Los-Giveaway (Ack instance_cancelled).
 function tbCancelInstance() {
   if (!currentGiveaway) return;
-  if (!confirm('Dieses Los-Giveaway stornieren?\n\nEs wird KEIN Gewinner gezogen: alle Einsätze werden zurückgebucht, '
-    + 'die erspielte Zuschauzeit wird als Los-Guthaben gutgeschrieben, das Giveaway wird geschlossen und entfernt '
+  if (!confirm('Dieses Los-Giveaway stornieren statt zu ziehen?\n\nEs wird KEIN Gewinner gezogen: alle Einsätze werden '
+    + 'zurückgebucht (das Los-Guthaben der Zuschauer bleibt erhalten) und das Giveaway wird entfernt '
     + '(der Nachweis bleibt im Archiv). Danach kannst du direkt ein neues Los-Giveaway starten.')) return;
   send({ event: 'gw_cmd', cmd: 'gw_cancel_instance', giveawayId: currentGiveaway });
 }
@@ -579,19 +579,18 @@ function renderPrizes(prizes) {
   var host = document.getElementById('tb-prizes');
   if (!host) return;
   tbUpdatePrizeForm();
-  // Storno (= Giveaway-Abbruch) nur anbieten, solange ein Preis offen ist —
-  // nach Ziehung oder ohne Preis gibt es nichts zurückzubuchen.
-  var ci = document.getElementById('tb-cancel-inst');
-  if (ci) ci.style.display = tbPrizes.some(function(p){ return p.status === 'open'; }) ? '' : 'none';
   if (!prizes || !prizes.length) { host.innerHTML = '<div class="wsc-empty">Noch kein Preis eingetragen.</div>'; return; }
-  // Reihenfolge (alle Mechaniken): SCHLIESSEN → ZIEHEN → AUFRÄUMEN.
-  // ★ wird erst scharf, wenn das Giveaway geschlossen ist — vorher liefe die
-  // Ziehung mitten ins laufende Setzen.
+  // Reihenfolge (alle Mechaniken): SCHLIESSEN → dann ZIEHEN ODER STORNIEREN.
+  // Beides erst nach dem Schliessen — vorher liefe die Ziehung mitten ins
+  // laufende Setzen; Storno ist die Alternative zur Ziehung (kein Gewinner,
+  // Einsätze zurück), nicht ein eigener Karten-Knopf.
   var sg = selectedGiveaway();
   var canDraw = !!(sg && sg.closed);
+  // Interne Preis-Nummer (team-weite BIGSERIAL) sagt dem Betreiber nichts —
+  // angezeigt wird nur der Titel.
   host.innerHTML = prizes.map(function(p) {
-    return '<div class="tb-prize"><span class="t" title="' + esc(p.sponsor ? 'bereitgestellt von ' + p.sponsor : '') + '">#'
-      + p.id + ' ' + esc(p.title)
+    return '<div class="tb-prize"><span class="t" title="' + esc(p.sponsor ? 'bereitgestellt von ' + p.sponsor : '') + '">'
+      + esc(p.title)
       + (p.has_image && p.image_token ? ' <span title="Bild vorhanden" style="cursor:pointer" onclick="window.open(\'/giveaway/api/prize/image/' + esc(p.image_token) + '\')">🖼</span>' : '')
       + (p.sponsor ? ' <span style="opacity:.55">· ' + esc(p.sponsor) + '</span>' : '') + '</span>'
       + '<span class="s">' + Number(p.total_stake).toFixed(0) + ' 🎟</span>'
@@ -599,14 +598,15 @@ function renderPrizes(prizes) {
           ? '<button class="btn btn-cyan btn-sm btn-mini" onclick="tbEditPrize(' + p.id + ')" title="Titel/Sponsor/Beschreibung/Bild/Einsatz-Ende korrigieren">✎</button>'
             + (canDraw
                 ? '<button class="btn btn-solid btn-sm" onclick="tbDrawPrize(' + p.id + ')">★ ZIEHEN</button>'
-                : '<button class="btn btn-solid btn-sm" disabled title="Erst SCHLIESSEN — Reihenfolge: SCHLIESSEN → ZIEHEN → AUFRÄUMEN. Solange nicht gezogen ist, geht WIEDER ÖFFNEN.">★ ZIEHEN</button>')
+                  + '<button class="btn btn-red btn-sm btn-mini" onclick="tbCancelInstance()" title="Statt zu ziehen stornieren: kein Gewinner, alle Einsätze zurück, Zuschauzeit wird gutgeschrieben, Giveaway wird entfernt">✖</button>'
+                : '<button class="btn btn-solid btn-sm" disabled title="Erst SCHLIESSEN — danach ziehen (★) oder stornieren (✖). Solange nicht gezogen ist, geht WIEDER ÖFFNEN.">★ ZIEHEN</button>')
           : '<span class="cfg-hint">' + (TB_STATUS_LABEL[p.status] || esc(p.status)) + '</span>')
       + '</div>';
   }).join('');
 }
 
 function tbDrawPrize(prizeId) {
-  if (!confirm('Preis #' + prizeId + ' jetzt ziehen? Danach sind alle Einsätze dieses Preises gebunden.')) return;
+  if (!confirm('Diesen Preis jetzt ziehen? Danach sind alle Einsätze dieses Preises gebunden.')) return;
   send({ event: 'gw_cmd', cmd: 'gw_draw_winner', giveawayId: currentGiveaway, prizeId: prizeId, prize: '' });
 }
 
@@ -1325,9 +1325,9 @@ function handle(msg) {
             + (msg.wagerCmd ? ' (Setzen: „' + msg.wagerCmd + '")' : ''), 'gold'); loadDrafts(); }
       if (msg.type === 'draft_saved')   { log('Entwurf #' + msg.draftId + ' gespeichert — Start per ▶ in der Karte VORBEREITETE GIVEAWAYS', 'gold'); loadDrafts(); }
       if (msg.type === 'draft_deleted') { log('Entwurf #' + msg.draftId + ' gelöscht', 'gold'); loadDrafts(); }
-      if (msg.type === 'prize_added')   { log('Preis #' + msg.prizeId + ' angelegt: „' + (msg.title || '') + '"', 'gold'); tbHandleImageAfterSave(msg.prizeId); tbLoadPrizes(); }
-      if (msg.type === 'prize_edited')  { log('Preis #' + msg.prizeId + ' korrigiert', 'gold'); tbHandleImageAfterSave(msg.prizeId); tbLoadPrizes(); }
-      if (msg.type === 'prize_cancelled') { log('Preis #' + msg.prizeId + ' storniert — ' + (msg.refundedUsers || 0) + ' Einsätze zurückgebucht', 'gold'); tbLoadPrizes(); }
+      if (msg.type === 'prize_added')   { log('Preis angelegt: „' + (msg.title || '') + '"', 'gold'); tbHandleImageAfterSave(msg.prizeId); tbLoadPrizes(); }
+      if (msg.type === 'prize_edited')  { log('Preis korrigiert', 'gold'); tbHandleImageAfterSave(msg.prizeId); tbLoadPrizes(); }
+      if (msg.type === 'prize_cancelled') { log('Preis storniert — ' + (msg.refundedUsers || 0) + ' Einsätze zurückgebucht', 'gold'); tbLoadPrizes(); }
       if (msg.type === 'credit_reset')  { log('Losanpassung: ' + (msg.users || 0) + ' Konten auf 0 (-' + (msg.total || 0) + ' Lose)', 'gold'); liveRefresh(); }
       if (msg.type === 'chat_templates')    { ctGroups = msg.groups || []; renderChatTexts(); break; }
       if (msg.type === 'chat_template_set') { log('Chat-Ansage ' + (msg.reset ? 'auf Standard zurückgesetzt' : 'gespeichert') + ' (' + msg.key + ')', 'gold'); ctLoad(); }
@@ -1345,8 +1345,7 @@ function handle(msg) {
             setTimeout(requestData, 300); }
       if (msg.type === 'instance_cancelled') {
         log('Giveaway storniert: ' + instanceLabel(msg.giveawayId || '?')
-            + ' — ' + (msg.refundedUsers || 0) + ' Einsätze zurückgebucht, '
-            + (msg.settledUsers || 0) + ' Konten gutgeschrieben. Nachweis im Archiv.', 'gold');
+            + ' — ' + (msg.refundedUsers || 0) + ' Einsätze zurückgebucht. Nachweis im Archiv.', 'gold');
         // Auswahl ist weg — zurück zur Übersicht und direkt das Start-Fenster
         // fürs neue Los-Giveaway anbieten.
         currentGiveaway = null;

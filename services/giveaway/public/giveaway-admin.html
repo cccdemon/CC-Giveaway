@@ -85,6 +85,8 @@
   .gw-app:not(.core-contest) #card-contest { display:none !important; }
   /* Regel-Karte: nur wo Watchtime-Accrual läuft (Kampagne, Los-Giveaway) */
   .gw-app.core-instant #card-settings, .gw-app.core-contest #card-settings { display:none !important; }
+  /* Losanpassung (LOSE ZURÜCKSETZEN) nur beim Los-Giveaway */
+  .gw-app:not(.core-ticketbuy) #tb-reset-sec { display:none !important; }
   .tb-prize { display:flex; align-items:center; gap:8px; font-size:11.5px; padding:6px 0;
               border-bottom:1px solid var(--rdoc-border); }
   .tb-prize .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -395,7 +397,7 @@
       </div>
 
       <!-- Los-Giveaway: Setz-Befehl, Preise, Ziehung je Preis -->
-      <div class="card" id="card-ticketbuy" data-help="Los-Giveaway: Zuschauzeit wird Los-Guthaben (Umrechnung in der Regeln-Karte). Ein Los-Giveaway verlost genau EINEN Preis (Titel, Sponsor, Beschreibung, Bild bis 7 MB, optionales Einsatz-Ende) — für einen weiteren Preis ein zweites Los-Giveaway starten (＋ oben). Preis ✎ korrigieren (Titel, Sponsor, Beschreibung, Bild, Einsatz-Ende). ✖ GIVEAWAY STORNIEREN bricht das ganze Giveaway ab: kein Gewinner, alle Einsätze zurück, Zuschauzeit wird als Guthaben gutgeschrieben, das Giveaway wird entfernt (Nachweis im Archiv) — danach einfach ein neues Los-Giveaway starten. Gesetzt wird per Chat-Befehl („&lt;Befehl&gt; &lt;Anzahl&gt;", nur nach Anmeldung per Teilnahme-Keyword) oder Setz-Seite; Rücknahme bis zum Einsatz-Ende. Reihenfolge: SCHLIESSEN (beendet Sammeln/Setzen, Guthaben wird gutgeschrieben) → ★ ZIEHEN (gewichtet nach Einsatz — danach sind die Einsätze ALLER Setzer verbraucht) → AUFRÄUMEN. Versehentlich geschlossen? WIEDER ÖFFNEN geht, solange nicht gezogen ist.">
+      <div class="card" id="card-ticketbuy" data-help="Los-Giveaway: Zuschauzeit wird Los-Guthaben (Umrechnung in der Regeln-Karte). Ein Los-Giveaway verlost genau EINEN Preis (Titel, Sponsor, Beschreibung, Bild bis 7 MB, optionales Einsatz-Ende) — für einen weiteren Preis ein zweites Los-Giveaway starten (＋ oben). Preis ✎ korrigieren (Titel, Sponsor, Beschreibung, Bild, Einsatz-Ende). Gesetzt wird per Chat-Befehl („&lt;Befehl&gt; &lt;Anzahl&gt;", nur nach Anmeldung per Teilnahme-Keyword) oder Setz-Seite; Rücknahme bis zum Einsatz-Ende. Reihenfolge: SCHLIESSEN (beendet Sammeln/Setzen, Guthaben wird gutgeschrieben) → dann ★ ZIEHEN (gewichtet nach Einsatz — danach sind die Einsätze ALLER Setzer verbraucht) ODER ✖ stornieren (kein Gewinner: Einsätze zurück, Giveaway wird entfernt, Nachweis bleibt im Archiv — danach einfach ein neues Los-Giveaway starten). Versehentlich geschlossen? WIEDER ÖFFNEN geht, solange nicht gezogen ist.">
         <div class="card-title">LOS-GIVEAWAY // PREIS <span class="beta-chip">BETA</span></div>
         <div class="card-sub">SETZ-BEFEHL</div>
         <div class="input-row">
@@ -436,18 +438,6 @@
         </div>
         <div class="card-sub mt-8">PREIS DIESES GIVEAWAYS <span class="link-cyan" onclick="tbLoadPrizes()">↻</span></div>
         <div id="tb-prizes"><div class="wsc-empty">Lade…</div></div>
-        <!-- Storno = Giveaway-Abbruch: Einsätze zurück, Zuschauzeit gutschreiben,
-             Giveaway zu und weg — danach neues Los-Giveaway starten. -->
-        <div class="btn-group mt-6" id="tb-cancel-inst" style="display:none">
-          <button class="btn btn-red btn-sm" onclick="tbCancelInstance()"
-                  title="Kein Gewinner: alle Einsätze zurückbuchen, Zuschauzeit gutschreiben, Giveaway beenden — danach neues Los-Giveaway starten">✖ GIVEAWAY STORNIEREN</button>
-        </div>
-        <!-- Losanpassung: Lose bleiben sonst über Giveaways hinweg erhalten -->
-        <div class="card-sub mt-8">LOSANPASSUNG</div>
-        <div class="cfg-hint">Lose bleiben über Giveaways hinweg erhalten. ZURÜCKSETZEN nullt die Lose-Konten <b>aller</b> Zuschauer im Team per Gegenbuchung im Journal — geht nur, wenn kein offener Preis mehr aussteht.</div>
-        <div class="btn-group mt-6">
-          <button class="btn btn-red btn-sm" id="tb-reset-btn" onclick="tbResetCredit()">LOSE ZURÜCKSETZEN</button>
-        </div>
       </div>
 
       <!-- Screenshot-Contest: Voting-Steuerung + Einsendungen -->
@@ -498,6 +488,15 @@
         <div class="card-sub mt-8">AUTO-STEUERUNG · GILT TEAM-WEIT</div>
         <label class="cfg-row"><input type="checkbox" id="cfg-auto-pause" onchange="saveStreamSettings()"><span>Pause wenn alle Streams <b>offline</b></span></label>
         <label class="cfg-row"><input type="checkbox" id="cfg-auto-resume" onchange="saveStreamSettings()"><span>Start/Fortsetzen wenn ein Stream <b>online</b></span></label>
+        <!-- Losanpassung (nur Los-Giveaway sichtbar): Lose bleiben sonst über
+             Giveaways hinweg erhalten. -->
+        <div id="tb-reset-sec">
+          <div class="card-sub mt-8">LOSANPASSUNG · GILT TEAM-WEIT</div>
+          <div class="cfg-hint">Lose bleiben über Giveaways hinweg erhalten. ZURÜCKSETZEN nullt die Lose-Konten <b>aller</b> Zuschauer im Team per Gegenbuchung im Journal — geht nur, wenn kein offener Preis mehr aussteht.</div>
+          <div class="btn-group mt-6">
+            <button class="btn btn-red btn-sm" id="tb-reset-btn" onclick="tbResetCredit()">LOSE ZURÜCKSETZEN</button>
+          </div>
+        </div>
       </div>
 
       <!-- Manuelle Tickets (wirken auf die Kampagne) -->
