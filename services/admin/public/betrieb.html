@@ -98,8 +98,8 @@
   </div>
 
   <div class="panel">
-    <h2>Streamerbot-Debugzeilen</h2>
-    <div class="sub">Meldungen der Actions (<span class="mono">cc_debug</span>). Die Tabelle wird bei jedem Stream-Start geleert — leer ist hier der Normalfall.</div>
+    <h2>Diagnosezeilen</h2>
+    <div class="sub">Zwei Quellen: Meldungen der Streamerbot-Actions (<span class="mono">cc_debug</span>, werden bei jedem Stream-Start geleert) und Fehler, die im Browser der Nutzer auftraten (<span class="mono">client</span>) — dort steht die Seite in der Spalte Stufe. Browser-Fehler enthalten weder Namen noch IP und werden nach 30 Tagen gelöscht. Leer ist der Normalfall.</div>
     <div class="scroll"><table>
       <thead><tr><th>Zeit</th><th>Quelle</th><th>Stufe</th><th>Benutzer</th><th>Info</th></tr></thead>
       <tbody id="dbgRows"><tr><td colspan="5" style="color:var(--rdoc-text-faint)">lädt…</td></tr></tbody>

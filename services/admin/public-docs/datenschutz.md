@@ -45,6 +45,15 @@ Für die Auslieferung selbst wird deine IP-Adresse technisch verarbeitet — ohn
 sie kann keine Antwort zugestellt werden. Sie wird dabei nicht gespeichert.
 **Rechtsgrundlage:** Art. 6 Abs. 1 lit. f DSGVO (Betrieb der Website).
 
+Tritt in deinem Browser ein Programmfehler auf, meldet die Seite ihn automatisch
+an den Server, damit er behoben werden kann. Übermittelt werden ausschließlich
+technische Angaben: die aufgerufene Seite, die Fehlermeldung, die betroffene
+Datei mit Zeilennummer und die Browser-Familie (etwa „Firefox"). **Kein Name,
+keine Kennung, keine IP-Adresse** — die Meldung lässt sich dir nicht zuordnen.
+Erkennbare Zugangsschlüssel werden vor dem Speichern entfernt. Diese Zeilen
+werden nach 30 Tagen gelöscht.
+**Rechtsgrundlage:** Art. 6 Abs. 1 lit. f DSGVO (fehlerfreier Betrieb).
+
 ### 3.2 Login mit Twitch
 Für Streamer und für die Statusseite erfolgt die Anmeldung über Twitch (OAuth).
 Verarbeitet werden dein Twitch-Benutzername und deine Twitch-Benutzer-ID; ein
@@ -170,6 +179,7 @@ Die Löschung erfolgt automatisch; sie muss nicht beantragt werden.
 | Einsätze auf Preise | Teil des Ziehungsnachweises — dauerhaft, bei Löschung pseudonymisiert |
 | Contest-Einsendungen (Bilder) | bis zur Löschung durch dich (Auskunfts-/Löschseite) — dann samt Bild entfernt |
 | Contest-Bewertungen | Teil des Ergebnisnachweises — bei Löschung wird dein Name pseudonymisiert, die Wertung bleibt |
+| Technische Fehlerberichte aus dem Browser (ohne Personenbezug) | **30 Tage** |
 | Sicherungskopien der Datenbank | **30 Tage** |
 
 Solange ein Giveaway läuft, werden seine Daten nicht gelöscht — die Frist

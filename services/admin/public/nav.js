@@ -163,6 +163,58 @@
   // Node (Tests) hat kein document — ab hier ist alles Browser.
   if (typeof document === 'undefined') return;
 
+  // ── Browser-Fehler melden ────────────────────────────────────────────────
+  // Serverlogs sehen nur, was den Server erreicht; ein kaputtes Skript bleibt
+  // dort unsichtbar. nav.js laeuft auf jeder Seite und ist damit die eine
+  // Stelle, an der das hier hingehoert. Ziel: POST /admin/pub/client-error
+  // (ohne Login erreichbar, speichert weder Namen noch IP).
+  //
+  // Die Bremsen sind Absicht: eine Fehlerschleife in einer Render-Funktion
+  // feuert sonst hunderte Meldungen pro Sekunde.
+  var REPORT_URL = '/admin/pub/client-error';
+  var reported = 0, seenHere = {};
+  var MAX_PER_PAGE = 5;
+
+  function report(rep) {
+    try {
+      if (reported >= MAX_PER_PAGE) return;
+      var key = (rep.msg || '') + '|' + (rep.file || '') + '|' + (rep.line || '');
+      if (seenHere[key]) return;                  // gleicher Fehler, gleiche Seite
+      seenHere[key] = 1;
+      reported++;
+      rep.path = location.pathname;
+      var body = JSON.stringify(rep);
+      // sendBeacon ueberlebt auch einen Seitenwechsel; fetch ist der Rueckfall.
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(REPORT_URL, new Blob([body], { type: 'application/json' }));
+      } else {
+        fetch(REPORT_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: body, keepalive: true }).catch(function () {});
+      }
+    } catch (err) { /* Melden darf nie selbst etwas kaputtmachen */ }
+  }
+
+  window.addEventListener('error', function (ev) {
+    // Capture-Phase: hier kommen auch Ressourcen an, die nicht laden
+    // (Skript, Stylesheet, Bild) — die haben kein ev.message.
+    var t = ev.target;
+    if (t && t !== window && (t.tagName === 'SCRIPT' || t.tagName === 'LINK' || t.tagName === 'IMG')) {
+      report({ kind: 'error', msg: 'Ressource nicht geladen: ' + t.tagName.toLowerCase(),
+               file: t.src || t.href || '' });
+      return;
+    }
+    report({ kind: 'error', msg: ev.message || String(ev.error || 'Fehler'),
+             file: ev.filename || '', line: ev.lineno, col: ev.colno,
+             stack: ev.error && ev.error.stack ? String(ev.error.stack) : '' });
+  }, true);
+
+  window.addEventListener('unhandledrejection', function (ev) {
+    var r = ev.reason;
+    report({ kind: 'promise',
+             msg: (r && (r.message || r.toString ? String(r.message || r) : '')) || 'Promise abgelehnt',
+             stack: r && r.stack ? String(r.stack) : '' });
+  });
+
   // ── Rendering ────────────────────────────────────────────────────────────
   var BRAND_SVG = '<svg width="24" height="24" viewBox="0 0 200 200" fill="none" role="img" aria-label="RDOC"><g transform="translate(-60 -60) scale(0.3125)"><path fill="var(--rdoc-accent,#C48A4A)" d="M528.748,192.439 A320 320 0 0 1 779.563,336.473 L679.227,402.295 A200 200 0 0 0 522.467,312.274 Z M796.445,365.402 A320 320 0 0 1 805.202,640.19 L695.251,592.119 A200 200 0 0 0 689.778,420.376 Z M790.196,670.136 A320 320 0 0 1 667.139,791.878 L608.962,686.924 A200 200 0 0 0 685.872,610.835 Z M444.124,680 L579.876,680 L631.874,808.699 A320 320 0 0 1 586.703,823.158 L575.497,776.485 A272 272 0 0 0 589.252,772.799 L573.612,720 L450.388,720 L434.748,772.799 A272 272 0 0 0 448.503,776.485 L437.297,823.158 A320 320 0 0 1 392.126,808.699 Z M356.861,791.878 A320 320 0 0 1 233.804,670.136 L338.128,610.835 A200 200 0 0 0 415.038,686.924 Z M218.798,640.19 A320 320 0 0 1 227.555,365.402 L334.222,420.376 A200 200 0 0 0 328.749,592.119 Z M244.437,336.473 A320 320 0 0 1 495.252,192.439 L501.533,312.274 A200 200 0 0 0 344.773,402.295 Z"/></g></svg>';
 

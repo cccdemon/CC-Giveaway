@@ -18,6 +18,7 @@ const path    = require('path');
 const { Pool } = require('pg');
 const A = require('./auth.js');
 const { createBanCache } = require('./ban-cache.js');
+const CE = require('./client-errors.js');
 
 const unquote = (s) => String(s || '').replace(/^"|"$/g, '');
 
@@ -1488,6 +1489,49 @@ app.get('/pub/doc/:name', (req, res) => {
   if (!file) return res.status(404).json({ error: 'not_found' });
   try { res.json({ content: fs.readFileSync(path.join(__dirname, 'public-docs', file), 'utf8') }); }
   catch (e) { res.status(500).json({ error: 'unavailable' }); }
+});
+
+// ── Browser-Fehler einsammeln ─────────────────────────────
+// Serverlogs sehen nur, was den Server erreicht. Ein kaputtes Skript im
+// Browser bleibt dort unsichtbar: /viewer/help stand am 23.8.26 im
+// Ladezustand, waehrend Caddy zufrieden 200 lieferte. Die Seiten melden
+// solche Fehler jetzt selbst hierher (nav.js), und die Betriebsseite zeigt
+// sie unter „Debug-Log".
+//
+// Bewusst unter /pub/ (ohne Login erreichbar — oeffentliche Seiten sollen
+// auch melden koennen) und bewusst OHNE Personenbezug: gespeichert werden
+// nur Seite, Meldung, Datei/Zeile und die Browser-Familie. Kein Name, keine
+// IP (sie wird nur zum Zaehlen benutzt), kein Cookie. Deshalb muss auch
+// keiner der DSGVO-Pfade etwas mitziehen.
+//
+// Drei Bremsen, weil ein einzelner Browser in einer Fehlerschleife sonst die
+// Tabelle flutet (im Audit-Log sind so schon einmal Millionen Zeilen
+// entstanden): Mengenbremse je Absender, Dedupe je Fehler und ein harter
+// Deckel pro Minute ueber alles.
+const ceSeen = new Map();       // fingerprint -> ts (Dedupe, mit TTL)
+const ceCounters = new Map();   // ip -> {start, n} (Mengenbremse, mit TTL)
+let ceMinute = { start: 0, n: 0 };
+const CE_MAX_PER_MINUTE = 60;
+
+app.post('/pub/client-error', express.json({ limit: '8kb' }), async (req, res) => {
+  // Immer 204: der Client soll nichts ueber Annahme oder Ablehnung erfahren
+  // und erst recht nicht wiederholen.
+  res.status(204).end();
+  try {
+    const now = Date.now();
+    if (now - ceMinute.start >= 60000) ceMinute = { start: now, n: 0 };
+    if (ceMinute.n >= CE_MAX_PER_MINUTE) return;
+    if (!CE.allowFrom(ceCounters, req.ip || '?', now)) return;
+
+    const rep = CE.sanitizeReport(req.body, req.get('user-agent'));
+    if (!rep) return;
+    if (!CE.shouldStore(ceSeen, CE.fingerprint(rep), now)) return;
+
+    ceMinute.n++;
+    await pg.query(
+      `INSERT INTO debug_log (source, stage, username, info) VALUES ($1,$2,NULL,$3)`,
+      [rep.source, rep.stage, rep.info]);
+  } catch (e) { logErr('ClientError', e.message); }
 });
 
 // ── Sitemap + robots.txt ──────────────────────────────────

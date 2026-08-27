@@ -261,6 +261,8 @@ Kanäle: `viewer_tick, chat_msg, time_cmd, stream_online` → `ch:giveaway`; `ch
 - `services/giveaway/cores/screenshot-contest.js` — CORE_ScreenshotContest (Pool = Führende, Texte, Limits)
 - `services/giveaway/public/contest.html|js` — Zuschauer-Seite Screenshot-Contest (Upload + Voting)
 - `services/giveaway/helix.js` — Twitch-Helix-Follow-Reconcile, Follower/User-ID-Cache, Token-Refresh
+- `services/admin/client-errors.js` — Aufbereitung gemeldeter Browser-Fehler (pur, ohne
+  express/pg): Maskierung von Tokens, Laengenlimits, Dedupe-Fingerprint, Mengenbremse
 - `services/admin/auth.js` — pure Auth-Helper (HMAC-signierte Cookie-Sessions, bcrypt), ohne express/pg/redis
 - `services/giveaway/public/giveaway-shared.js` — Shared-Lib (`CC.validate`, `CC.audit.summary`, Nav)
 - `services/giveaway/public/giveaway-admin.js` — Admin-Panel-Logik
@@ -324,6 +326,17 @@ Team-/Auth-/Compliance-bezogene (`teams`, `team_members`, `streamers`, `terms_ve
 In prod stehen zusätzlich `admin_users` und `spacefight_results`/`spacefight_stats` —
 Altbestand aus der CC-StreamSuite, von diesem Code nicht benutzt (`docs/PROJEKTHISTORIE.md`).
 - **Audit-Choke-Point:** `handleAdminCmd()` in `services/giveaway/server.js` — jedes neue `gw_cmd` läuft automatisch mit. Nur-Lese-Cmds in `AUDIT_SKIP` eintragen. Tokens gehören NIE ins `detail`.
+- **Browser-Fehler landen in `debug_log`** (seit 24.8.26): `nav.js` meldet
+  `error`/`unhandledrejection`/nicht geladene Ressourcen an `POST /pub/client-error`
+  (admin-Service, unter `/pub/` also ohne Login erreichbar — auch oeffentliche Seiten
+  sollen melden koennen). **Bewusst ohne Personenbezug**: gespeichert werden nur Seite,
+  Meldung, Datei/Zeile und Browser-Familie, `username` bleibt NULL. Darum muessen
+  `collectSubjectData()`/`eraseSubject()` nichts mitziehen — wer das aendert und Namen
+  speichert, muss beide Pfade ergaenzen. Drei Bremsen gegen Flutung (Mengenbremse je IP,
+  Dedupe je Fehler 10 min, harter Deckel 60/min), kein Audit-Eintrag, Retention 30 Tage
+  (`RETENTION.debugDays`). `stream_online` loescht nur noch die Streamerbot-Zeilen
+  (`source <> 'client'`), sonst waeren die Fehler vor dem Lesen weg. Anzeige: Betrieb &
+  Diagnose → Diagnosezeilen.
 - **Das Audit-Log wird nie gelöscht.** `runRetention()` anonymisiert nach `protocolDays` nur noch (IP raus, `target` pseudonymisiert) — Vorgang, Zeitpunkt und Ergebnis bleiben. Gleiches gilt für `giveaway_draws`. Wer hier wieder ein `DELETE` einbaut, zerstört den Nachweis.
 - **Ablehnungen von `AUDIT_SKIP`-Cmds sind gedrosselt** (`shouldLogDeny`, 5-min-Fenster je Team/Actor/Cmd). Ohne das flutet ein pollendes Panel den Log — genau so entstanden schon einmal 4,5 Mio Zeilen.
 - **Zweiter zustandsändernder Pfad:** die Test-Console-Sim (`viewer_tick`/`chat_msg`/`time_cmd` über die Admin-WS) geht NICHT durch `handleAdminCmd`, erzeugt aber echte `watchtime_events`. Darum `ALLOW_SIM` (Default `false`, Prod also aus) + eigener `audit()`-Aufruf (`sim_*`, auch `denied`). Wer hier weitere Events ergänzt, muss beides mitnehmen.
