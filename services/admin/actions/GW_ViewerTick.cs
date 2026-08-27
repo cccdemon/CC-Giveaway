@@ -25,7 +25,9 @@ public class CPHInline
         if (!CPH.ObsIsStreaming(0)) return true;
 
         var names = new System.Collections.Generic.List<string>();
-        var seen  = new System.Collections.Generic.HashSet<string>();
+        // Dictionary statt HashSet: HashSet liegt in System.Core.dll, das der
+        // Streamer.bot-Compiler nicht referenziert (CS0234).
+        var seen  = new System.Collections.Generic.Dictionary<string, bool>();
 
         System.Collections.Generic.List<System.Collections.Generic.Dictionary<string, object>> users;
         if (CPH.TryGetArg("users", out users) && users != null)
@@ -35,7 +37,10 @@ public class CPHInline
                 string raw = Pick(u, "userName") ?? Pick(u, "login") ?? Pick(u, "display");
                 string user = Sanitize(raw);
                 if (string.IsNullOrEmpty(user) || IsBot(user)) continue;
-                if (seen.Add(user.ToLower())) names.Add(user);
+                string key = user.ToLower();
+                if (seen.ContainsKey(key)) continue;
+                seen[key] = true;
+                names.Add(user);
             }
         }
         else
