@@ -5,6 +5,47 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ---
 
+## 27. August 2026
+
+### Lurker sammeln jetzt Zuschauzeit
+
+Wer im Stream nur zuschaut und nie schreibt, bekam bisher meist keine
+Zuschauzeit gutgeschrieben — nur Chatter. Ursache war die Streamerbot-Aktion
+„Viewer Tick": Sie meldete pro Abfrage nur einen einzigen Namen, obwohl
+Streamerbot die komplette Zuschauerliste liefert. Jetzt wird die ganze Liste
+gemeldet. **Veranstalter müssen die Aktion `GW_ViewerTick` einmal neu aus dem
+Panel kopieren** und in Streamerbot unter *Platforms → Twitch → Settings →
+Present Viewers* „Live Update" mit höchstens 5 Minuten einstellen.
+Solange noch die alte Aktion sendet, zeigt das Giveaway-Panel dafür ein rotes
+Banner über der Aktionsleiste — es verschwindet von selbst, sobald die neue
+Aktion läuft.
+
+Was bleibt: Twitch meldet nur Zuschauer mit **verbundenem Chat**. Wer den Chat
+einklappt oder im Player ohne Chat schaut, ist für kein Werkzeug sichtbar —
+das gilt genauso für Streamlabs oder StreamElements. Unter *Betrieb &
+Diagnose* steht jetzt je Kanal, wie viele Zuschauer Twitch zählt und wie viele
+davon erfasst sind; das Panel weist darauf hin, wenn weniger als die Hälfte
+erfasst wird. Tipp für den Chat: Chat offen lassen, dann zählt die Zeit.
+
+---
+
+## 24. August 2026
+
+### Fehler im Browser werden automatisch gemeldet
+
+Wenn eine Seite bei dir haengt oder etwas nicht laedt, sah der Server davon
+bisher nichts — fuer ihn war die Auslieferung erfolgreich. Genau so blieb die
+Anleitungsseite gestern im Ladezustand stehen, ohne dass es irgendwo auffiel.
+
+Tritt jetzt ein Programmfehler im Browser auf, meldet die Seite ihn von selbst.
+Uebermittelt werden nur technische Angaben: aufgerufene Seite, Fehlermeldung,
+Datei mit Zeilennummer und die Browser-Familie. **Kein Name, keine Kennung,
+keine IP** — die Meldung laesst sich niemandem zuordnen; erkennbare
+Zugangsschluessel werden vorher entfernt. Nach 30 Tagen wird sie geloescht.
+Details stehen in der Datenschutzerklaerung unter „Beim Aufruf der Website".
+
+---
+
 ## 21. August 2026
 
 ### Neue Menuefuehrung: nach Aufgaben statt nach Technik

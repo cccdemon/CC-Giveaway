@@ -29,6 +29,19 @@ keine Abhängigkeit zu Spacefight, Alerts, HUD-Chat, Gamescenes, Stats oder Haul
   im Panel (Streifen ueber der Aktionsleiste, Ack von `gw_instant_window`,
   `instant_window_closed`, `no_winner` mit angemeldet/anwesend). Live-Ausfall
   9.8.26: 36 Anmeldungen, 0 anwesend, ★ ohne Wirkung.
+  **Present Viewers liefert die LISTE `users`, kein `user`** (Streamer.bot-Doku).
+  Bis 27.8.26 las die Action nur `userName` → pro Poll ein Name, Lurker sammelten
+  nichts. Jetzt Batch: `viewer_tick` mit `users[]` (à 200), Engine
+  `handleViewerTicks`; Einzelform bleibt für Sim/alte Actions. Streamer müssen die
+  Action neu kopieren; Present-Viewers-Intervall ≤ 5 min (`PRESENCE_TTL` 600 s).
+  Restlücke = Zuschauer ohne verbundenen Chat — für keinen Chat-Bot sichtbar.
+  Messbar: `withViewerCounts` (server.js, Helix `Get Streams` mit App-Token,
+  60 s Cache) hängt `viewers`/`coverage` an den Ingest-Puls (Betrieb-Tabelle,
+  Panel-Hinweis unter 50 %). Helix ist dort reine Diagnose, nie Blocker.
+  **Alt-Action wird erkannt:** Einzel-Tick setzt `t:<team>:gw:ch:<ch>:tickfmt=single`,
+  Batch setzt `batch` (24 h). `getIngestPulse.legacyAction` → rotes Panel-Banner
+  (hoechste Prioritaet in `renderIngestWarn`, Link auf `/admin/setup.html`) und
+  Betrieb-Badge „ACTION VERALTET" — verschwindet von selbst mit dem ersten Batch.
 - **Nachvollziehbarkeit:** jede Coin-Bewegung in `watchtime_events`, Per-Kanal-Stand in `campaign_participation`, jede Ziehung in `giveaway_draws` mit reproduzierbarem Snapshot + Follow-Audit.
 
 ## Cores: vier Mechaniken, parallel (umgesetzt, Phasen 0–6 + CORE-UI-Vertrag)

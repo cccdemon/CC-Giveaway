@@ -73,6 +73,7 @@ const K = {
   // nur ueber einen Key-Scan zu beantworten — und genau diese Frage hat
   // am 9.8.26 eine Sofortverlosung gekostet (Ticks fehlten, Topf leer).
   chPulse:    (t, ch)    => `${TP(t)}gw:ch:${ch}:pulse`,
+  chTickFmt:  (t, ch)    => `${TP(t)}gw:ch:${ch}:tickfmt`,   // 'single' = alte Action, 'batch' = Liste
   // ── Phase 2b: Giveaway-Dimension (docs/ARCHITEKTUR-CORES.md §6) ──
   // Accrual-Zustand liegt je Giveaway (gid = Session-ID) unter t:<team>:g:<gid>:.
   // Team-weit BLEIBEN bewusst: Presence/LastTick (Anwesenheit), Follows
@@ -422,11 +423,43 @@ class WatchtimeEngine {
     const now = Math.floor(Date.now() / 1000);
     await this.redis.set(K.chLastTick(t, ch, u), String(now), 'EX', 86400);
     await this.redis.set(K.chPulse(t, ch), String(now), 'EX', 86400);
+    // Format merken: Einzelname = Action vor 27.8.26 (Lurker fallen raus).
+    // Ein Batch-Tick ueberschreibt das Flag wieder — der Hinweis im Panel
+    // verschwindet also von selbst, sobald die neue Action sendet.
+    await this.redis.set(K.chTickFmt(t, ch), 'single', 'EX', 86400);
     await this.redis.set(K.chPresent(t, ch, u), '1', 'EX', PRESENCE_TTL);
     if (follows !== undefined) await this.redis.set(K.chFollows(t, ch, u), follows ? '1' : '0');
     await this._touchUser(t, u);
     await this.redis.sadd(K.chIndex(t, ch), u);
     return null;
+  }
+
+  // Batch-Form (27.8.26): Streamer.bots Present-Viewers-Trigger liefert die
+  // komplette Chatter-Liste je Poll — ein Ereignis, viele Namen. Gleiche
+  // Wirkung wie handleViewerTick je Name; Puls einmal je Batch. Liefert die
+  // bereinigten Namen zurück (für Anomalie-Zählung im Server).
+  async handleViewerTicks(teamId, channel, users, follows) {
+    const t = sanitizeTeamId(teamId);
+    if (!t || !Array.isArray(users)) return [];
+    const ch = await this.resolveChannel(t, channel);
+    if (!ch) return [];
+    const now = Math.floor(Date.now() / 1000);
+    const seen = new Set();
+    for (const raw of users) {
+      const u = sanitizeUsername(raw);
+      if (!u || seen.has(u)) continue;
+      seen.add(u);
+      await this.redis.set(K.chLastTick(t, ch, u), String(now), 'EX', 86400);
+      await this.redis.set(K.chPresent(t, ch, u), '1', 'EX', PRESENCE_TTL);
+      if (follows !== undefined) await this.redis.set(K.chFollows(t, ch, u), follows ? '1' : '0');
+      await this._touchUser(t, u);
+      await this.redis.sadd(K.chIndex(t, ch), u);
+    }
+    if (seen.size) {
+      await this.redis.set(K.chPulse(t, ch), String(now), 'EX', 86400);
+      await this.redis.set(K.chTickFmt(t, ch), 'batch', 'EX', 86400);
+    }
+    return [...seen];
   }
 
   async tickPresentUsers() {
@@ -948,8 +981,12 @@ class WatchtimeEngine {
         if (Number.isFinite(last) && now - last < PRESENCE_TTL) present++;
       }
       const silent = !Number.isFinite(ts) || now - ts >= PRESENCE_TTL;
+      const tickFormat = await this.redis.get(K.chTickFmt(t, ch));   // 'single' | 'batch' | null
       out.push({ channel: ch, lastTickAgo: Number.isFinite(ts) ? now - ts : null, present,
-                 online: online.has(ch), silent,
+                 online: online.has(ch), silent, tickFormat,
+                 // legacyAction = Streamerbot meldet noch Einzelnamen: GW_ViewerTick
+                 // ist die Fassung vor 27.8.26, Lurker sammeln nichts. Neu kopieren!
+                 legacyAction: tickFormat === 'single',
                  // stale = echter Stoerfall: Stream laeuft, es kommt trotzdem nichts.
                  stale: silent && online.has(ch) });
     }

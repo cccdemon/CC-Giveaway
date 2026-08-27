@@ -808,7 +808,7 @@ async function sendTeamData(meta, gid = null) {
   // Ingest-Puls je Kanal: kommen ueberhaupt viewer_tick an? Ohne Ticks kann
   // die Sofortverlosung niemanden ziehen — das Panel warnt sichtbar.
   let ingestPulse = [];
-  try { ingestPulse = await wte.getIngestPulse(teamId, channels); }
+  try { ingestPulse = await withViewerCounts(await wte.getIngestPulse(teamId, channels)); }
   catch (e) { logErr('GW', 'ingestPulse:', e.message); }
   send({ event: 'gw_data', teamId, giveawayId: gid, core: coreId, display, coreMeta, open, paused,
          session, participants, channels, ingestPulse });
@@ -2140,6 +2140,24 @@ async function runAdminCmd(send, msg, meta, ctx) {
 // bleibt beim Owner (Token rotieren, Kanal-Coins verwerfen).
 const ANOM_MIN_USERS = 20;
 const ANOM_FACTOR    = 3;
+// Ingest-Puls um die Twitch-Zuschauerzahl ergänzen (Helix Get Streams,
+// 60 s Cache). `viewers` = alle Player laut Twitch, `present` = im Chat
+// erfasst; `coverage` = present/viewers. Die Differenz sind Zuschauer ohne
+// verbundenen Chat — die kann kein Chat-Bot sehen (auch Streamlabs/SE nicht).
+// Helix bleibt hier reine Diagnose: Ausfall → viewers null, nichts blockiert.
+async function withViewerCounts(pulse) {
+  if (!Array.isArray(pulse) || !pulse.length || !helix.configured) return pulse;
+  let counts = {};
+  try { counts = await helix.getViewerCounts(pulse.map(p => p.channel)); }
+  catch (e) { logErr('Helix', 'viewerCounts:', e.message); }
+  return pulse.map(p => {
+    const v = counts[String(p.channel || '').toLowerCase()];
+    const viewers = Number.isFinite(v) ? v : null;
+    const coverage = viewers && viewers > 0 ? Math.min(1, (p.present || 0) / viewers) : null;
+    return { ...p, viewers, coverage };
+  });
+}
+
 async function trackIngestAnomaly(teamId, channel, user) {
   try {
     if (!teamId || !channel || !user) return;
@@ -2188,10 +2206,19 @@ function subscribeToGiveaway() {
     const teamId = sanitizeTeamId(msg.team);
 
     switch (msg.event) {
-      case 'viewer_tick':
-        await wte.handleViewerTick(teamId, msg.channel, msg.user, msg.follows);
-        await trackIngestAnomaly(teamId, sanitizeChannel(msg.channel), sanitizeUsername(msg.user));
+      case 'viewer_tick': {
+        // Batch (27.8.26): GW_ViewerTick schickt die ganze Chatter-Liste als
+        // `users[]`; Einzelform `user` bleibt für alte Actions und die Sim.
+        const ch = sanitizeChannel(msg.channel);
+        if (Array.isArray(msg.users)) {
+          const names = await wte.handleViewerTicks(teamId, msg.channel, msg.users.slice(0, 1000), msg.follows);
+          for (const u of names) await trackIngestAnomaly(teamId, ch, u);
+        } else {
+          await wte.handleViewerTick(teamId, msg.channel, msg.user, msg.follows);
+          await trackIngestAnomaly(teamId, ch, sanitizeUsername(msg.user));
+        }
         break;
+      }
       case 'chat_msg': {
         const result = await wte.handleChatMessage(teamId, msg.channel, msg.user, msg.message, msg.follows);
         const u = sanitizeUsername(msg.user);
@@ -2232,7 +2259,11 @@ function subscribeToGiveaway() {
         break;
       }
       case 'stream_online': {
-        try { await pg.query('TRUNCATE TABLE debug_log'); } catch(e) { logErr('Debug', e.message); }
+        // Nur die Streamerbot-Zeilen wegraeumen: gemeldete Browser-Fehler
+        // (source='client') muessen den naechsten Stream-Start ueberleben,
+        // sonst waeren sie geloescht, bevor sie jemand gesehen hat.
+        try { await pg.query(`DELETE FROM debug_log WHERE source IS DISTINCT FROM 'client'`); }
+        catch(e) { logErr('Debug', e.message); }
         await handleStreamOnline(teamId, msg.channel);
         break;
       }
@@ -2722,7 +2753,7 @@ app.get('/internal/ingest-pulse', async (req, res) => {
     const teams = await pg.query(
       `SELECT id, name FROM teams WHERE deactivated_at IS NULL ORDER BY name`);
     for (const t of teams.rows) {
-      const pulse = await wte.getIngestPulse(t.id);
+      const pulse = await withViewerCounts(await wte.getIngestPulse(t.id));
       if (!pulse.length) continue;
       const running = (await wte.listGiveaways(t.id)).filter(g => !g.closed).length;
       out.push({ teamId: t.id, teamName: t.name, running, channels: pulse });
@@ -3963,6 +3994,7 @@ const RETENTION = {
   participationDays: 90,   // Teilnahmedaten nach Abschluss der Session
   protocolDays:     365,   // ab hier werden Protokolle anonymisiert, NICHT geloescht
   claimDays: CLAIM_RETENTION_DAYS,   // Kontaktdaten des Gewinners (12 Monate)
+  debugDays:         30,   // Diagnosezeilen (auch Browser-Fehler) — kein Nachweis
 };
 
 async function runRetention() {
@@ -4008,6 +4040,14 @@ async function runRetention() {
       [RETENTION.protocolDays]);
     anonymized.audit_log_target = alTgt.rowCount;
 
+    // Diagnosezeilen (debug_log, u.a. gemeldete Browser-Fehler) sind KEIN
+    // Nachweis, sondern Werkzeug — die duerfen weg. Sie enthalten weder Namen
+    // noch IP, die Frist ist reine Hygiene.
+    const dbg = await pg.query(
+      `DELETE FROM debug_log WHERE ts < NOW() - ($1 || ' days')::interval`,
+      [RETENTION.debugDays]);
+    deleted.debug_log = dbg.rowCount;
+
     // Kontaktdaten des Gewinners: eigene Frist, und nur diese Felder. Der
     // Ziehungsnachweis samt Snapshot bleibt unangetastet.
     const cl = await pg.query(
@@ -4043,7 +4083,7 @@ function startRetentionJob() {
   setInterval(runRetention, 24 * 60 * 60 * 1000);
   log('Retention', `aktiv: Teilnahmedaten ${RETENTION.participationDays} Tage nach Session-Ende, `
     + `Protokolle nach ${RETENTION.protocolDays} Tagen anonymisiert (nicht geloescht), `
-    + `Gewinner-Kontaktdaten ${RETENTION.claimDays} Tage`);
+    + `Gewinner-Kontaktdaten ${RETENTION.claimDays} Tage, Diagnosezeilen ${RETENTION.debugDays} Tage`);
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

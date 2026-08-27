@@ -104,10 +104,10 @@ sequenceDiagram
     SB->>BR: WS connect + {event:"ingest_auth", token}
     BR->>BR: Token → (teamId, channel) auflösen
     Note over BR: Kanal kommt aus dem Token,<br/>nie aus dem Payload
-    SB->>BR: {event:"viewer_tick", user}
+    SB->>BR: {event:"viewer_tick", users[]}
     BR->>R: PUBLISH ch:giveaway {teamId, channel, ...}
     R->>GW: Nachricht
-    GW->>GW: handleViewerTick() → Präsenz + Puls
+    GW->>GW: handleViewerTicks() → Präsenz je Name + Puls
     GW->>PG: watchtime_events (bei Buchung)
     GW-->>R: PUBLISH ch:chat_reply (nur wenn Antwort nötig)
     R-->>BR: chat_reply
@@ -472,7 +472,8 @@ geworfen; geworfen wird nur, wo ein Abbruch zwingend ist (siehe Spalte).
 
 | Methode | Parameter | Rückgabe |
 |---|---|---|
-| `handleViewerTick(T, ch, u, follows)` | Präsenzmeldung | `null`; setzt `last_tick`, `pulse`, `present`, Follow-Flag, Index |
+| `handleViewerTick(T, ch, u, follows)` | Präsenzmeldung (Einzelname, Sim/Altbestand) | `null`; setzt `last_tick`, `pulse`, `present`, Follow-Flag, Index |
+| `handleViewerTicks(T, ch, users[], follows)` | Präsenzmeldung als Batch (Present-Viewers-Liste, seit 27.8.26) | bereinigte Namen; wie oben je Name, Puls einmal je Batch |
 | `tickPresentUsers()` | — | `Array<{teamId, giveawayId, primary, username, channel, watchSec, coins}>` — eine Zeile je Buchung |
 | `handleChatMessage(T, ch, u, msg, follows)` | Chatzeile | `null` · `{chatReply, channel}` (Setz-Befehl/Antwort) · `{...agg, registered, isNew}` (Anmeldung) · `{added, channel, watchSec, coins}` (Bonus) |
 | `recordConsent(T, gid, u, action, source='chat')` | Aktion `register\|wager\|contest_entry\|contest_vote` | `void`, idempotent je (Sitzung, Nutzer, Aktion) |
@@ -652,7 +653,7 @@ WebSocket `wss://<host>/ingest`. Erste Nachricht:
 
 | Event | Nutzlast | Wirkung |
 |---|---|---|
-| `viewer_tick` | `{user, ts}` | Präsenz + Puls |
+| `viewer_tick` | `{users[], ts}` (Batch, seit 27.8.26) oder `{user, ts}` | Präsenz + Puls |
 | `chat_msg` | `{user, message, follows}` | Bonus, Keyword, Setz-Befehl |
 | `time_cmd` | `{user}` | Statuszeile im Chat |
 | `giveaway_cmd` | `{user}` | Infozeile im Chat |
@@ -904,7 +905,7 @@ Kopieren aus.
 |---|---|---|
 | `CC_IngestConnect` | Core → WebSocket → Client → Opened | `ingest_auth` mit dem Kanal-Token |
 | `CC_ChatReply` | Core → WebSocket → Client → Message | schreibt die Antwort in den Twitch-Chat |
-| `GW_ViewerTick` | Twitch → General → Present Viewers | `viewer_tick` (nur bei laufendem OBS-Stream) |
+| `GW_ViewerTick` | Twitch → General → Present Viewers | `viewer_tick` mit der ganzen Liste `users` (Batches à 200, nur bei laufendem OBS-Stream) |
 | `GW_ChatMessage` | Twitch → Chat → Message | `chat_msg` (nur bei laufendem OBS-Stream) |
 | `GW_StatusCmd` | Command `!los` und Aliase | `time_cmd` |
 | `GW_GiveawayCmd` | Command `!giveaway` (Alias `!gw`) | `giveaway_cmd` |

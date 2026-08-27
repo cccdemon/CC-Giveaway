@@ -57,25 +57,38 @@ async function loadIngest() {
     var teams = d.teams || [];
     if (!teams.length) { host.innerHTML = '<div class="detail">Kein Team mit eingerichteten Kanälen.</div>'; return; }
     host.innerHTML = '<table><thead><tr><th>Team</th><th>Kanal</th><th>Letzte Meldung</th>'
-      + '<th>Anwesend</th><th>Zustand</th></tr></thead><tbody>'
+      + '<th>Erfasst</th><th>Zuschauer (Twitch)</th><th>Erfassung</th><th>Zustand</th></tr></thead><tbody>'
       + teams.map(function(t) {
           return (t.channels || []).map(function(c, i) {
             // Drei Zustaende: Stoerfall (online, aber still), Stream offline
             // (normal, Streamerbot sendet dann nichts) und laufend.
-            var cls = c.stale ? 'err' : (!c.online ? 'warn' : 'ok');
-            var txt = c.stale ? 'STREAM ONLINE, KEINE MELDUNGEN'
-                    : (!c.online ? 'STREAM OFFLINE' : 'LÄUFT');
+            var cls = c.legacyAction ? 'err' : (c.stale ? 'err' : (!c.online ? 'warn' : 'ok'));
+            var txt = c.legacyAction ? 'ACTION VERALTET (nur Einzelname)'
+                    : (c.stale ? 'STREAM ONLINE, KEINE MELDUNGEN'
+                    : (!c.online ? 'STREAM OFFLINE' : 'LÄUFT'));
+            // Erfassung = im Chat erfasst / laut Twitch zuschauend. Der Rest
+            // schaut ohne verbundenen Chat — fuer keinen Chat-Bot sichtbar.
+            var viewers = (typeof c.viewers === 'number') ? c.viewers : null;
+            var cov = (typeof c.coverage === 'number') ? Math.round(c.coverage * 100) : null;
+            var covCls = cov === null ? '' : (cov < 50 ? 'err' : (cov < 80 ? 'warn' : 'ok'));
+            var covTxt = cov === null ? (viewers === 0 ? '–' : '?') : cov + ' %';
             return '<tr>'
               + '<td>' + (i === 0 ? esc(t.teamName || t.teamId)
                   + (t.running ? ' <span class="detail">· ' + t.running + ' Giveaway(s)</span>' : '') : '') + '</td>'
               + '<td class="mono">' + esc(c.channel) + '</td>'
               + '<td>' + esc(fmtAgo(c.lastTickAgo)) + '</td>'
               + '<td>' + (c.present || 0) + '</td>'
+              + '<td>' + (viewers === null ? '<span class="detail">nicht live</span>' : viewers) + '</td>'
+              + '<td>' + (covCls ? '<span class="badge ' + covCls + '">' + covTxt + '</span>' : covTxt) + '</td>'
               + '<td><span class="badge ' + cls + '">' + txt + '</span></td>'
               + '</tr>';
           }).join('');
         }).join('')
-      + '</tbody></table>';
+      + '</tbody></table>'
+      + '<div class="detail">Erfasst = Zuschauer mit verbundenem Chat (Streamer.bot „Present Viewers“). '
+      + 'Zuschauer (Twitch) = alle Player laut Twitch. Die Differenz schaut ohne Chat und ist für kein '
+      + 'Chat-Werkzeug sichtbar — Zuschauzeit läuft nur für Erfasste auf. '
+      + '<b>ACTION VERALTET</b> = Streamerbot schickt noch Einzelnamen (GW_ViewerTick vor 27.8.26) — Team muss die Aktion neu kopieren.</div>';
   } catch (e) { host.textContent = 'Fehler: ' + e.message; }
 }
 

@@ -1707,3 +1707,44 @@ test('chat-templates: set/get/reset je (Core, Nachricht)', async () => {
   await e.setChatTemplate(TEAM, 'CORE_TicketBuy', 'open', { text: '   ' });
   assert.equal(await e.getChatTemplate(TEAM, 'CORE_TicketBuy', 'open'), null);
 });
+
+// ── 27.8.26: Batch-Tick (Present-Viewers-Liste) ───────────
+// Streamer.bot liefert je Poll die ganze Chatter-Liste. Ein Ereignis muss
+// jeden Namen anwesend machen — sonst sammeln nur Chatter (Lurker-Bug).
+
+test('batch-tick: jeder Name der Liste wird anwesend und sammelt Zuschauzeit', async () => {
+  const e = engine();
+  await e.openGiveaway(TEAM, 'join', 'sess_9');
+  const names = await e.handleViewerTicks(TEAM, 'justcallmedeimos',
+    ['Lurker_One', 'lurker_two', 'Lurker_One', 'streamelements', '', null, 'bad name!'], true);
+  assert.deepEqual(names.sort(), ['badname', 'lurker_one', 'lurker_two', 'streamelements']);
+  await e.tickPresentUsers();
+  for (const u of ['lurker_one', 'lurker_two']) {
+    const a = await e.getUserAggregate(TEAM, u);
+    assert.equal(a.totalWatchSec, 60, u + ' sammelt');
+  }
+  const pulse = await e.getIngestPulse(TEAM, ['justcallmedeimos']);
+  assert.equal(pulse[0].present, 4);
+  assert.equal(pulse[0].silent, false);
+});
+
+test('batch-tick: leere Liste setzt keinen Puls, Nicht-Array wird ignoriert', async () => {
+  const e = engine();
+  assert.deepEqual(await e.handleViewerTicks(TEAM, 'justcallmedeimos', [], true), []);
+  const pulse = await e.getIngestPulse(TEAM, ['justcallmedeimos']);
+  assert.equal(pulse[0].lastTickAgo, null);
+  assert.deepEqual(await e.handleViewerTicks(TEAM, 'justcallmedeimos', 'bob', true), []);
+  assert.deepEqual(await e.handleViewerTicks('', 'justcallmedeimos', ['bob'], true), []);
+});
+
+test('batch-tick: Alt-Action (Einzelname) wird im Puls als legacyAction markiert, Batch loescht das', async () => {
+  const e = engine();
+  await e.handleViewerTick(TEAM, 'justcallmedeimos', 'bob', true);
+  let pulse = await e.getIngestPulse(TEAM, ['justcallmedeimos']);
+  assert.equal(pulse[0].tickFormat, 'single');
+  assert.equal(pulse[0].legacyAction, true);
+  await e.handleViewerTicks(TEAM, 'justcallmedeimos', ['bob', 'lurker'], true);
+  pulse = await e.getIngestPulse(TEAM, ['justcallmedeimos']);
+  assert.equal(pulse[0].tickFormat, 'batch');
+  assert.equal(pulse[0].legacyAction, false);
+});

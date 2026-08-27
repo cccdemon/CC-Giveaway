@@ -356,6 +356,22 @@ function renderIngestWarn(pulse) {
   var el = document.getElementById('ingest-warn');
   if (!el) return;
   if (!Array.isArray(pulse) || !pulse.length) { el.style.display = 'none'; return; }
+  // Hoechste Prioritaet: die Streamerbot-Action ist die Fassung vor 27.8.26
+  // (meldet einen Namen statt der Liste) — Lurker sammeln dann NICHTS. Der
+  // Hinweis bleibt, bis die neue Action ihren ersten Batch geschickt hat.
+  var legacy = pulse.filter(function(p){ return p.legacyAction; });
+  if (legacy.length) {
+    el.className = 'gw-ingest-warn err';
+    el.innerHTML = '<b>⚠ STREAMERBOT-AKTION VERALTET</b> — '
+      + legacy.map(function(p){ return esc(p.channel || '?'); }).join(', ')
+      + ' meldet nur einen Zuschauer je Abfrage statt der ganzen Liste. <b>Zuschauer, die nicht '
+      + 'schreiben, bekommen keine Zuschauzeit.</b> Bitte die Aktion <b>GW_ViewerTick</b> neu aus der '
+      + '<a href="/admin/setup.html" target="_blank" rel="noopener">Einrichtung</a> kopieren und in '
+      + 'Streamer.bot ersetzen (Platforms → Twitch → Settings → Present Viewers: Live Update AN, ≤ 5 min). '
+      + 'Dieser Hinweis verschwindet von selbst, sobald die neue Aktion sendet.';
+    el.style.display = '';
+    return;
+  }
   var broken = pulse.filter(function(p){ return p.stale; });            // online, aber still
   var offline = pulse.filter(function(p){ return p.silent && !p.online; });
   if (broken.length) {
@@ -374,6 +390,23 @@ function renderIngestWarn(pulse) {
     el.className = 'gw-ingest-warn';
     el.innerHTML = 'ℹ Kein Stream online (' + offline.map(function(p){ return esc(p.channel || '?'); }).join(', ')
       + ') — solange OBS nicht sendet, kommen keine Zuschauer-Meldungen und es läuft keine Zuschauzeit auf.';
+    el.style.display = '';
+    return;
+  }
+  // Erfassungsluecke: Twitch zaehlt mehr Zuschauer als im Chat erfasst sind.
+  // Die Differenz schaut ohne verbundenen Chat — sammelt keine Zuschauzeit.
+  var gap = pulse.filter(function(p){
+    return p.online && typeof p.coverage === 'number' && p.coverage < 0.5 && (p.viewers || 0) >= 5;
+  });
+  if (gap.length) {
+    el.className = 'gw-ingest-warn';
+    el.innerHTML = 'ℹ Nur ein Teil der Zuschauer wird erfasst: '
+      + gap.map(function(p){
+          return esc(p.channel || '?') + ' ' + (p.present || 0) + ' von ' + p.viewers
+               + ' (' + Math.round(p.coverage * 100) + ' %)';
+        }).join(', ')
+      + ' — wer den Chat zu hat, ist für Twitch unsichtbar und sammelt keine Zuschauzeit. '
+      + 'Im Chat ansagen: Chat offen lassen.';
     el.style.display = '';
     return;
   }

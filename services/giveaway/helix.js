@@ -105,6 +105,39 @@ class Helix {
     } catch (e) { return null; }
   }
 
+  // Zuschauerzahl laut Twitch je Kanal (Get Streams, App-Token, kein Scope).
+  // login → viewer_count; null = Kanal nicht live. Twitch zählt hier ALLE
+  // Player, die Chatter-Liste nur verbundene Chats — die Differenz ist die
+  // Lücke, die kein Chat-Bot erfassen kann. 60 s gecacht, bis 100 Logins je
+  // Request. Fehler → leeres Objekt (Diagnose, nie Blocker).
+  async getViewerCounts(logins) {
+    const out = {};
+    const todo = [];
+    for (const raw of (logins || [])) {
+      const l = String(raw || '').toLowerCase();
+      if (!l || l in out) continue;
+      const cached = await this.redis.get('helix:viewers:' + l);
+      if (cached !== null && cached !== undefined) { out[l] = cached === '' ? null : parseInt(cached, 10); continue; }
+      todo.push(l);
+    }
+    if (!todo.length || !this.configured) return out;
+    try {
+      const token = await this.appToken();
+      for (let i = 0; i < todo.length; i += 100) {
+        const chunk = todo.slice(i, i + 100);
+        const q = chunk.map(l => 'user_login=' + encodeURIComponent(l)).join('&');
+        const d = await this._get(`${API}/streams?first=100&${q}`, token);
+        const live = new Map((d.data || []).map(s => [String(s.user_login || '').toLowerCase(), s.viewer_count]));
+        for (const l of chunk) {
+          const n = live.has(l) ? (parseInt(live.get(l), 10) || 0) : null;
+          out[l] = n;
+          await this.redis.set('helix:viewers:' + l, n === null ? '' : String(n), 'EX', 60);
+        }
+      }
+    } catch (e) { /* Diagnosewert — Ausfall ist kein Fehlerfall */ }
+    return out;
+  }
+
   // Set aller Follower-user_ids eines Kanals (broadcaster_id) via Owner-Token.
   async getFollowerIds(ownerToken, broadcasterId) {
     const ids = new Set();

@@ -52,7 +52,7 @@ Importiere die C#-Actions aus diesem Ordner (Streamerbot → **Import** oder Act
 |---|---|
 | `CC_IngestConnect.cs` | **Core → WebSocket → Client → Opened** |
 | `CC_ChatReply.cs` | **Core → WebSocket → Client → Message** |
-| `GW_ViewerTick.cs` | **Twitch → General → Present Viewers** |
+| `GW_ViewerTick.cs` | **Twitch → General → Present Viewers** — dazu unter *Platforms → Twitch → Settings → Present Viewers*: **Live Update AN, Intervall höchstens 5 Minuten** |
 | `GW_ChatMessage.cs` | **Twitch → Chat → Message** |
 | `GW_StatusCmd.cs` | **Command** `!los` (Aliase `!status !zeit !chance !time`) |
 | `GW_GiveawayCmd.cs` | **Command** `!giveaway` (Alias `!gw`) |
@@ -69,6 +69,7 @@ Importiere die C#-Actions aus diesem Ordner (Streamerbot → **Import** oder Act
 
 ## Troubleshooting
 - **Keine Reaktion / keine Punkte:** OBS läuft? (`GW_ViewerTick`/`GW_ChatMessage` senden nur bei aktivem Stream.) Client verbunden? Token gesetzt?
+- **Nur Chatter sammeln Zuschauzeit, Lurker nicht:** `GW_ViewerTick` ist älter als 27.8.26 (las nur einen Namen statt der Liste `users`). Action neu kopieren; Streamerbot-Log muss „viewer_tick: N Zuschauer gemeldet" zeigen. Wer den Chat komplett zu hat, ist für Twitch unsichtbar — das erfasst kein Werkzeug.
 - **`ingest_denied` im Log:** Token falsch/abgelaufen → im Panel **NEU** generieren, globale Variable aktualisieren.
 - **`!los` antwortet nicht:** `CC_ChatReply` am Trigger *Core → WebSocket → Client → Message*? Falls dein Streamerbot die Nachricht unter anderem Arg-Namen liefert, die Liste in `CC_ChatReply.cs` (`data/message/wsData/…`) ergänzen.
 - **Falscher Client-Index:** die `0` in `CPH.WebsocketSend(payload, 0)` auf deinen Client-Index setzen.

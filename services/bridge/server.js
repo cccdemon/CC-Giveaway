@@ -155,7 +155,8 @@ wss.on('connection', (ws, req) => {
     // laeuft je Prozess, der Kanal haengt am Token.
     msg.evId = `${meta.channel}:${Date.now()}:${++evSeq}`;
     const payload = JSON.stringify(msg);
-    log('Ingest', `← [${meta.team}/${meta.channel}] ${msg.event}${msg.user ? ' (' + msg.user + ')' : ''}`);
+    const who = Array.isArray(msg.users) ? ` (${msg.users.length} users)` : (msg.user ? ' (' + msg.user + ')' : '');
+    log('Ingest', `← [${meta.team}/${meta.channel}] ${msg.event}${who}`);
     for (const ch of channels) redisPub.publish(ch, payload).catch(e => logErr('Pub', ch, e.message));
   });
 

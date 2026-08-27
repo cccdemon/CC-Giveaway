@@ -87,8 +87,9 @@ Der erste Deploy dieses Standes hat gewollte, aber sichtbare Effekte:
    neue Spalten an `sessions`/`giveaway_draws`. Kein manuelles SQL nötig.
 4. **Sofortverlosungen brauchen `viewer_tick`-Meldungen** in Abständen unter
    10 Minuten (`PRESENCE_TTL` 600 s) — sonst ist niemand „anwesend" und die
-   Verlosung bricht (mit Ansage) leer ab. Streamerbot-Actions sind unverändert;
-   prüfen, dass `GW_ViewerTick` am Trigger *Present Viewers* hängt und feuert.
+   Verlosung bricht (mit Ansage) leer ab. Prüfen, dass `GW_ViewerTick` am
+   Trigger *Present Viewers* hängt, feuert und die Fassung ab 27.8.26 ist (Liste
+   `users`, Log „N Zuschauer gemeldet"); Present-Viewers-Intervall ≤ 5 min.
 5. **`MAX_PARALLEL_GIVEAWAYS`** (ENV, Default 4) begrenzt gleichzeitige
    Giveaways je Team.
 6. **Smoke-Test nach dem Deploy** (die neuen Pfade liefen bisher nur gegen
@@ -185,3 +186,14 @@ Fehlt die Zeile, verweigert `gw_open` mit `TOS_HINT`. Details:
   (Trigger *Twitch → General → Present Viewers*; sendet nur bei laufendem
   OBS-Stream). Das Panel warnt seit 9.8.26 sichtbar, Kanal-Puls in Redis:
   `t:<team>:gw:ch:<kanal>:pulse`.
+- **Lurker sammeln keine Zuschauzeit, Chatter schon.** Bis 27.8.26 las
+  `GW_ViewerTick` nur `userName` — der Present-Viewers-Trigger liefert aber die
+  Liste `users`; pro Poll kam höchstens ein Name an. Seither Batch
+  (`viewer_tick` mit `users[]`, `handleViewerTicks`). Jeder Streamer muss die
+  Action einmal neu kopieren (`/pub/actions`). Sichtbar in *Betrieb & Diagnose*:
+  Spalte **Erfasst** gegen **Zuschauer (Twitch)** (Helix `Get Streams`,
+  App-Token). Die Restlücke = Zuschauer ohne verbundenen Chat; die sieht kein
+  Chat-Werkzeug (auch Streamlabs/StreamElements nicht). Teams mit alter Action
+  erkennt der Server selbst (Einzelname statt Liste → `legacyAction`): rotes
+  Banner im Panel, Badge **ACTION VERALTET** in der Betriebs-Tabelle — beides
+  geht von allein weg, sobald die neue Action den ersten Batch schickt.
