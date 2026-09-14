@@ -5,6 +5,31 @@ Neueste Änderung oben. Die Roadmap zeigt, was als Nächstes ansteht.
 
 ---
 
+## 14. September 2026
+
+### Sofortverlosung: das Keyword reicht
+
+Bei der Sofortverlosung ist jetzt **jeder im Topf, der im Anmeldefenster das
+Keyword schreibt** — ohne Follow, ohne Mindest-Zuschauzeit. Bisher zählte die
+Plattform zusätzlich die Zuschauzeit aus einer laufenden Kampagne; lief keine,
+war niemand berechtigt und die Ziehung brach mit „niemand erfüllt die
+Bedingungen" ab, obwohl sich viele angemeldet hatten. Ob der Gezogene im
+Stream ist, prüft der Streamer live; ist er nicht da, gibt es eine
+Ersatzziehung. Das Feld „Mindest-Zuschauzeit" im Start-Fenster gibt es für
+die Sofortverlosung nicht mehr.
+
+### „Stream offline" trotz laufendem Stream
+
+Das Panel hat einen Kanal als offline angezeigt, obwohl gestreamt wurde —
+etwa wenn die Online-Meldung beim Start verloren ging oder eine Kampagne
+geschlossen wurde. Jetzt gilt ein Kanal als live, sobald Zuschauer- oder
+Chat-Meldungen vom laufenden Stream ankommen. **Veranstalter:** die Aktionen
+`GW_StreamOnline`/`GW_StreamOffline` in Streamerbot am besten auf die Trigger
+**OBS Studio → OBS Streaming Started/Stopped** legen — dann ist der Kanal
+live, sobald in OBS „Stream starten" geklickt wird.
+
+---
+
 ## 27. August 2026
 
 ### Lurker sammeln jetzt Zuschauzeit

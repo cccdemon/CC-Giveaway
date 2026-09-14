@@ -545,7 +545,9 @@ async function closeGiveaway(teamId) {
   const sid = await wte.getSessionId(teamId);
   await setSessionStatus(teamId, 'closed');
   await wte.closeGiveaway(teamId, sid);
-  await redis.del(K.gwOnline(teamId), K.gwAutoPaused(teamId));
+  // gwOnline bleibt: ob ein Stream laeuft, ist keine Eigenschaft des Giveaways.
+  // Frueher wurde es hier geloescht → Panel zeigte mitten im Stream „offline".
+  await redis.del(K.gwAutoPaused(teamId));
   for (const k of [...boostAnnounced.keys()]) if (k.startsWith(teamId + '|')) boostAnnounced.delete(k);
   broadcastTeam(teamId, { event: 'gw_status', status: 'closed' });
   await announceTeam(teamId, await chatText(teamId, CORE.id, 'closed'));
@@ -625,6 +627,16 @@ async function handleStreamOnline(teamId, channel) {
     await audit({ teamId, actor: 'system', action: 'auto_open', target: ch,
                   sessionId: newSid, detail: { trigger: 'stream_online', keyword: kw } });
   }
+}
+// viewer_tick und chat_msg schickt Streamerbot nur bei laufendem OBS-Stream
+// (beide Actions pruefen ObsIsStreaming). Kommt davon etwas an, ist der Kanal
+// live — auch wenn stream_online nie ankam (Action fehlt, Verbindung stand beim
+// Start noch nicht). Live-Ausfall 13.9.26: Ticks liefen, Panel zeigte offline.
+async function markLiveFromIngest(teamId, channel) {
+  const ch = sanitizeChannel(channel);
+  if (!ch || await redis.sismember(K.gwOnline(teamId), ch)) return;
+  log('Auto', `[${teamId}] ${ch}: Ingest-Daten ohne stream_online -> live`);
+  await handleStreamOnline(teamId, ch);
 }
 async function handleStreamOffline(teamId, channel) {
   const ch = sanitizeChannel(channel);
@@ -1197,10 +1209,10 @@ async function runAdminCmd(send, msg, meta, ctx) {
           break;
         }
       }
-      // Mindest-Viewtime: Contest (Einsenden/Voten) und Sofortverlosung
-      // (Teilnahmeschwelle, Default 10 Minuten) — beide WebUI-konfigurierbar.
+      // Mindest-Viewtime nur noch fuer den Contest (Einsenden/Voten). Die
+      // Sofortverlosung hat keine Schwelle mehr (Betreiber 14.9.26).
       let minWatchSec = null;
-      if (coreId === 'CORE_ScreenshotContest' || coreId === 'CORE_CurrentViewers') {
+      if (coreId === 'CORE_ScreenshotContest') {
         const mc = coreMod.config.minWatchSec;
         minWatchSec = Math.max(mc.min, Math.min(mc.max,
           Number.isFinite(parseInt(msg.minWatchSec, 10)) ? parseInt(msg.minWatchSec, 10) : mc.def));
@@ -1222,7 +1234,7 @@ async function runAdminCmd(send, msg, meta, ctx) {
       const wanted = Array.isArray(msg.channels) ? msg.channels.map(sanitizeChannel).filter(Boolean) : [];
       const channels = wanted.filter(ch => teamChans.includes(ch));   // nur eigene Kanäle
       const gid = `sess_${Date.now()}`;
-      const coreConfig = coreId === 'CORE_CurrentViewers' ? { windowSec, minWatchSec }
+      const coreConfig = coreId === 'CORE_CurrentViewers' ? { windowSec }
                        : coreId === 'CORE_ScreenshotContest' ? { minWatchSec }
                        : coreId === 'CORE_TicketBuy' ? { ...(await snapshotCoreConfig(teamId)), wagerCmd }
                        : await snapshotCoreConfig(teamId);
@@ -1260,8 +1272,7 @@ async function runAdminCmd(send, msg, meta, ctx) {
         if (coreId === 'CORE_CurrentViewers') {
           openTxt = windowSec > 0
             ? await chatText(teamId, coreId, 'windowOpen', { keyword, windowSec,
-                minuten: Math.round(windowSec / 60),
-                minWatchSec: minWatchSec !== null ? minWatchSec : undefined })
+                minuten: Math.round(windowSec / 60) })
             : await chatText(teamId, coreId, 'prep', { keyword });
         } else if (coreId === 'CORE_ScreenshotContest') {
           openTxt = await chatText(teamId, coreId, 'open', { gewinn: iPrize || '', sponsor: iSponsor || '' });
@@ -1619,11 +1630,9 @@ async function runAdminCmd(send, msg, meta, ctx) {
       }
       const w = await wte.openInstantWindow(teamId, gid, msg.windowSec);
       Object.assign(outcome, { giveawayId: gid, windowSec: w.windowSec });
-      const cvMin = parseInt(await redis.get(K.gMinWatch(teamId, gid)), 10);
       if (inst.announce) await announceChannels(teamId, inst.channels,
         await chatText(teamId, 'CORE_CurrentViewers', 'windowOpen',
-          { keyword: inst.keyword, windowSec: w.windowSec, minuten: Math.round(w.windowSec / 60),
-            minWatchSec: Number.isFinite(cvMin) ? cvMin : undefined }));
+          { keyword: inst.keyword, windowSec: w.windowSec, minuten: Math.round(w.windowSec / 60) }));
       // Ohne viewer_tick ist niemand „anwesend" — die Ziehung liefe ins Leere.
       // Darum beim Oeffnen des Fensters sofort warnen, nicht erst beim ★.
       let pulse = [];
@@ -2210,6 +2219,7 @@ function subscribeToGiveaway() {
         // Batch (27.8.26): GW_ViewerTick schickt die ganze Chatter-Liste als
         // `users[]`; Einzelform `user` bleibt für alte Actions und die Sim.
         const ch = sanitizeChannel(msg.channel);
+        await markLiveFromIngest(teamId, ch);
         if (Array.isArray(msg.users)) {
           const names = await wte.handleViewerTicks(teamId, msg.channel, msg.users.slice(0, 1000), msg.follows);
           for (const u of names) await trackIngestAnomaly(teamId, ch, u);
@@ -2220,6 +2230,7 @@ function subscribeToGiveaway() {
         break;
       }
       case 'chat_msg': {
+        await markLiveFromIngest(teamId, msg.channel);
         const result = await wte.handleChatMessage(teamId, msg.channel, msg.user, msg.message, msg.follows);
         const u = sanitizeUsername(msg.user);
         if (result && result.isNew) {

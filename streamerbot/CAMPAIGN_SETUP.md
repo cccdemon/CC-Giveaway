@@ -59,8 +59,8 @@ an und füge den Code ein. Ordne die Trigger zu:
 | `GW_ChatMessage.cs` | **Twitch → Chat → Message** |
 | `GW_StatusCmd.cs` | **Command** `!los` (Aliase `!status !zeit !chance !time`) |
 | `GW_GiveawayCmd.cs` | **Command** `!giveaway` (Alias `!gw`) |
-| `GW_StreamOnline.cs` | **Twitch → Channel → Stream Online** |
-| `GW_StreamOffline.cs` | **Twitch → Channel → Stream Offline** |
+| `GW_StreamOnline.cs` | **OBS Studio → OBS Streaming Started** (optional zusätzlich Twitch → Channel → Stream Online) |
+| `GW_StreamOffline.cs` | **OBS Studio → OBS Streaming Stopped** (optional zusätzlich Twitch → Channel → Stream Offline) |
 
 > Jede C#-Action braucht `Newtonsoft.Json` — ist in Streamerbot vorinstalliert.
 

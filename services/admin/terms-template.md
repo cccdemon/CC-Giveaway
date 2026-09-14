@@ -68,9 +68,10 @@ Zuschauzeit bleibt dir erhalten.
 Der Veranstalter kann zusätzlich **Sofortverlosungen** durchführen. Dabei gilt
 abweichend von § 4:
 1. Teilnahmeberechtigt ist, wer das angesagte **Keyword innerhalb des genannten
-   Zeitfensters** in den Chat schreibt **und** zu diesem Zeitpunkt **als
-   Zuschauer im Stream anwesend** ist. Nur den Chat geöffnet zu haben, genügt
-   nicht.
+   Zeitfensters** in den Chat schreibt. Follows oder Zuschauzeit sind nicht
+   erforderlich. Wer gezogen wird, muss **im Moment der Ziehung im Stream
+   anwesend** sein; das prüft der Veranstalter live. Ist der Gezogene nicht
+   anwesend, kann der Veranstalter eine Ersatzziehung durchführen.
 2. **Alle Berechtigten haben dieselbe Gewinnchance** — Zuschauzeit, Chataktivität
    oder Guthaben spielen keine Rolle; eine Vorleistung ist nicht erforderlich.
 3. Das Zeitfenster ist die **Anmeldephase**; der Veranstalter kann mehrere

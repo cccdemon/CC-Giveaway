@@ -777,7 +777,7 @@ function renderGiveawaySelect() {
 var iwType = null;
 var IW_TYPES = {
   campaign:  { core: null,                      fields: { keyword: true } },
-  instant:   { core: 'CORE_CurrentViewers',     fields: { keyword: true, window: true, minwatch: true } },
+  instant:   { core: 'CORE_CurrentViewers',     fields: { keyword: true, window: true } },
   ticketbuy: { core: 'CORE_TicketBuy',          fields: { keyword: true, wagercmd: true } },
   contest:   { core: 'CORE_ScreenshotContest',  fields: { minwatch: true } },
 };
@@ -822,10 +822,6 @@ function iwSelect(type) {
   document.getElementById('iw-f-announce').style.display = f.window   ? '' : 'none';   // nur Sofortverlosung
   document.getElementById('iw-f-wagercmd').style.display = f.wagercmd ? '' : 'none';
   document.getElementById('iw-f-minwatch').style.display = f.minwatch ? '' : 'none';
-  var mwh = document.getElementById('iw-minwatch-hint');
-  if (mwh) mwh.textContent = type === 'instant'
-    ? 'Schwelle zum Mitmachen, zusätzlich zu Keyword und Follow. Gezählt wird die Zuschauzeit aus der Kampagne dieses Teams — läuft keine Kampagne, hier 0 eintragen.'
-    : 'Für Einsenden und Bewerten. 0 = aus — hält Vote-Bots draußen.';
   var fp = document.getElementById('iw-f-prizes');
   if (fp) fp.style.display = type === 'ticketbuy' ? '' : 'none';   // P6: Preise im Entwurf
   // Los-Giveaway frisch gewählt: eine leere Preis-Zeile als Einstieg.
@@ -864,7 +860,7 @@ function renderPreflight(msg) {
   var el = document.getElementById('iw-preflight');
   if (!el || document.getElementById('iw-overlay').style.display === 'none') return;
   var n = msg.count || 0;
-  var txt = { present:  n + ' Zuschauer erfüllen Follow + Mindest-Zuschauzeit und könnten sich per Keyword anmelden.',
+  var txt = { present:  n + ' Zuschauer sind gerade gemeldet. Mitmachen kann jeder, der im Fenster das Keyword schreibt.',
               credit:   n + ' Zuschauer haben Los-Guthaben (> 0) und könnten sofort setzen.',
               contest:  n + ' Zuschauer erfüllen Follow + Mindest-Zuschauzeit fürs Einsenden schon jetzt.',
               campaign: n + ' Zuschauer erfüllen Follows (≥' + (msg.followMin != null ? msg.followMin : '?')
@@ -1283,12 +1279,9 @@ function handle(msg) {
       }
       if (msg.type === 'instant_window') {
         log('Anmeldefenster offen: ' + msg.windowSec + 's', 'gold');
+        // Fehlende Zuschauer-Meldungen blockieren die Sofortverlosung nicht mehr
+        // (Keyword reicht) — der Streifen über der Aktionsleiste genügt als Hinweis.
         renderIngestWarn(msg.ingestPulse);
-        if (msg.ingestStale && msg.ingestStale.length) {
-          alert('Fenster ist offen — ABER der Stream läuft und von ' + msg.ingestStale.join(', ')
-              + ' kommen trotzdem keine Zuschauer-Meldungen.\n\nStreamerbot-Aktion GW_ViewerTick auf diesem Kanal prüfen.'
-              + '\nOhne Meldungen läuft keine Zuschauzeit auf — wer die Mindest-Zuschauzeit noch nicht hat, bleibt draußen.');
-        }
         liveRefresh(); break;
       }
       if (msg.type === 'announce_set')   { liveRefresh(); break; }

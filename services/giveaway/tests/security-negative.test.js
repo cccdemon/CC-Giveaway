@@ -15,20 +15,22 @@ test('negative: unbekannte Core-ID aktiviert keinen fremden Core', () => {
   assert.strictEqual(registry.getCore('CORE_Quiz'), campaign);
 });
 
-test('negative: Sofortverlosung sperrt unregistrierte, gebannte und unqualifizierte Nutzer', () => {
+test('negative: Sofortverlosung sperrt nur unregistrierte und gebannte Nutzer', () => {
   const base = { username: 'alice', registered: true, banned: false,
-                 present: true, watchSec: 600, follows: true, cfg: {} };
+                 present: true, watchSec: 600, follows: true };
   for (const change of [
     { registered: false },
     { banned: true },
-    { watchSec: 599 },
-    { follows: false },
   ]) {
     const p = instant.aggregate({ ...base, ...change });
     assert.equal(p.eligible, false, JSON.stringify(change));
     assert.equal(p.weight, 0, JSON.stringify(change));
     assert.deepEqual(instant.buildPool([p]), [], JSON.stringify(change));
   }
+  // Betreiber 14.9.26: Follow, Zuschauzeit und Anwesenheit sind KEINE Bedingung.
+  const p = instant.aggregate({ ...base, present: false, watchSec: 0, follows: false });
+  assert.equal(p.eligible, true);
+  assert.equal(instant.buildPool([p]).length, 1);
 });
 
 test('negative: TicketBuy akzeptiert keine partiellen, negativen oder mehrdeutigen Betraege', () => {

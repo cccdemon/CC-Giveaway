@@ -307,18 +307,20 @@ laufen durch dieselbe Engine-Buchung und dasselbe Audit.
 Sofortverlosung, Laufzeit Minuten statt Wochen.
 
 - Moderator startet die Verlosung mit Keyword und Fensterdauer (z.B. 60 s).
-- Teilnahmeberechtigt ist, wer **beide** Bedingungen erfüllt: das Keyword im
-  Fenster geschrieben **und** im selben Zeitraum als anwesender Zuschauer
-  gemeldet worden. Das schließt Chat-Bots und Leute aus, die nur den Chat offen
-  haben.
+- **Ist-Stand (Betreiber 14.9.26):** teilnahmeberechtigt ist, wer das Keyword
+  im Fenster geschrieben hat und nicht gebannt ist. Keine Follow-Pflicht, keine
+  Mindest-Zuschauzeit, keine Anwesenheitsprüfung durch das System — ob der
+  Gezogene da ist, prüft der Streamer live (sonst Ersatzziehung).
+  Follow/Viewtime/Anwesend sind nur Panel-Spalten.
 - Gewicht ist für alle gleich (`weight = 1`). Keine gesammelte Zuschauzeit, kein
   Coin-Konto.
-- Nach Fensterende zieht die Engine automatisch.
+- Gezogen wird manuell (★), nicht nach Fensterende.
 
-Risiko, das im Bau adressiert werden muss: hängt die Anwesenheitsmeldung
-(Streamerbot-Ingest), ist niemand berechtigt. Der Core muss diesen Fall
-erkennen und die Verlosung mit klarer Meldung abbrechen statt still leer zu
-ziehen.
+Historie: der Entwurf verlangte Keyword **und** Anwesenheitsmeldung — am 9.8.26
+kippte das eine Live-Verlosung (keine Ticks, 36 Anmeldungen, 0 im Topf). Der
+Ersatz „Follow + Mindest-Zuschauzeit aus der Kampagne" kippte am 13.9.26 die
+nächste (keine Kampagne aktiv, 20 Anmeldungen, 0 im Topf). Darum keine
+System-Schwellen mehr.
 
 ---
 

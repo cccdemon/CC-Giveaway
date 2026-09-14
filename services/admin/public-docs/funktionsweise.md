@@ -81,12 +81,11 @@ Die schnelle Verlosung zwischen zwei Runden — gleiche Chance für alle.
 
 - Der Streamer öffnet ein **Anmeldefenster** (z. B. 60 Sekunden — auch
   mehrfach; wer angemeldet ist, bleibt es).
-- Teilnahme: das Keyword **im offenen Fenster** schreiben UND gerade
-  wirklich zuschauen (Anwesenheit laut Zuschauer-Meldung, nicht nur
-  offener Chat-Tab).
+- Teilnahme: das Keyword **im offenen Fenster** schreiben — das reicht.
+  Kein Follow, keine Mindest-Zuschauzeit.
 - Jeder Berechtigte hat **genau ein Los** — Zuschauzeit spielt hier keine
-  Rolle. Gezogen wird **manuell** vom Streamer (★ im Dashboard); die
-  Anwesenheit zählt zum Zeitpunkt der Ziehung.
+  Rolle. Gezogen wird **manuell** vom Streamer (★ im Dashboard). Wer
+  gezogen wird, muss dann im Stream sein; das prüft der Streamer live.
 - Die Chat-Ansagen der Sofortverlosung lassen sich stummschalten — die
   Gewinner-Ansage kommt immer.
 

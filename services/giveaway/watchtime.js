@@ -914,24 +914,15 @@ class WatchtimeEngine {
   }
 
   // ── Phase 3: Teilnehmer einer Sofortverlosung ───────────
-  // Berechtigt = Keyword geschrieben (gReg) UND als Zuschauer gemeldet:
-  // viewer_tick (chLastTick) innerhalb PRESENCE_TTL auf einem Instanz-Kanal.
-  // Chat setzt chPresent, aber NICHT chLastTick — wer nur den Chat offen
-  // hat, gilt hier nicht als anwesend (§5.3).
+  // Berechtigt = Keyword im Fenster geschrieben (gReg) und nicht gebannt
+  // (Betreiber 14.9.26). Anwesenheit (viewer_tick), Follow und Zuschauzeit
+  // werden nur fuer die Panel-Spalten gelesen, nie als Bedingung.
   async getInstantParticipants(teamId, gid) {
     const t = sanitizeTeamId(teamId);
     let channels = null;
     try { const raw = await this.redis.get(K.gChanList(t, gid)); if (raw) channels = JSON.parse(raw); } catch { /* alle */ }
     if (!Array.isArray(channels) || !channels.length) channels = await this.getChannels(t);
     const core = getCore(await this.getCoreId(t, gid));
-    // Schwellen der Instanz: Mindest-Zuschauzeit (Default aus dem Core) und
-    // Follow-Pflicht. Beide lesen den Kampagnenstand des Teams — die
-    // Sofortverlosung sammelt selbst keine Zeit (accrual 'none').
-    const rawMin = await this.redis.get(K.gMinWatch(t, gid));
-    const minWatchSec = Number.isFinite(parseInt(rawMin, 10))
-      ? parseInt(rawMin, 10)
-      : (core.config && core.config.minWatchSec ? core.config.minWatchSec.def : 0);
-    const cfg = { minWatchSec, followRequired: true };
     const now = Math.floor(Date.now() / 1000);
     const result = [];
     for (const u of await this.redis.smembers(K.gwUsers(t))) {
@@ -943,7 +934,7 @@ class WatchtimeEngine {
         if (Number.isFinite(ts) && now - ts < PRESENCE_TTL) { present = true; break; }
       }
       // Zuschauzeit + Follow aus dem Team-/Kampagnenstand, nur auf den
-      // Kanaelen dieser Instanz.
+      // Kanaelen dieser Instanz — reine Anzeige.
       const agg = await this.getUserAggregate(t, u);
       let watchSec = 0, follows = false;
       for (const ch of channels) {
@@ -955,7 +946,7 @@ class WatchtimeEngine {
       result.push(core.aggregate({
         username: u, registered,
         banned: await this.redis.get(K.gwBanned(t, u)) === '1',
-        present, watchSec, follows, cfg,
+        present, watchSec, follows,
       }));
     }
     return result;
@@ -1000,23 +991,18 @@ class WatchtimeEngine {
     const t = sanitizeTeamId(teamId);
     const chans = Array.isArray(channels) && channels.length ? channels : await this.getChannels(t);
     if (core === 'CORE_CurrentViewers') {
-      // Wer koennte JETZT mitmachen: Follow auf einem gewaehlten Kanal und
-      // genug Zuschauzeit. Das Keyword kommt erst im Anmeldefenster dazu.
-      const minW = minWatchSec || 0;
+      // Wer koennte JETZT mitmachen: gerade als Zuschauer gemeldet und nicht
+      // gebannt. Eine Schwelle gibt es nicht, das Keyword kommt im Fenster.
+      const now = Math.floor(Date.now() / 1000);
       let n = 0;
       for (const u of await this.redis.smembers(K.gwUsers(t))) {
         if (await this.redis.get(K.gwBanned(t, u)) === '1') continue;
-        const agg = await this.getUserAggregate(t, u);
-        let w = 0, f = false;
         for (const ch of chans) {
-          const pc = agg.perChannel[ch];
-          if (!pc) continue;
-          w += pc.watchSec || 0;
-          if (pc.follows) f = true;
+          const ts = parseInt(await this.redis.get(K.chLastTick(t, ch, u)), 10);
+          if (Number.isFinite(ts) && now - ts < PRESENCE_TTL) { n++; break; }
         }
-        if (f && w >= minW) n++;
       }
-      return { count: n, basis: 'present', minWatchSec: minWatchSec || 0 };
+      return { count: n, basis: 'present', minWatchSec: 0 };
     }
     if (core === 'CORE_TicketBuy') {
       // Konten mit positivem Ledger-Saldo (Live-Anteil entsteht erst im Lauf).

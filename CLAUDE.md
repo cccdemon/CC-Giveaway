@@ -51,12 +51,13 @@ Gewicht wird und wer berechtigt ist; Zufall/Snapshot/Persistenz/Audit/Recht
 bleiben Engine. **Wer die Mechanik anfasst, liest `docs/ARCHITEKTUR-CORES.md`**
 (Vertrag, Abgrenzung, Phasen-Stand).
 - `CORE_WatchtimeChatActivity` — die Spec oben, unverändert (Primary/Kampagne).
-- `CORE_CurrentViewers` — Sofortverlosung: **Keyword im offenen Anmeldefenster
-  ist der Anwesenheitsnachweis** (Betreiber 9.8.26; `viewer_tick` ist nur noch
-  Anzeige). Dazu zwei Schwellen aus dem Kampagnenstand des Teams: bestätigter
-  Follow auf einem Instanz-Kanal + Mindest-Zuschauzeit (`gMinWatch`, Default
-  600 s, im Start-Modal einstellbar; ohne laufende Kampagne 0 setzen, sonst ist
-  der Topf leer). weight=1. Das Fenster ist NUR die Anmeldephase (`gWinEnd`, restart-sicher,
+- `CORE_CurrentViewers` — Sofortverlosung: **im Topf = Keyword im offenen
+  Anmeldefenster + nicht gebannt, sonst NICHTS** (Betreiber 14.9.26). Keine
+  Follow-Pflicht, keine Mindest-Zuschauzeit, keine Anwesenheitsprüfung — ob der
+  Gezogene da ist, prüft der Streamer live (Ersatzziehung). Follow/Viewtime/
+  `viewer_tick` sind nur Panel-Spalten. Live-Ausfall 13.9.26: die frühere
+  Schwelle las Zuschauzeit aus der Kampagne, es lief keine → 20 Anmeldungen,
+  0 im Topf. Keine System-Schwellen wieder einbauen. weight=1. Das Fenster ist NUR die Anmeldephase (`gWinEnd`, restart-sicher,
   **mehrfach öffenbar** via `gw_instant_window` — Teilnehmer akkumulieren);
   der Watcher (5 s) schließt abgelaufene Fenster nur mit Ansage. **Ziehung
   immer manuell** (★, auch Member); Anwesenheit zählt zum Ziehungszeitpunkt.

@@ -346,7 +346,7 @@ flowchart LR
         K1["Keyword geschrieben"] --> K2["Follows ≥ followMin"] --> K3["≥ 1 Coin"] --> KE["im Lostopf"]
     end
     subgraph C["Sofortverlosung"]
-        C1["Keyword im offenen Fenster<br/>= Anwesenheitsnachweis"] --> C2["Follow auf einem Kanal"] --> C3["Viewtime ≥ minWatchSec<br/>(Vorgabe 10 min)"] --> CE["im Topf, Gewicht 1"]
+        C1["Keyword im offenen Fenster"] --> C2["nicht gebannt"] --> CE["im Topf, Gewicht 1"]
     end
     subgraph T["Los-Giveaway"]
         T1["Guthaben aus Zuschauzeit"] --> T2["Einsatz auf DIESEN Preis"] --> TE["Gewicht = Einsatz"]
@@ -501,7 +501,7 @@ geworfen; geworfen wird nur, wo ein Abbruch zwingend ist (siehe Spalte).
 | `resetGiveaway(T)` | — | `{wipedParticipants, wipedCoins, wipedEligible, sessionBefore}` |
 | `drawWinner(T, sessionId, opts)` | `opts = {test, prize, prizeId, rerollOf, rerollReason, excludeWinner}` | `null` bei leerem Pool, sonst `{winner, coins, watchSec, drawId, drawIndex, sessionId, eligibleCount, total, rand, isTest, prize, prizeId, core, msgs}`; **wirft** bei fehlender `prizeId` (TicketBuy) und bei `prize_not_in_giveaway` |
 | `previewEligible(T, {core, channels, minWatchSec})` | Vorschau vor dem Start | `{count, basis, …}` mit `basis` = `campaign\|present\|credit\|contest` |
-| `getInstantParticipants(T, gid)` | Sofortverlosung | `Array<aggregate & {present, watchOk, followOk, minWatchSec}>` |
+| `getInstantParticipants(T, gid)` | Sofortverlosung | `Array<aggregate & {present, followOk}>` (beides nur Anzeige) |
 | `getTicketBuyParticipants(T, gid)` | Los-Giveaway | `Array<{username, balance, stake, banned, registered, eligible}>` |
 | `getContestParticipants(T, gid)` | Contest | `Array<{username, title, status, score, votes, …}>` |
 | `exportTeam(T)` / `importTeam(T, data, opts)` | Backup | JSON-Objekt / `{imported, skipped, mode}` |
@@ -909,7 +909,7 @@ Kopieren aus.
 | `GW_ChatMessage` | Twitch → Chat → Message | `chat_msg` (nur bei laufendem OBS-Stream) |
 | `GW_StatusCmd` | Command `!los` und Aliase | `time_cmd` |
 | `GW_GiveawayCmd` | Command `!giveaway` (Alias `!gw`) | `giveaway_cmd` |
-| `GW_StreamOnline` · `GW_StreamOffline` | Twitch → Channel → Stream Online/Offline | `stream_online` · `stream_offline` |
+| `GW_StreamOnline` · `GW_StreamOffline` | OBS Studio → OBS Streaming Started/Stopped | `stream_online` · `stream_offline` |
 
 Alle senden über `CPH.WebsocketSend(payload, 0)`; der Kanal steckt im Token,
 nie in der Nutzlast.

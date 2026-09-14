@@ -63,7 +63,7 @@ const CATALOG = {
     prep: { label: 'Vorankündigung (ohne Fenster)', ph: ['keyword'],
       def: c => CV.prepText({ keyword: c.keyword }) },
     windowOpen: { label: 'Anmeldefenster offen', ph: ['keyword', 'minuten'],
-      def: c => CV.infoText({ keyword: c.keyword, windowSec: c.windowSec, minWatchSec: c.minWatchSec }) },
+      def: c => CV.infoText({ keyword: c.keyword, windowSec: c.windowSec }) },
     windowClosed: { label: 'Anmeldefenster geschlossen', ph: ['anzahl'],
       def: c => `⚡ Anmeldefenster geschlossen — ${c.anzahl} im Topf. Die Ziehung macht der Streamer gleich live!` },
     closed: { label: 'Geschlossen', ph: [],

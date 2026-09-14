@@ -803,28 +803,28 @@ test('phase3: CV-Instanz sammelt keine Watchtime, Kampagne schon', async () => {
   assert.equal(await e.redis.get(K.gWatch(TEAM, 'sess_2', 'justcallmedeimos', 'bob')), null);
 });
 
-test('phase3: Keyword weist die Anwesenheit nach, Follow + Mindest-Viewtime bleiben Pflicht', async () => {
+test('phase3: jeder mit Keyword ist im Topf — ohne Follow, Zuschauzeit, Tick oder Kampagne', async () => {
+  // Live-Ausfall 13.9.26: keine Kampagne, 20 Anmeldungen, minWatch 600 → 0 im Topf.
   const e = engine();
   await e.openGiveawayInstance(TEAM, 'sess_2',
     { keyword: 'blitz', core: 'CORE_CurrentViewers', windowSec: 60, minWatchSec: 600 });
-  // alice: Keyword + Follow, aber nur 5 Minuten Zuschauzeit → zu wenig
-  await e.redis.set(K.chWatch(TEAM, 'justcallmedeimos', 'alice'), '300');
-  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'alice', 'blitz', true);
-  // bob: Keyword + Follow + 12 Minuten — OHNE viewer_tick, der ist nicht mehr Pflicht
-  await e.redis.set(K.chWatch(TEAM, 'justcallmedeimos', 'bob'), '720');
-  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', 'blitz', true);
-  // carol: genug Zeit, aber kein Follow
-  await e.redis.set(K.chWatch(TEAM, 'justcallmedeimos', 'carol'), '900');
-  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'carol', 'blitz', false);
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'alice', 'blitz', true);    // Follow, 0 s
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'carol', 'blitz', false);   // kein Follow
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'dave', 'hallo zusammen', true);   // kein Keyword
+  await e.redis.set(K.gwBanned(TEAM, 'eve'), '1');
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'eve', 'blitz', true);      // gebannt
   const parts = await e.getInstantParticipants(TEAM, 'sess_2');
   const by = (n) => parts.find(p => p.username === n);
-  assert.equal(by('alice').eligible, false);
-  assert.equal(by('alice').watchOk, false);
-  assert.equal(by('bob').eligible, true);
-  assert.equal(by('bob').present, false);    // kein Tick, trotzdem im Topf
-  assert.equal(by('bob').weight, 1);
-  assert.equal(by('carol').eligible, false);
-  assert.equal(by('carol').followOk, false);
+  assert.equal(by('alice').eligible, true);
+  assert.equal(by('alice').present, false);
+  assert.equal(by('alice').weight, 1);
+  assert.equal(by('carol').eligible, true);
+  assert.equal(by('carol').followOk, false);   // bleibt als Anzeige
+  assert.equal(by('dave'), undefined);
+  assert.ok(!by('eve') || by('eve').eligible === false);
+  const r = await e.drawWinner(TEAM, 'sess_2', {});
+  assert.ok(['alice', 'carol'].includes(r.winner));
+  assert.equal(r.eligibleCount, 2);
 });
 
 test('phase3: Ziehung der CV-Instanz zieht unter Berechtigten, stempelt Core', async () => {
@@ -841,8 +841,8 @@ test('phase3: Ziehung der CV-Instanz zieht unter Berechtigten, stempelt Core', a
 test('phase3: leere CV-Ziehung liefert null (Abbruch statt Leer-Zug)', async () => {
   const e = engine();
   await e.openGiveawayInstance(TEAM, 'sess_2', { keyword: 'blitz', core: 'CORE_CurrentViewers', windowSec: 60 });
-  // alice hat Keyword + Follow, aber keine Zuschauzeit → niemand berechtigt
-  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'alice', 'blitz', true);
+  // alice schreibt, aber nicht das Keyword → niemand angemeldet
+  await e.handleChatMessage(TEAM, 'justcallmedeimos', 'alice', 'ich bin da', true);
   assert.equal(await e.drawWinner(TEAM, 'sess_2', {}), null);
 });
 
@@ -1132,15 +1132,15 @@ test('ingest: Puls je Kanal meldet fehlende viewer_tick nur bei laufendem Stream
   assert.equal(pulse[0].silent, false);
   assert.ok(pulse[0].lastTickAgo !== null && pulse[0].lastTickAgo < 5);
   assert.equal(pulse[0].present, 1);
-  // Chat allein setzt keinen Puls — genau daran scheiterte die Ziehung.
+  // Chat allein setzt keinen Puls — die Sofortverlosung zieht trotzdem.
   const e2 = engine();
   await e2.openGiveawayInstance(TEAM, 'sess_2', { keyword: '!los', core: 'CORE_CurrentViewers' });
   await e2.openInstantWindow(TEAM, 'sess_2', 60);
   await e2.handleChatMessage(TEAM, 'justcallmedeimos', 'bob', '!los', true);
   const rows = await e2.getInstantParticipants(TEAM, 'sess_2');
   assert.equal(rows.length, 1);
-  assert.equal(rows[0].present, false);          // angemeldet, aber nicht anwesend
-  assert.equal(rows[0].eligible, false);
+  assert.equal(rows[0].present, false);          // angemeldet, nicht als Zuschauer gemeldet
+  assert.equal(rows[0].eligible, true);          // zaehlt nicht (Betreiber 14.9.26)
   assert.equal((await e2.getIngestPulse(TEAM, ['justcallmedeimos']))[0].silent, true);
 });
 

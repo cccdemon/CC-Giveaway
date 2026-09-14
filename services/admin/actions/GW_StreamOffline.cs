@@ -1,5 +1,5 @@
 // Action: "GW – Stream Offline"
-// Trigger: Twitch → Channel → Stream Offline
+// Trigger: OBS Studio → OBS Streaming Stopped  (optional zusaetzlich Twitch → Channel → Stream Offline)
 //
 // Meldet dem Server, dass dieser Kanal offline gegangen ist. Wenn danach
 // kein Team-Kanal mehr live ist, kann der Server das Giveaway automatisch

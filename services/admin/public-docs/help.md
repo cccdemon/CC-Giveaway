@@ -27,10 +27,9 @@ Chat-Bonus).
 ## ⚡ Sofortverlosung
 
 Der Streamer öffnet ein kurzes **Anmeldefenster**: Schreib das angesagte
-**Keyword** in den Chat, während du **im Stream anwesend** bist — nur den Chat
-offen zu haben reicht nicht. **Alle Angemeldeten haben dieselbe Chance**,
-Zuschauzeit spielt hier keine Rolle. Gezogen wird live vom Streamer; anwesend
-sein musst du auch im Moment der Ziehung.
+**Keyword** in den Chat — mehr braucht es nicht, kein Follow, keine
+Zuschauzeit. **Alle Angemeldeten haben dieselbe Chance.** Gezogen wird live
+vom Streamer; wenn du gezogen wirst, musst du im Stream sein.
 
 ## 🎟 Los-Giveaway (Einsatz auf Preise)
 
