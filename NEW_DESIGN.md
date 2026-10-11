@@ -619,7 +619,7 @@ Löschen heißt: Die Zeile in `identities` wird entfernt. Das Journal zeigt dana
 | 10 | Geldbörse Kern C | Pro Giveaway, nicht team-weit |
 | 11 | Mustertexte Recht | Keine, nur Checkliste |
 | 12 | Altdaten | Archiv, kein Import |
-| 13 | Spec-Ort | Im Alt-Repo, Umzug ins neue Repo beim Projektstart |
+| 13 | Spec-Ort | `NEW_DESIGN.md` im Alt-Repo, Verweis in `CLAUDE.md` (Pflicht: immer vollständig lesen); Umzug ins neue Repo beim Projektstart |
 
 ---
 
