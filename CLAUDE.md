@@ -3,7 +3,7 @@
 Guidance for Claude Code in this repo. These instructions OVERRIDE defaults.
 
 ## NEUBAU — PFLICHTLEKTÜRE
-**[NEW_DESIGN.md](NEW_DESIGN.md) ist das Design des Neubaus, der dieses System vollständig ablöst.**
+**[../CC-Giveaway-NG/NEW_DESIGN.md](../CC-Giveaway-NG/NEW_DESIGN.md) ist das Design des Neubaus, der dieses System vollständig ablöst.**
 **Pflicht: Vor jeder Arbeit IMMER VOLLSTÄNDIG lesen — jede Zeile, kein Überfliegen, kein Teil-Lesen
 per offset/limit oder grep.** Bei Widerspruch zwischen NEW_DESIGN.md und dem Rest dieser Datei gilt
 für den Neubau NEW_DESIGN.md. Alles darunter beschreibt das Altsystem (Lehren, Betrieb bis zur Ablösung).
