@@ -701,7 +701,25 @@ packages/server/
 
 ## Nach diesem Plan
 
-- **TP3 (Konten):** `identities (pid, twitch_id, …)`, echte `GiveawayAuthorizer`-Implementierung über Team-Mitgliedschaft (TP7), Rechtstexte-Pflicht als Gate in `open_giveaway`, `participant_registered` bekommt `termsVersion` (v2 + Upcaster). HTTP-Routen mit Handler-Registry und Rejection→HTTP-Mapping.
+Stand 28.10.2026: umgesetzt in CC-Giveaway-NG `210f390..3d6a725` (19 Commits, 28 Testdateien, 214 Tests). Whole-Branch-Review: „abgeschlossen mit Fixes", Fixes gelandet (`6a7f0d2`, `3d6a725`). Ledger mit allen Rulings: `.superpowers/sdd/2026-10-28-kern-vertrag-kern-b/progress.md`.
+
+Abweichungen vom Plantext, die gelten:
+- Ersatzziehung schreibt erst die neue `giveaway_drawn`, dann `event_voided` der alten (Reducer behält Stati bleibender Gewinner).
+- `KernelReversal.compensate.inverse(payload, state)` – Kern-Umkehr sieht den Kern-Zustand (Kern B lehnt `not_latest_window` ab).
+- `GiveawayState.registered[pid] = { since, eventId }`, `FRAMEWORK_REDUCER_VERSION = 3`.
+- `giveawayRevertHandler` hat eine Gate-Tabelle: Ziehung und Gewinnstatus nur in `drawn`, Einstellungen nur bis `closed`, Anmeldung nicht nach der Ziehung und nur die aktuelle.
+- `DrawDeps.loadState` (prepare lädt den Zustand nach der Sperre für die Gate-Prüfung).
+- `reconcileKernelVersions` liefert `{ rebuilt, skipped }`.
+- Kern-Zeitgeber-Zeile wird nur gelöscht, wenn `due_at` unverändert ist.
+
+Offen (geparkt, Ledger):
+- Umkehr von `participant_withdrawn` prüft nur `open`: kein `already_registered`, kein `kernel.gateRegistration` → Rückgängig einer Abmeldung kann außerhalb eines Fensters neu anmelden. In TP3 mit `participant_registered` v2 (`termsVersion`) anfassen.
+- `KernelRegistry.register` verbietet kein `_` in Kern-IDs (Präfix-Kollision erst beim zweiten Kern relevant, TP5).
+- `viewerView` bekommt kein `now` → abgelaufenes, noch nicht geschlossenes Fenster liest sich als „offen" (TP8 formatiert und vergleicht, oder Vertrag ergänzen).
+- Teilnehmer-Issuer-Pfad, Fremd-Präfix-Throw und `!decide`-Zweig von `kernel_command` sind erst mit Kern C testbar (TP6).
+- Dauerhaft werfender Zeitgeber wird alle 5 s wiederholt und geloggt (Backoff je Zeile oder `unknown_kernel` → Ablehnung).
+
+- **TP3 (Konten):** `identities (pid, twitch_id, …)`, echte `GiveawayAuthorizer`-Implementierung über Team-Mitgliedschaft (TP7) ersetzt `denyUsers`, Rechtstexte-Pflicht als Gate in `open_giveaway`, `participant_registered` bekommt `termsVersion` (v2 + Upcaster). HTTP-Routen mit Handler-Registry und Rejection→HTTP-Mapping.
 - **TP4 (Ingest):** Gewinner-Ansage im Chat als Folge von `giveaway_drawn` (Outbox, Umkehrart `none`), Statusblock-Daten.
 - **TP5:** `GateChecker` mit Helix, Zuschauzeit-Dienst. `participantsProjector` schreibt heute alle Zeilen je Befehl neu – bei `watch_credited` mit 200 Einträgen pro Minute inkrementell machen (Diff zum vorigen Zustand oder Ereignis-Projektor für Gewichte).
 - **TP6 (Kern C):** `cancel_giveaway` braucht einen Kern-Hook für Erstattungen (heute kein Hook – bewusst, YAGNI).
